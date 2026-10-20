@@ -13,41 +13,98 @@
 """
 import re
 
+import cv2
+
 from . import bricks, ocr
 
-# 带小数点的当磨损（0.15），纯整数当价格（12000）。交易行的价格是整数
-# 三角券，磨损是 0~10 的小数，这个区分在实测截图里是成立的。
-_NUM = re.compile(r"\d+(?:[.,]\d+)?")
-_CURRENCY = re.compile(r"[¥￥]\s*(\d+(?:[.,]\d+)?)")
+# 交易行里价格是带千位逗号的整数（15,000 / 9,999,999），磨损是 0~10 的小数
+# （0.583）。所以逗号必须当千位分隔符去掉，不能当小数点 —— 早期版本把
+# `15,000` 解析成 15.0，价格整体错 1000 倍。
+#
+# Windows OCR 对千位逗号有三种破坏方式（都在实测截图里出现过）：
+#   1. 整个丢掉、分成两个词   15,000 -> `15` + `000`
+#   2. 认成汉字               15,000 -> `15` + `囤` + `00`
+#   3. 换成一个空格           15,000 -> `15 000`（放大后常见）
+# 所以下面先把数字串里的空格挤掉，再按逗号当千位分隔符解析。
+_NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_CURRENCY = re.compile(r"[¥￥]\s*(\d[\d,]*(?:\.\d+)?)")
 _CRAFT = re.compile(r"(极品|优品)")
-_WEAR_LETTER = re.compile(r"(?:极品|优品)\s*[-－]?\s*([SABC])", re.I)
+# 成色字母：实际渲染是 `极品丨成色 A` / `极品成色 S`。解析出来的文本里「做工」
+# 和字母之间可能隔着 `丨 成色 ` 这类字符，所以允许中间有少量任意非字母字符。
+# 早期版本只允许一个连字符，于是所有成色都读不出来（实测 6/6 张 wear=None）。
+_WEAR_LETTER = re.compile(r"(?:极品|优品)[^SABC]{0,8}?([SABC])(?![A-Za-z])")
+
+# 数字之间的空格（可能连着 OCR 认错的单字，如 `15 囤 00`）
+_DIGIT_GAP = re.compile(r"(?<=\d)\s*[\u4e00-\u9fff]?\s*(?=\d)")
 
 
-def parse_row(text):
+def _squeeze_digits(text):
+    """把数字串中间的空格和 OCR 误认的单字挤掉。
+
+    `15 000` -> `15000`；`15 囤 00` -> `15000`；`015 252` -> `015252`。
+    只处理「空格/单个汉字夹在两个数字之间」的情况，不动正常文字。
+    """
+    if not text:
+        return text
+    prev = None
+    cur = text
+    # 反复挤，直到稳定（`15 囤 000` 这类可能要两轮）
+    while cur != prev:
+        prev = cur
+        cur = _DIGIT_GAP.sub("", cur)
+    return cur
+
+
+def _to_number(tok):
+    """把 OCR 出来的数字 token 转成 float。
+
+    千位逗号去掉：`15,000` -> 15000。小数点保留：`0.583` -> 0.583。
+    两者都出现时（`1,234.5`）逗号仍是千位分隔符。
+    """
+    if tok is None:
+        return None
+    cleaned = tok.replace(",", "")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _is_decimal_token(tok):
+    """这个 token 是小数（磨损）还是整数（价格）。
+
+    判据是「有没有小数点」，不是「有没有逗号」——逗号是千位分隔符。
+    """
+    return "." in tok
+
+
+def parse_row(text, words=None):
     """把一行文字解析成可过滤的字段。
 
     返回 {text, price, craft, wear, wear_value, numbers}
     认不出的就是 None —— 调用方要按「未知」处理，不能当 0。
+
+    words 参数保留是为了兼容旧调用点，当前解析只用文本：放大后的 OCR 会把
+    `15,000` 当成一个词（内部带空格），按词框拼接反而拼不出来，所以统一在
+    文本层用 _squeeze_digits 处理。
     """
     if not text:
         return {"text": "", "price": None, "craft": None, "wear": None,
                 "wear_value": None, "numbers": []}
 
+    text = _squeeze_digits(text)
+
     price = None
     m = _CURRENCY.search(text)
     if m:
-        try:
-            price = float(m.group(1).replace(",", ""))
-        except ValueError:
-            price = None
+        price = _to_number(m.group(1))
 
     ints, floats = [], []
     for tok in _NUM.findall(text):
-        try:
-            v = float(tok.replace(",", "."))
-        except ValueError:
+        v = _to_number(tok)
+        if v is None:
             continue
-        (floats if ("." in tok or "," in tok) else ints).append(v)
+        (floats if _is_decimal_token(tok) else ints).append(v)
 
     # 价格没带 ¥ 时取最大的整数：列表里通常只有价格和数量两种整数，
     # 价格远大于数量
@@ -75,20 +132,91 @@ def parse_row(text):
             "wear_value": wear_value, "numbers": ints + floats}
 
 
-def scan(img, min_row_h=8):
-    """OCR 一张列表截图，返回行列表（带像素坐标，相对这张图）。
+def _grid_cards(words, width, card_height, rows, cols, col_split):
+    """按固定网格切卡片。
 
-    每行在 parse_row 的基础上加 x0/y0/x1/y1/cy，供点击定位。
+    为什么不用「找间隙聚类」：实测（放大 2 倍后）同一张卡片内「名字行→属性行」
+    中心距 334px，而跨卡片「属性行→下一张名字行」只有 76px —— 卡内距离**大于**
+    跨卡距离（卡片是上下两段布局）。任何「找大间隙」的方法都会分错：把属性行
+    和下一张的名字行并到一起，把名字行和自己的属性行拆开。
+
+    所以用固定网格：卡片高 206px（原尺寸实测）、两列、列边界在两列中间。
+    网格参数走 scan 的入参，调用方可用 config 的 regions 重配。
+
+    card_height 是**单张卡片**的高，不是整张图的高。
+    """
+    cells = []
+    for r in range(rows):
+        y0, y1 = r * card_height, (r + 1) * card_height
+        for c in range(cols):
+            if cols == 1:
+                x0, x1 = 0, width
+            else:
+                x0 = 0 if c == 0 else col_split
+                x1 = col_split if c == 0 else width
+            cell = [w for w in words
+                    if y0 <= w["y"] + w["h"] / 2.0 < y1 and x0 <= w["x"] < x1]
+            if cell:
+                cells.append(cell)
+    return cells
+
+
+def _rect_of(ws):
+    return {
+        "x0": min(w["x"] for w in ws),
+        "y0": min(w["y"] for w in ws),
+        "x1": max(w["x"] + w["w"] for w in ws),
+        "y1": max(w["y"] + w["h"] for w in ws),
+    }
+
+
+def scan(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None):
+    """OCR 一张列表截图，返回卡片列表（带像素坐标，相对这张图）。
+
+    每张卡片在 parse_row 的基础上加 x0/y0/x1/y1/cy，供点击定位。
+
+    upscale: 放大倍数，默认 2。实测决定性：13px 高的价格数字直接 OCR 会把
+    `15,000` 读成 `1500`、`8,888` 读成 `888`（千位逗号和首位数字被吞），
+    放大 2 倍后 6 个价格全部读对，而且更快（174ms vs 325ms）。返回的坐标
+    会缩回原尺寸。
+
+    card_h: 卡片高度（原尺寸像素），默认 206（1920x1080 截图实测）。
+    cols: 列表列数，默认 2。
+    col_split: 两列的 x 分界（原尺寸像素），默认取宽度的中点。
     """
     if img is None or getattr(img, "size", 0) == 0:
         return []
-    words = [w for w in ocr.read_words(img) if w["h"] >= min_row_h]
+    h, w = img.shape[:2]
+    src = img
+    up = upscale or 1
+    if up != 1:
+        src = cv2.resize(img, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC)
+
+    words = [w for w in ocr.read_words(src) if w["h"] >= min_row_h * up]
+    if not words:
+        return []
+
+    ch = max(1, int(card_h * up))
+    rows = max(1, (src.shape[0] + ch - 1) // ch)
+    split = int(col_split * up) if col_split else src.shape[1] // 2
+
     out = []
-    for line in ocr.rows(words):
-        row = parse_row(line["text"])
-        row.update(x0=line["x0"], y0=line["y0"], x1=line["x1"],
-                   y1=line["y1"], cy=line["cy"])
+    for card in _grid_cards(words, src.shape[1], ch, rows, cols, split):
+        text = ocr.clean(" ".join(w["text"] for w in card))
+        if not text:
+            continue
+        rect = _rect_of(card)
+        row = parse_row(text)
+        row.update(x0=rect["x0"], y0=rect["y0"], x1=rect["x1"], y1=rect["y1"],
+                   cy=round((rect["y0"] + rect["y1"]) / 2.0, 1))
         out.append(row)
+
+    if up != 1:
+        # 词框坐标是在放大图上量的，缩回原尺寸，调用方才能直接用于点击
+        for row in out:
+            for k in ("x0", "y0", "x1", "y1", "cy"):
+                row[k] = row[k] / up
+    out.sort(key=lambda r: (r["y0"], r["x0"]))
     return out
 
 

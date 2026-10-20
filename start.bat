@@ -2,30 +2,27 @@
 setlocal
 cd /d "%~dp0"
 
-if exist ".venv\Scripts\python.exe" goto run
+where uv >nul 2>nul
+if errorlevel 1 goto nouv
 
-echo [1/3] Creating virtual environment...
-python -m venv .venv
-if errorlevel 1 goto nopython
-
-echo [2/3] Installing dependencies...
-".venv\Scripts\python.exe" -m pip install -q --upgrade pip
-".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
+echo [1/2] Syncing dependencies with uv...
+uv sync
 if errorlevel 1 goto nodeps
-echo [3/3] Ready.
+echo [2/2] Ready.
 
-:run
-".venv\Scripts\python.exe" run.py
+uv run python run.py
 goto end
 
-:nopython
+:nouv
 echo.
-echo Python not found. Install Python 3.9+ and tick Add Python to PATH.
+echo uv not found. Install it first:
+echo   powershell -c "irm https://astral.sh/uv/install.ps1 ^| iex"
+echo   (or: winget install --id=astral-sh.uv)
 goto end
 
 :nodeps
 echo.
-echo Dependency install failed. Check your network and retry.
+echo Dependency sync failed. Check your network and retry.
 goto end
 
 :end

@@ -26,7 +26,7 @@ import numpy as np
 
 from . import market, timesync
 from .config import Config
-from .input import Mouse, MouseStolen
+from .input import Mouse, MouseStolen, WindowNotForeground
 from .screen import Screen
 from .vision import expand, match, to_gray
 
@@ -49,6 +49,7 @@ class Engine:
         self._dry_run = True
         self._deadline = None
         self._mode = "detail"
+        self._target_hwnd = None      # 启动时游戏窗口；点击前校验它在前台
         self._stats = {
             "hz": 0.0,
             "score": 0.0,
@@ -79,6 +80,9 @@ class Engine:
         self._error = None
         self._log.clear()
         self._state = SCAN if mode == "list" else WATCH
+        # 演练不点鼠标，也就无所谓前台；实战时把当前前台窗口记成目标，
+        # 之后每次点击都要求它仍在前台，否则点击会被投递给别的窗口。
+        self._target_hwnd = None if self._dry_run else Mouse.foreground()
         self._stats.update(hz=0.0, score=0.0, clicks=0, elapsed=0.0,
                            started_at=time.time(),
                            trigger_mode=cfg["trigger_mode"],
@@ -138,6 +142,10 @@ class Engine:
     def _say(self, msg, level="info"):
         self._log.append({"t": time.strftime("%H:%M:%S"), "level": level, "msg": msg})
 
+    def _click(self, mouse, x, y):
+        """带前台校验的点击。目标窗口不在前台就抛 WindowNotForeground。"""
+        mouse.click(x, y, expect_foreground=self._target_hwnd)
+
     def _set(self, **kw):
         with self._lock:
             self._stats.update(kw)
@@ -167,6 +175,13 @@ class Engine:
             self._set_state(ABORT)
             with self._lock:
                 self._error = f"鼠标被抢：{e}"
+        except WindowNotForeground as e:
+            self._say(f"目标窗口不在前台：{e}", "error")
+            self._say("把游戏窗口切到前台再开始，"
+                      "否则点击会被系统投递给别的窗口", "error")
+            self._set_state(ABORT)
+            with self._lock:
+                self._error = f"目标窗口不在前台：{e}"
         except Exception as e:  # 引擎不能静默死掉
             self._say(f"{type(e).__name__}: {e}", "error")
             for line in traceback.format_exc().splitlines()[-6:]:
@@ -350,14 +365,26 @@ class Engine:
 
             self._set_state(WATCH)
             if self._dry_run:
-                self._say(f"[演练] 本该点这一行 ({target_x}, {target_y})，"
-                          f"再等购买按钮出现", "warn")
+                # 演练的价值是让人看清「本来会买什么」。只报坐标不够 —— 要报
+                # 商品、价格、磨损、点击目标，以及这一屏里所有候选。
+                self._say(f"[演练] 会点这一行 → 屏幕 ({target_x}, {target_y})", "warn")
+                self._say(f"[演练] 商品：「{row['text'][:60]}」", "warn")
+                self._say(f"[演练] 价格：{self._fmt(row['price'])}"
+                          f" · 做工：{row['craft'] or '未读出'}"
+                          f" · 成色：{row['wear'] or '未读出'}"
+                          f" · 磨损：{row['wear_value'] if row['wear_value'] is not None else '未读出'}",
+                          "warn")
+                self._say(f"[演练] 整屏候选（{len(rows)} 条，按条件过滤后 "
+                          f"{sum(1 for d in diag if d['ok'])} 条符合）：", "warn")
+                for d in diag[:8]:
+                    mark = "✓" if d["ok"] else "×"
+                    self._say(f"[演练]   {mark} 「{d['text'][:44]}」{d['why']}", "warn")
                 self._set(elapsed=round(time.perf_counter() - t_start, 2))
-                self._say(f"完成，总用时 {time.perf_counter() - t_start:.2f}s", "hit")
+                self._say("演练结束：没有点击任何东西", "hit")
                 self._set_state(DONE)
                 return
 
-            mouse.click(target_x, target_y)
+            self._click(mouse, target_x, target_y)
 
             # 点进详情页后购买按钮应当立刻可点（东西本来就在卖）。
             # 给它 detail_timeout 秒；没等到就退回列表换下一条。
@@ -461,7 +488,7 @@ class Engine:
                 if self._stop.is_set():
                     raise Aborted("用户停止")
                 self._failsafe(failsafe)
-                mouse.click(*buy_click)
+                self._click(mouse, *buy_click)
                 clicks += 1
                 self._set(clicks=clicks)
                 # 每点一次就查一次弹窗：弹窗一出现立刻停手，避免后续点击穿透到弹窗里的别处
@@ -485,7 +512,7 @@ class Engine:
             for _ in range(confirm_clicks):
                 if self._stop.is_set():
                     raise Aborted("用户停止")
-                mouse.click(*confirm_click)
+                self._click(mouse, *confirm_click)
                 time.sleep(confirm_gap)
 
         self._set(elapsed=round(time.perf_counter() - t_start, 2))

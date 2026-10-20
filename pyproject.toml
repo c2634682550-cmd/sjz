@@ -1,0 +1,30 @@
+[project]
+name = "sjz"
+version = "0.1.0"
+description = "SJZ 抢购控制台：模板匹配 + OCR + 定时抢购"
+requires-python = ">=3.10"
+dependencies = [
+    "mss>=9.0,<11",
+    "opencv-python>=4.8,<6",
+    "numpy>=1.24,<3",
+    # 进程内 OCR（Windows.Media.Ocr）。装不上时 OCR 降级为空结果，
+    # 模板匹配抢购主路径不受影响（见 core/ocr.py 的 _load_winrt）。
+    "winrt-runtime>=3.2,<4",
+    "winrt-Windows.Media.Ocr>=3.2,<4",
+    "winrt-Windows.Graphics.Imaging>=3.2,<4",
+    "winrt-Windows.Storage.Streams>=3.2,<4",
+    "winrt-Windows.Globalization>=3.2,<4",
+    "winrt-Windows.Foundation>=3.2,<4",
+    "winrt-Windows.Foundation.Collections>=3.2,<4",
+    "pywebview>=6.2.1",
+]
+
+[dependency-groups]
+dev = [
+    "pillow>=12.3.0",
+    "pyinstaller>=6.22.3",
+    "pytest>=9.1.1",
+]
+
+# 只有 web/ 是静态资源，不是包；core/ 靠 sys.path 直接导入。
+# 不建 build backend，这个项目不发布。

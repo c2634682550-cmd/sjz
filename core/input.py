@@ -23,6 +23,14 @@ class MouseStolen(Exception):
     """有别的程序或用户在动鼠标，导致点击没落到目标上。"""
 
 
+class WindowNotForeground(Exception):
+    """目标窗口不在前台，点击会被系统投递给别的窗口。
+
+    实测：目标窗口非前台时 SendInput 不报错、光标也停在目标坐标，
+    但目标窗口收不到任何点击事件 —— 静默失败，必须显式检出。
+    """
+
+
 class _MOUSEINPUT(ctypes.Structure):
     _fields_ = [
         ("dx", wintypes.LONG),
@@ -69,13 +77,23 @@ class Mouse:
         dx, dy = self._abs(x, y)
         self._send(_MOVE | _ABSOLUTE, dx, dy)
 
-    def click(self, x, y, verify=True):
+    def click(self, x, y, verify=True, expect_foreground=None):
         """移动 + 按下 + 抬起。
 
         三个事件都带坐标，防止中间被别的程序移走光标。verify=True 时在抬起后
         回读光标位置：如果不在目标上，说明有别的程序（或用户的手）在抢鼠标，
         这一下点击落到别处去了 —— 必须报错，不能静默继续点。
+
+        expect_foreground: 期望接收这一下点击的窗口句柄。Windows 把点击投递给
+        前台窗口，目标不在前台时点击静默丢失（SendInput 照成功、光标照移动、
+        目标窗口收不到任何事件），所以在点击前显式检查。传 None 则跳过检查。
         """
+        if expect_foreground:
+            fg = self.foreground()
+            if fg != expect_foreground:
+                raise WindowNotForeground(
+                    f"目标窗口 {expect_foreground} 不在前台（当前前台 {fg}）。"
+                    f"点击会被系统投递给前台窗口，目标收不到。")
         dx, dy = self._abs(x, y)
         self._send(_MOVE | _ABSOLUTE, dx, dy)
         self._send(_LEFTDOWN | _ABSOLUTE, dx, dy)
@@ -86,6 +104,11 @@ class Mouse:
                 raise MouseStolen(
                     f"光标没停在目标上（想在 {x},{y}，实际 {cx},{cy}）——"
                     f"有别的程序或人在动鼠标")
+
+    @staticmethod
+    def foreground():
+        """当前前台窗口句柄。"""
+        return _user32.GetForegroundWindow()
 
     @staticmethod
     def cursor():

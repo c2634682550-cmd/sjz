@@ -1,8 +1,16 @@
 """配置。坐标存 0-1 归一化比例，换分辨率不用重配。"""
 import json
 import os
+import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if getattr(sys, "frozen", False):
+    # 单文件 exe：__file__ 指向临时解包目录（sys._MEIPASS），退出即删。
+    # 配置和模板写在那里等于每次启动都丢，所以放到 exe 同级目录 ——
+    # 用户也要能直接改 config.json、看 templates/ 里的图。
+    ROOT = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 TEMPLATE_DIR = os.path.join(ROOT, "templates")
 DATA_DIR = os.path.join(ROOT, "data")

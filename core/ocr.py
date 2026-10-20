@@ -1,137 +1,133 @@
 """游戏内文字读取。
 
 用 Windows 自带的 OCR（Windows.Media.Ocr），不额外装 Tesseract。
-实测单次调用 0.24s（含 powershell 进程启动），只用来读商品名/价格，
-不进抢购热路径，够用。
+进程内直调 WinRT，不再为每次识别起 powershell 进程。实测本机
+（1920x1080 全屏截图）单次 read_words：旧 PowerShell 路径约 1140ms，
+新路径预热后 6~8ms。
+
+OcrEngine 的 RecognizeAsync 同一时刻只允许一个在跑（并发会抛
+"Another RecognizeAsync operation is already running!"），所以全局
+只建一个引擎，所有调用过 _engine_lock 串行。
 
 中文识别有个已知问题：Windows OCR 会把中文按字拆开加空格，而且对
 小字号识别率一般。所以这里做了两件事：
   1. 去掉汉字之间的空格
   2. 用模糊匹配把识别结果和任务里登记的商品名对齐
 """
-import os
 import re
-import subprocess
 import sys
-import tempfile
+import threading
 
-_PS_SCRIPT = r"""
-param([string]$Path, [string]$OutPath)
-$ErrorActionPreference = "Stop"
-$null = [Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
-$null = [Windows.Graphics.Imaging.BitmapDecoder,Windows.Foundation,ContentType=WindowsRuntime]
-$null = [Windows.Storage.StorageFile,Windows.Foundation,ContentType=WindowsRuntime]
-$null = [Windows.Globalization.Language,Windows.Foundation,ContentType=WindowsRuntime]
+_engine = None
+_engine_lock = threading.Lock()      # 串行化：引擎不允许并发识别
+_engine_failed = False               # 装不上/建不起来时不再重试
 
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
-  $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
-  $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-function Await($op, $t) { $asTask.MakeGenericMethod($t).Invoke($null, @($op)).GetAwaiter().GetResult() }
+# ---------------- WinRT 后端 ----------------
 
-$file    = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($Path)) ([Windows.Storage.StorageFile])
-$stream  = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-$decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-$bitmap  = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+def _load_winrt():
+    """按需导入 WinRT 投影包。返回模块元组，不可用返回 None。"""
+    try:
+        import winrt.windows.media.ocr as wocr
+        import winrt.windows.globalization as g11n
+        import winrt.windows.graphics.imaging as imaging
+        import winrt.windows.storage.streams as streams
+        return wocr, g11n, imaging, streams
+    except ImportError:
+        return None
 
-$lang   = New-Object Windows.Globalization.Language "zh-Hans-CN"
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
-if ($null -eq $engine) { [System.IO.File]::WriteAllText($OutPath, "", [System.Text.Encoding]::UTF8); exit 0 }
 
-$result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-$text = ($result.Lines | ForEach-Object { $_.Text }) -join "`n"
-[System.IO.File]::WriteAllText($OutPath, $text, [System.Text.Encoding]::UTF8)
-"""
+def _get_engine():
+    """返回常驻的 OcrEngine，不可用返回 None。"""
+    global _engine, _engine_failed
+    if _engine is not None or _engine_failed:
+        return _engine
+    mods = _load_winrt()
+    if mods is None:
+        _engine_failed = True
+        return None
+    wocr, g11n, _, _ = mods
+    try:
+        eng = wocr.OcrEngine.try_create_from_language(g11n.Language("zh-Hans-CN"))
+    except OSError:
+        eng = None
+    if eng is None:
+        _engine_failed = True
+    _engine = eng
+    return _engine
 
-# 带坐标的版本：列表模式要按行切分，必须知道每个词在哪
-_PS_WORDS = r"""
-param([string]$Path, [string]$OutPath)
-$ErrorActionPreference = "Stop"
-$null = [Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
-$null = [Windows.Graphics.Imaging.BitmapDecoder,Windows.Foundation,ContentType=WindowsRuntime]
-$null = [Windows.Storage.StorageFile,Windows.Foundation,ContentType=WindowsRuntime]
-$null = [Windows.Globalization.Language,Windows.Foundation,ContentType=WindowsRuntime]
 
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
-  $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
-  $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-function Await($op, $t) { $asTask.MakeGenericMethod($t).Invoke($null, @($op)).GetAwaiter().GetResult() }
+def _recognize(img):
+    """把 BGR ndarray 交给引擎识别，返回 OcrResult；失败返回 None。"""
+    import cv2
+    engine = _get_engine()
+    if engine is None:
+        return None
+    mods = _load_winrt()
+    if mods is None:
+        return None
+    _, _, imaging, streams = mods
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        return None
+    stream = streams.InMemoryRandomAccessStream()
+    writer = streams.DataWriter(stream)
+    writer.write_bytes(buf.tobytes())
+    writer.store_async().get()      # 不 commit 的话解码器读不到内容
+    writer.flush_async().get()
+    stream.seek(0)                  # 不回头的话解码器从流末尾开始读
+    decoder = imaging.BitmapDecoder.create_async(stream).get()
+    bitmap = decoder.get_software_bitmap_async().get()
+    with _engine_lock:              # 引擎不允许多个 RecognizeAsync 并发
+        return engine.recognize_async(bitmap).get()
 
-$file    = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($Path)) ([Windows.Storage.StorageFile])
-$stream  = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-$decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-$bitmap  = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-
-$lang   = New-Object Windows.Globalization.Language "zh-Hans-CN"
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
-if ($null -eq $engine) { [System.IO.File]::WriteAllText($OutPath, "", [System.Text.Encoding]::UTF8); exit 0 }
-
-$result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-$sb = New-Object System.Text.StringBuilder
-foreach ($line in $result.Lines) {
-  foreach ($w in $line.Words) {
-    $r = $w.BoundingRect
-    $null = $sb.AppendLine(("{0}`t{1}`t{2}`t{3}`t{4}" -f [int]$r.X, [int]$r.Y, [int]$r.Width, [int]$r.Height, $w.Text))
-  }
-}
-[System.IO.File]::WriteAllText($OutPath, $sb.ToString(), [System.Text.Encoding]::UTF8)
-"""
 
 # 汉字之间被 OCR 插进去的空格
 _HAN_GAP = re.compile(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])")
 _SPACES = re.compile(r"\s+")
-
-_script_path = None
-
-
-def _ensure_script():
-    global _script_path
-    if _script_path and os.path.isfile(_script_path):
-        return _script_path
-    d = os.path.join(tempfile.gettempdir(), "sjz_ocr")
-    os.makedirs(d, exist_ok=True)
-    p = os.path.join(d, "ocr.ps1")
-    with open(p, "w", encoding="utf-8-sig") as f:
-        f.write(_PS_SCRIPT)
-    _script_path = p
-    return p
 
 
 def available():
     return sys.platform == "win32"
 
 
-def read_text(img, timeout=6.0):
-    """img: BGR ndarray。返回 OCR 出来的原始文本（已清理空格），失败返回 ""。"""
-    if not available():
-        return ""
-    import cv2
-    d = os.path.join(tempfile.gettempdir(), "sjz_ocr")
-    os.makedirs(d, exist_ok=True)
-    png = os.path.join(d, "shot.png")
-    txt = os.path.join(d, "shot.txt")
-    if os.path.exists(txt):
-        try:
-            os.remove(txt)
-        except OSError:
-            pass
-    if not cv2.imwrite(png, img):
-        return ""
-    script = _ensure_script()
+def backend_name():
+    """OCR 后端是否真的可用，以及用的哪个引擎。
+
+    打包成 exe 后最容易出问题的就是这条链（winrt 是惰性导入，
+    PyInstaller 静态分析扫不到，见 sjz.spec 的注释），所以要能自查。
+    """
+    if sys.platform != "win32":
+        return f"不可用（平台 {sys.platform}）"
+    mods = _load_winrt()
+    if mods is None:
+        return "不可用（winrt 没装上，或缺失 winrt._winrt_windows_*）"
     try:
-        subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-File", script, "-Path", png, "-OutPath", txt],
-            capture_output=True, timeout=timeout,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (subprocess.TimeoutExpired, OSError):
+        engine = _get_engine()
+    except Exception as e:
+        return f"不可用（建引擎失败：{type(e).__name__}: {e}）"
+    if engine is None:
+        return "不可用（没有可用的 OCR 语言包）"
+    try:
+        lang = engine.recognizer_language.language_tag
+    except Exception:
+        lang = "?"
+    return f"WinRT Windows.Media.Ocr（语言 {lang}）"
+
+
+def read_text(img, timeout=6.0):
+    """img: BGR ndarray。返回 OCR 出来的原始文本（已清理空格），失败返回 ""。
+
+    timeout 保留是为了兼容旧调用点，进程内识别本身很快。
+    """
+    if not available() or img is None or getattr(img, "size", 0) == 0:
         return ""
-    if not os.path.isfile(txt):
+    try:
+        result = _recognize(img)
+    except (OSError, RuntimeError):
         return ""
-    with open(txt, encoding="utf-8-sig") as f:
-        raw = f.read()
+    if result is None:
+        return ""
+    raw = "\n".join(line.text for line in result.lines)
     return clean(raw)
 
 
@@ -204,68 +200,31 @@ def parse_price(text):
 
 # ---------------- 带坐标的 OCR（列表模式用） ----------------
 
-_words_script_path = None
-
-
-def _ensure_words_script():
-    global _words_script_path
-    if _words_script_path and os.path.isfile(_words_script_path):
-        return _words_script_path
-    d = os.path.join(tempfile.gettempdir(), "sjz_ocr")
-    os.makedirs(d, exist_ok=True)
-    p = os.path.join(d, "ocr_words.ps1")
-    with open(p, "w", encoding="utf-8-sig") as f:
-        f.write(_PS_WORDS)
-    _words_script_path = p
-    return p
-
-
 def read_words(img, timeout=10.0):
     """OCR 出每个词和它的包围盒。
 
     返回 [{"x","y","w","h","text"}]，坐标是相对传入图片左上角的像素。
     列表模式必须知道每个词在哪一行，才能把行聚起来、算出点哪儿。
+
+    timeout 保留是为了兼容旧调用点，进程内识别本身很快。
     """
-    if not available() or img is None or img.size == 0:
+    if not available() or img is None or getattr(img, "size", 0) == 0:
         return []
-    import cv2
-    d = os.path.join(tempfile.gettempdir(), "sjz_ocr")
-    os.makedirs(d, exist_ok=True)
-    png = os.path.join(d, "words.png")
-    txt = os.path.join(d, "words.txt")
-    if os.path.exists(txt):
-        try:
-            os.remove(txt)
-        except OSError:
-            pass
-    if not cv2.imwrite(png, img):
-        return []
-    script = _ensure_words_script()
     try:
-        subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-File", script, "-Path", png, "-OutPath", txt],
-            capture_output=True, timeout=timeout,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (subprocess.TimeoutExpired, OSError):
+        result = _recognize(img)
+    except (OSError, RuntimeError):
         return []
-    if not os.path.isfile(txt):
+    if result is None:
         return []
     out = []
-    with open(txt, encoding="utf-8-sig") as f:
-        for line in f:
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) != 5:
+    for line in result.lines:
+        for w in line.words:
+            t = (w.text or "").strip()
+            if not t:
                 continue
-            try:
-                x, y, w, h = (int(parts[0]), int(parts[1]),
-                              int(parts[2]), int(parts[3]))
-            except ValueError:
-                continue
-            t = parts[4].strip()
-            if t:
-                out.append({"x": x, "y": y, "w": w, "h": h, "text": t})
+            r = w.bounding_rect
+            out.append({"x": int(r.x), "y": int(r.y),
+                        "w": int(r.width), "h": int(r.height), "text": t})
     return out
 
 

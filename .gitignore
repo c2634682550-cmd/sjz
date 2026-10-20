@@ -6,3 +6,15 @@ __pycache__/
 config.json
 /templates/
 /data/
+desktop.log
+
+# 打包产物（见 docs/build-desktop.md）
+/dist/
+/build/
+
+# 排查时的临时截图/探针
+/_shots/
+/_icons/
+/_*.py
+/_*.txt
+/_*.log
