@@ -7,6 +7,7 @@
 两者共用 core.server 的全部端点。
 """
 import argparse
+import ctypes
 import os
 import socket
 import sys
@@ -30,6 +31,8 @@ except Exception:                       # 没装 pywebview / WebView2 缺失
 
 from core.server import serve  # noqa: E402
 
+WINDOW_TITLE = "SJZ 抢购控制台"
+
 # 无控制台的 windowed exe 里 print 什么也看不见，所以出问题只能靠日志文件。
 # 窗口没起来是最难查的一类故障（进程在、端口通、就是没界面）。
 LOG_PATH = os.path.join(APPDIR, "desktop.log")
@@ -46,6 +49,33 @@ def _log(msg):
         print(line, flush=True)     # 有控制台时（源码运行）也打一份
     except Exception:
         pass
+
+
+def _activate_existing():
+    """把已经在跑的那个窗口提到前面，让用户知道程序在哪儿。"""
+    from core.single_instance import activate_window
+    return activate_window(WINDOW_TITLE)
+
+
+def _single_instance():
+    """同一时间只允许一个实例在跑。返回 True = 可以继续。
+
+    判定和互斥量都在 core/single_instance.py（两个入口共用）。
+    """
+    from core.single_instance import acquire
+    if acquire():
+        return True
+    if _activate_existing():
+        _log("已经有一个实例在跑，已把它的窗口提到前面")
+    else:
+        _log("已经有一个实例在跑（没找到窗口，可能在浏览器模式）")
+    return False
+
+
+def _release_mutex():
+    """放掉单实例闸（提权重开前必须放，见 single_instance.release）。"""
+    from core.single_instance import release
+    release()
 
 
 def _pick_port(host, want):
@@ -130,10 +160,11 @@ def _elevate_if_needed():
         from core.input import elevate_self, needs_elevation
     except Exception:
         return False
-    # 用 needs_elevation（扫所有可见窗口里权限最高的那个），**不能用
-    # foreground_integrity** —— 启动那一刻前台窗口通常是终端或资源管理器，
-    # 权限和我们一样，于是判断成「不需要提权」，等切到游戏时已经晚了：
-    # UIPI 会把点击全吞掉，症状是「点了没反应」。
+    # needs_elevation 只看**游戏窗口**的权限（core/input.py）。不能用
+    # foreground_integrity：启动那一刻前台通常是终端或资源管理器，权限
+    # 和我们一样，会判成「不用提权」，等切到游戏时已经晚了 —— UIPI 会把
+    # 点击全吞掉，症状是「点了没反应」。也不能扫所有可见窗口：任务管理器
+    # 一开着就误判，提权重开后又误判，变成无限弹 UAC。
     try:
         if not needs_elevation():
             return False
@@ -145,12 +176,15 @@ def _elevate_if_needed():
         ours = process_integrity()
     except Exception:
         ours = None
-    _log(f"!! 有窗口的权限比本程序高（本程序 {hex(ours) if ours is not None else '?'}）")
+    _log(f"!! 游戏窗口的权限比本程序高（本程序 {hex(ours) if ours is not None else '?'}）")
     _log("   UIPI 会把我们发的鼠标键盘消息全部拦掉且不报错 —— 重新以管理员身份启动")
+    # 提权重开前先放掉单实例闸：子进程一进来就要抢它
+    _release_mutex()
     if elevate_self():
         _log("已以管理员身份重新启动，本进程退出")
         return True
     _log("!! 提权重开没成功（UAC 被拒？）—— 点不动游戏的话请手动以管理员身份运行")
+    _single_instance()          # 没提起来就继续跑，把闸重新关上
     return False
 
 
@@ -166,10 +200,15 @@ def main():
 
     if args.doctor:
         _doctor()
-        return
+        return 0
+
+    # 单实例闸先于提权：已经有一个在跑就别再提权、别再起第二个。
+    # （提权那条路里会临时放掉它，见 _elevate_if_needed）
+    if not _single_instance():
+        return 0
 
     if _elevate_if_needed():
-        return
+        return 0
 
     _log(f"--- 启动 (frozen={getattr(sys, 'frozen', False)}) ---")
     _log(f"BASE={BASE}")
@@ -198,54 +237,100 @@ def main():
     if webview is None:
         _log("没装 pywebview，退回浏览器模式（pip install pywebview 可恢复桌面窗口）")
         _open_browser(url)
-        t.join()
-        return
+        _serve_until_interrupt(t)
+        return 0
 
     ctl = WinCtl()
+    # 「窗口真的开出来了」和「窗口被用户关掉了」是两件事，必须分开记。
+    # 以前 webview.start() 一返回就当失败处理：用户正常关窗 → 程序判定
+    # 「窗口没能开起来」→ 弹出一个浏览器 → t.join() 永不返回 → 进程常驻、
+    # 端口不释放。下次双击换个端口再起一个，两个调度器抢同一个鼠标
+    # （desktop.log 里端口 8777→8778→8779→8780 就是这么来的）。
+    shown = {"value": False}
+    closed = {"value": False}
+
+    def _on_shown(*_a):
+        shown["value"] = True
+        _log("窗口已显示")
+
+    def _on_closed(*_a):
+        closed["value"] = True
+
     try:
         # 无边框：去掉系统标题栏和外圈边。
         # easy_drag=False —— 全页可拖会和框选拖拽打架，改成只让顶栏可拖
         # （页面里给顶栏加 .pywebview-drag-region，见 web/index.html）。
         # shadow=True 保留 Windows 的圆角和投影，否则窗口会像一块贴纸。
         win = webview.create_window(
-            "SJZ 抢购控制台", url,
+            WINDOW_TITLE, url,
             width=args.width, height=args.height, min_size=(900, 620),
             frameless=True, easy_drag=False, shadow=True,
             background_color="#0d1117",
             js_api=ctl,
         )
         ctl._win = win
+        try:
+            win.events.shown += _on_shown
+            win.events.closed += _on_closed
+        except Exception:                 # 老版本 pywebview 没有 events，退回时间判断
+            pass
         _log("create_window 返回")
         _log("调用 webview.start()")
         webview.start()
-        # 冻结环境里如果 WebView2 初始化失败，start() 会立刻返回而不是
-        # 阻塞到窗口关闭 —— 那样进程会静默退出，用户看到双击后什么都没发生。
-        # 这里显式报出来，别让它变成「点了没反应」。
-        _log("!! webview.start() 立刻返回了，窗口没能开起来")
-        _log("   多半是 WebView2 运行时缺失或初始化失败，改用浏览器打开")
-        _open_browser(url)
-        t.join()
+
+        # 用户关窗：正常退出，进程跟着结束（服务线程是 daemon）。
+        if closed["value"] or win.events.closed.wait(0.5):
+            _log("窗口已关闭，退出")
+            return 0
+
+        # 没经过「显示」就返回 = WebView2 初始化失败。冻结环境里这时
+        # start() 会立刻返回而不是阻塞，进程会静默退出 —— 用户看到
+        # 双击后什么都没发生。显式报出来并退回浏览器。
+        if not shown["value"]:
+            _log("!! webview.start() 在窗口显示前就返回了，窗口没能开起来")
+            _log("   多半是 WebView2 运行时缺失或初始化失败，改用浏览器打开")
+            _open_browser(url)
+            _serve_until_interrupt(t)
+            return 0
+
+        # 显示过、又没收到 closed：窗口被别的路径关掉了（任务栏关闭等）。
+        _log("窗口已结束，退出")
+        return 0
     except Exception as e:
         _log(f"!! 开窗失败: {type(e).__name__}: {e}")
         _log(traceback.format_exc())
         _log("   改用浏览器打开")
         _open_browser(url)
-        t.join()
+        _serve_until_interrupt(t)
+        return 0
+
+
+def _serve_until_interrupt(thread):
+    """浏览器模式下等服务线程结束。
+
+    这条路没有窗口可关，只能靠 Ctrl+C / 任务管理器 —— 所以至少要
+    把地址打出来，别让人以为程序挂了。
+    """
+    _log("浏览器模式：关掉这个进程要按 Ctrl+C（或在任务管理器里结束）")
+    try:
+        while thread.is_alive():
+            thread.join(0.5)
+    except KeyboardInterrupt:
+        _log("收到 Ctrl+C，退出")
 
 
 if __name__ == "__main__":
     # pythonw 启动时没有控制台，出错只能靠日志 + 消息框 —— 否则就是「双击没反应」
     try:
-        main()
+        sys.exit(main() or 0)
     except Exception as e:
-        import ctypes as _ct
         _log(f"!! 启动失败: {type(e).__name__}: {e}")
         _log(traceback.format_exc())
         try:
-            _ct.windll.user32.MessageBoxW(
+            ctypes.windll.user32.MessageBoxW(
                 None,
                 f"启动失败：{type(e).__name__}: {e}\n\n详情见 {LOG_PATH}",
-                "SJZ 抢购控制台", 0x10)
+                WINDOW_TITLE, 0x10)
         except Exception:
             pass
         raise

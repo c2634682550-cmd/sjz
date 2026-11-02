@@ -35,8 +35,17 @@ class _Cfg(dict):
 def _scheduler(monkeypatch):
     # 同一个内存配置对象要一直用 —— 每次 load() 都给新对象的话队列根本存不住，
     # 加进去的任务下一行代码就没了（这个坑先踩过一次）
+    import contextlib
     cfg = _Cfg()
-    monkeypatch.setattr(sch, "Config", types.SimpleNamespace(load=lambda: cfg))
+
+    @contextlib.contextmanager
+    def transaction():
+        yield cfg
+        cfg.save()
+
+    monkeypatch.setattr(sch, "Config",
+                        types.SimpleNamespace(load=lambda: cfg,
+                                              transaction=transaction))
     s = sch.Scheduler()
     s._stop = threading.Event()
     return s

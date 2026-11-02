@@ -585,7 +585,9 @@ async function poll(){
 
     $('#sbConn').textContent = '已连接';
     $('#sbClock2').textContent = new Date().toLocaleTimeString('zh-CN');
-    loadTasks();
+    // 队列直接从这一份状态里取：/api/scheduler 已经带 tasks 了，
+    // 再打一次 /api/tasks 等于每秒两次请求、两份渲染。
+    renderTasks(st.tasks || []);
   }catch(e){
     $('#sbConn').textContent = '连接断开';
   }

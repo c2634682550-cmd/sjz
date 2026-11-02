@@ -216,15 +216,15 @@ def test_one_failing_task_does_not_kill_the_queue(tmp_path, monkeypatch):
     path = str(tmp_path / "config.json")
     monkeypatch.setattr(config, "CONFIG_PATH", path)
 
+    # 队列写盘：Scheduler 不再持有私有快照，读的是 config.json
+    with config.Config.transaction() as cfg:
+        cfg["queue"] = [
+            {"id": "a", "name": "甲", "status": scheduler.PENDING, "enabled": True,
+             "fire_at": 0, "mode": "list", "regions": {}, "keywords": []},
+            {"id": "b", "name": "乙", "status": scheduler.PENDING, "enabled": True,
+             "fire_at": 0, "mode": "list", "regions": {}, "keywords": []},
+        ]
     s = scheduler.Scheduler()
-    cfg = config.Config()
-    cfg["queue"] = [
-        {"id": "a", "name": "甲", "status": scheduler.PENDING, "enabled": True,
-         "fire_at": 0, "mode": "list", "regions": {}, "keywords": []},
-        {"id": "b", "name": "乙", "status": scheduler.PENDING, "enabled": True,
-         "fire_at": 0, "mode": "list", "regions": {}, "keywords": []},
-    ]
-    s._cfg = cfg
 
     ran = []
 
@@ -236,7 +236,7 @@ def test_one_failing_task_does_not_kill_the_queue(tmp_path, monkeypatch):
     s._run(dry_run=True)
 
     assert ran == ["a", "b"], f"第二条没跑到：{ran}"
-    status = {t["id"]: t["status"] for t in cfg["queue"]}
+    status = {t["id"]: t["status"] for t in config.Config.load()["queue"]}
     assert status == {"a": scheduler.FAILED, "b": scheduler.FAILED}, status
     assert any("跳过它继续" in e["msg"] for e in s._log), "日志里没说清楚"
 

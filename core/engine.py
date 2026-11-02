@@ -31,6 +31,13 @@ from . import countdown, market, ocr, popup, records, switches, timesync
 from .config import Config, DATA_DIR
 from .input import Keyboard, Mouse, MouseStolen, WindowNotForeground
 from .nav import NavError, Navigator
+# ROI 的唯一定义处（绝对像素在 nav_coords，引擎用归一化别名）
+from .nav_coords import (CONTINUE_POINT as CONT_CLICK,
+                         N_BALANCE as BALANCE_N, N_BAR as BAR_N,
+                         N_CLOCK as CLOCK_N, N_LIST as LIST_N,
+                         N_POPUP as POPUP_N, N_POPUP_HINT as POPUP_HINT_N,
+                         N_REWARD as REWARD_N, N_SERIAL as SERIAL_N,
+                         N_SKIP as SKIP_N)
 from .screen import Screen
 from .vision import expand, imread, imwrite, match, to_gray, upscale
 
@@ -54,19 +61,10 @@ CLOCK_READ_TIMEOUT_S = 6.0
 # 一直点到弹窗出现），晚了就是被别人买走。
 FIRE_LEAD_S = 5.0
 
-# 倒计时模式要扫列表挑目标，用户没单独框「列表」时用这块。
-#
-# 2026-10-21 实测修正两处：右列卡片的价格在 x≈1388 结束，旧的 w=1300（到 1360）
-# 把右列价格整段切掉，scan 读出来 price=None，于是「价格没读出来」全被跳过；
-# y 从 150 起又会把顶部筛选栏（y≈190「只显示公示期 / 默认排序」）当成第 0 行。
-# 现在 x 到 1400、y 从 210 起（第一张卡片的名称在 y=236），下沿停在翻页条之前。
-LIST_N = {"x": 60 / 1920, "y": 210 / 1080,
-          "w": 1340 / 1920, "h": 730 / 1080}
-
-# 详情面板里的「编号 001738261」那一行（实测 1440,485,340,30）。用它当商品的
-# 身份：抢失败要换下一件，不能把同一件反复抢。
-SERIAL_N = {"x": 1440 / 1920, "y": 485 / 1080,
-            "w": 340 / 1920, "h": 30 / 1080}
+# 引擎抓的 ROI 全部来自 core/nav_coords.py（单一来源，import 在文件顶部）。
+# 以前这里散着 9 个 `{"x": 60 / 1920, ...}`，同一块界面在导航层和引擎层
+# 各写一遍：游戏改版要改两个地方，实测就漏改过一处（列表下沿）。
+# 顶部 import 里只保留别名，调用点继续写 LIST_N / BAR_N 这种短名字。
 
 # 抢不到就换下一件，最多连试几件。公示期一解锁常常一堆人同时抢，第一件
 # 抢不到是常态，不该就此收工。
@@ -76,44 +74,12 @@ COUNTDOWN_ATTEMPTS = 3
 # 光等是等不到的；刷太快又没意义（刷新本身要 2.5s）。
 QUEUE_IDLE_REFRESH_S = 12.0
 
-# 「您当前的三角币不足，是否前往充值？」那行字（实测 782..1125 / 437..456）。
-# 只 OCR 这一条，代价几毫秒；命中再去读整个弹窗找「取消」。
-POPUP_HINT_N = {"x": 760 / 1920, "y": 426 / 1080,
-                "w": 390 / 1920, "h": 32 / 1080}
-# 右上角货币栏：钻石 / 点券 / 三角币 三个数并排，三角币在最右。
-BALANCE_N = {"x": 1500 / 1920, "y": 0 / 1080,
-             "w": 400 / 1920, "h": 60 / 1080}
-# 弹窗里那一行倒计时/剩余：没到点写「X分Y秒后解锁购买」，到点写「剩余：X天」。
-# 归一化 (1100..1400, 600..680)。开点前读它，就是「先识别屏幕再点击」。
-# 2026-10-23 真机复核：T-5s 点购买弹出的确认页共享同一个倒计时，文字落在
-# (1164..1280, 638) —— 这块区域就是弹窗倒计时，`_wait_dialog_unlock` 靠它
-# 判断按钮什么时候真的亮。
-CLOCK_N = {"x": 1100 / 1920, "y": 600 / 1080,
-           "w": 300 / 1920, "h": 80 / 1080}
-# 成交后的奖励弹窗：左侧「获得枪械外观 / 拥有：N」(96..640, 140..400)、
-# 底部「跳过」(1665,942)。2026-10-23 真机实测：旧版那行「购买成功，已存入
-# 仓库」在新界面已经没有了，成交只认「获得/拥有」和「跳过」。
-REWARD_N = {"x": 60 / 1920, "y": 140 / 1080,
-            "w": 540 / 1920, "h": 260 / 1080}
-SKIP_N = {"x": 1620 / 1920, "y": 918 / 1080,
-          "w": 100 / 1920, "h": 55 / 1080}
-# 奖励弹窗点掉「跳过」还有一层全屏「获得外观」展示页，底部中央是「继续」
-# (960,1000)。不点掉就回不在售列表，下一轮的筛选检查会挂在展示页上。
-CONT_CLICK = (960, 1000)
-
-# 整个余额不足弹窗：按钮行在 y≈666，左边「取消」右边「充值」。
-POPUP_N = {"x": 700 / 1920, "y": 420 / 1080,
-           "w": 520 / 1920, "h": 280 / 1080}
-# 详情弹窗价格条：购买按钮 x 1482-1780 / y 903-961，按钮上印的就是价格
-# （§4.7）。公示期列表的价签会漂、scan 整行读不出价格时，从这里补读。
-# 2026-10-23 真机复核：新版界面里按钮比旧版整个上移了约 33px（旧 y936-984
-# 点到的是按钮下方的空处），高度 58。
-BAR_N = {"x": 1482 / 1920, "y": 903 / 1080,
-         "w": 298 / 1920, "h": 58 / 1080}
-
 # 挑目标时只扫列表前几张卡。真机实测（2026-10-23）：列表默认排序就是按
 # 解锁时间升序，前两张卡永远等得最短；扫完整屏只是把时间烧在长倒计时上。
 COUNTDOWN_SCAN_CARDS = 2
+
+# 运行中重读配置的间隔（秒）。用户改价格/做工/限量，最多这么久后生效。
+LIVE_RELOAD_S = 2.0
 
 
 def choose_countdown_target(cands, tried=()):
@@ -386,6 +352,18 @@ class Engine:
     def _set_state(self, state):
         with self._lock:
             self._state = state
+
+    def _refresh_task(self, cfg):
+        """把盘上的配置合并进 cfg，返回最新的任务条件。
+
+        引擎线程启动时拿到的 cfg 是一份快照。运行中想让用户改的筛选条件
+        生效，只能主动重读 —— 见 _execute_list 里的定时调用。
+        """
+        try:
+            cfg.reload()
+        except Exception:                    # noqa: BLE001
+            pass
+        return dict(cfg.get("active_task") or {})
 
     @staticmethod
     def _load(cfg, name):
@@ -970,6 +948,7 @@ class Engine:
         t_report = t_start
         t_beat = t_start
         t_refresh = t_start
+        t_cfg = t_start
         rows = []
         tried = set()         # 这一轮试过的卡片 (x0, y0)，避免反复点同一张
         rounds = 0            # 刷新重来了几轮
@@ -994,6 +973,19 @@ class Engine:
             self._failsafe(failsafe)
             now = time.perf_counter()
             frames += 1
+            # 每隔几秒把盘上的配置合并进来：用户在界面上改价格区间 / 做工 /
+            # 限量，最多 2 秒后生效，不用等这一轮跑完。
+            # 以前 cfg 是 start() 那一刻的快照，改了永远不生效 —— 用户看到
+            # 的是「我明明把上限改成 5000 了，它还在按 3000 抢」。
+            if now - t_cfg >= LIVE_RELOAD_S:
+                t_cfg = now
+                fresh = self._refresh_task(cfg)
+                if fresh and fresh != task:
+                    task.clear()
+                    task.update(fresh)
+                    quota = max(1, int(task.get("quota") or 1))
+                    budget = float(task.get("budget") or 0)
+                    self._say(f"条件已更新：{self._describe(task)}")
             if now - t_report >= 0.25:
                 self._set(hz=round(frames / (now - t_report), 1))
                 frames, t_report = 0, now

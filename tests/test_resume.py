@@ -44,10 +44,20 @@ class _Cfg(dict):
 
 
 def _scheduler(monkeypatch, queue=None):
+    import contextlib
     import types
     cfg = _Cfg()
     cfg["queue"] = queue or []
-    monkeypatch.setattr(sch, "Config", types.SimpleNamespace(load=lambda: cfg))
+
+    @contextlib.contextmanager
+    def transaction():
+        # 真 Config 的读-改-写原子段；内存假对象只要保证改的是同一份
+        yield cfg
+        cfg.save()
+
+    monkeypatch.setattr(sch, "Config",
+                        types.SimpleNamespace(load=lambda: cfg,
+                                              transaction=transaction))
     return sch.Scheduler(), cfg
 
 

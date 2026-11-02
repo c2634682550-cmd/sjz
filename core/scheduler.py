@@ -18,6 +18,7 @@ mode 决定工作流：
 状态流转：
     pending → armed → running → done / failed / skipped
 """
+import json
 import os
 import shutil
 import threading
@@ -27,7 +28,7 @@ import uuid
 from collections import deque
 
 from . import timesync
-from .config import Config
+from .config import Config, drop_task_dir
 from .engine import Engine
 
 PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
@@ -41,6 +42,15 @@ POLL_IDLE = 0.25
 
 
 class Scheduler:
+    """任务队列 + 调度器。
+
+    **不缓存配置**：每次读写都从盘上拿（Config.load / Config.transaction）。
+    以前这里存了一份 self._cfg 快照，所有改动都在这份快照上做再整文件写回
+    —— 服务端保存设置走的是另一份，后写的把先写的整份盖掉，用户看到的就是
+    「设置改完几秒后自己变回去」。配置就几百字节，读一次不到 1ms，不值得
+    为了省这点开销去冒丢更新的风险。
+    """
+
     def __init__(self):
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -48,7 +58,6 @@ class Scheduler:
         self._engine = Engine()
         self._log = deque(maxlen=400)
         self._active_id = None
-        self._cfg = Config.load()
         self._recover_stale_tasks()
 
     def _recover_stale_tasks(self):
@@ -62,23 +71,41 @@ class Scheduler:
         这直接影响「停掉再启动能不能接着干」：不恢复的话，重启后那条任务
         悄悄消失，用户以为还在跑。
         """
-        with self._lock:
-            stale = [t for t in self._cfg["queue"]
-                     if t.get("status") in (ARMED, RUNNING)]
-            if not stale:
-                return
-            for t in stale:
-                t["status"] = PENDING
-                t["note"] = (t.get("note") or "") + "（上次没跑完，已放回队列）"
-            self._cfg.save()
+        # 先只读判断：没有卡住的任务就**不写盘**。以前这里无条件 save，
+        # 结果光 import core.server（构造 Scheduler）就会重写一遍 config.json。
+        stale = [t for t in Config.load()["queue"]
+                 if t.get("status") in (ARMED, RUNNING)]
+        if not stale:
+            return
+        ids = {t.get("id") for t in stale}
+        with self._lock, Config.transaction() as cfg:
+            for t in cfg["queue"]:
+                if t.get("id") in ids:
+                    t["status"] = PENDING
+                    t["note"] = (t.get("note") or "") + "（上次没跑完，已放回队列）"
         for t in stale:
             self._say(f"{self._label(t)}：上次没跑完，已放回队列", "warn")
+
+    def gc_task_dirs(self):
+        """清掉队列里已经不存在的任务目录。
+
+        只在程序启动时调（server.serve），不放在 __init__ 里：测试会
+        临时改 CONFIG_PATH，那时队列是空的，一 init 就会把真实 data/
+        目录当成孤儿全删掉。
+        """
+        try:
+            dropped = Config.load().gc_task_dirs(keep=[t.get("id") for t in self.tasks()])
+        except Exception:                    # noqa: BLE001
+            return 0
+        if dropped:
+            self._say(f"清掉 {dropped} 个已删除任务留下的目录", "info")
+        return dropped
 
     # ---------------- 队列管理 ----------------
 
     def tasks(self):
         with self._lock:
-            return [dict(t) for t in self._cfg["queue"]]
+            return [dict(t) for t in Config.load()["queue"]]
 
     def add(self, name, keywords=None, fire_at=0, note="", regions=None, template_from=None,
             mode="detail", min_price=0, max_price=0, max_wear=0,
@@ -155,9 +182,11 @@ class Scheduler:
                 "bought": 0,
                 "spent": 0.0,
             }
-            cfg["queue"].append(task)
-            cfg.save()
-            self._cfg = cfg
+            # 事务：读盘 + 追加 + 落盘 在同一把锁里。不能 cfg.save()
+            # 了事 —— 那份 cfg 是上面 load 出来的快照，期间服务端可能刚
+            # 存过设置，整份写回会把人家刚存的盖掉。
+            with Config.transaction() as cur:
+                cur["queue"].append(task)
             self._say(f"已加入队列：{task['name'] or '所有皮肤'}"
                       + (f"（{time.strftime('%H:%M:%S', time.localtime(fire_at))} 开卖）"
                          if fire_at else "（手动触发）"))
@@ -195,36 +224,44 @@ class Scheduler:
         return missing
 
     def remove(self, task_id):
-        """删掉一条任务。
+        """删掉一条任务（连同它的模板目录）。
 
         条件改了就该把旧任务删掉：留着它，调度器会按老条件再跑一遍 ——
         老条件可能是「不限价」，那就是真金白银的事故。
         """
-        with self._lock:
-            cfg = Config.load()
+        with self._lock, Config.transaction() as cfg:
             before = len(cfg["queue"])
             cfg["queue"] = [t for t in cfg["queue"] if t.get("id") != task_id]
-            cfg.save()
-            self._cfg = cfg
-            return before - len(cfg["queue"])
+            removed = before - len(cfg["queue"])
+        if removed:
+            self._drop_task_dir(task_id)
+        return removed
+
+    @staticmethod
+    def _drop_task_dir(task_id):
+        """删任务时把它的模板目录一起删掉。
+
+        不删的话 data/ 只涨不落：实测堆了 799 个目录、53MB，而队列里
+        通常只有 1-2 条。
+        """
+        drop_task_dir(task_id)
 
     def clear_finished(self):
-        with self._lock:
-            cfg = Config.load()
+        with self._lock, Config.transaction() as cfg:
+            gone = [t.get("id") for t in cfg["queue"]
+                    if t["status"] in (DONE, FAILED, SKIPPED)]
             cfg["queue"] = [t for t in cfg["queue"]
                             if t["status"] not in (DONE, FAILED, SKIPPED)]
-            cfg.save()
-            self._cfg = cfg
-            return len(cfg["queue"])
+            left = len(cfg["queue"])
+        for tid in gone:
+            self._drop_task_dir(tid)
+        return left
 
     def update(self, task_id, **fields):
-        with self._lock:
-            cfg = Config.load()
+        with self._lock, Config.transaction() as cfg:
             for t in cfg["queue"]:
                 if t["id"] == task_id:
                     t.update(fields)
-                    cfg.save()
-                    self._cfg = cfg
                     return True
             return False
 
@@ -237,7 +274,6 @@ class Scheduler:
             cfg = Config.load()
             if not cfg["queue"]:
                 return False, "队列是空的"
-            self._cfg = cfg
         # 执行模式是全局开关：dry 一定不点，semi 走到购买键前停手，
         # auto 才真点。界面上的「演练模式」也是这条。
         from . import switches
@@ -257,16 +293,15 @@ class Scheduler:
         self._engine.stop()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3.0)
-        with self._lock:
-            for t in self._cfg["queue"]:
+        with self._lock, Config.transaction() as cfg:
+            for t in cfg["queue"]:
                 if t["status"] in (ARMED, RUNNING):
                     t["status"] = PENDING
-            self._cfg.save()
         return True, "已停止"
 
     def status(self):
         with self._lock:
-            tasks = [dict(t) for t in self._cfg["queue"]]
+            tasks = [dict(t) for t in Config.load()["queue"]]
             active = self._active_id
             log = list(self._log)[-80:]
         return {
@@ -305,13 +340,12 @@ class Scheduler:
                           "level": level, "msg": msg})
 
     def _set_status(self, task_id, status, result=None):
-        with self._lock:
-            for t in self._cfg["queue"]:
+        with self._lock, Config.transaction() as cfg:
+            for t in cfg["queue"]:
                 if t["id"] == task_id:
                     t["status"] = status
                     if result is not None:
                         t["result"] = result
-                    self._cfg.save()
                     break
 
     def _run(self, dry_run):
@@ -435,14 +469,49 @@ class Scheduler:
         self._say(f"开始执行：{self._label(task)}"
                   f"{'（' + WORKFLOW_CN.get(workflow, workflow) + '）'}", "hit")
 
+        # 借全局配置：把任务的区域和筛选条件套进去，引擎只认配置。
+        # 这是**临时借用**，跑完必须还（见 _return_config）—— 以前不还，
+        # 用户的全局框选会被某一条任务永久改写，下一个任务和手动定位
+        # 都按错的区域去点。
+        saved = self._borrow_config(task)
+        try:
+            self._drive_task(task, dry_run, mode, workflow)
+        finally:
+            self._return_config(saved)
+
+    def _borrow_config(self, task):
+        """把任务的区域 / 筛选条件临时写进全局配置，返回还原用的快照。
+
+        只记**真正被覆盖的那几个键**：任务没动的区域（比如用户跑到一半
+        重新框选的 confirm）不该被还原操作抹掉。
+        """
+        with Config.transaction() as cfg:
+            borrowed = {}
+            for k, v in (task.get("regions") or {}).items():
+                if k in cfg["regions"]:
+                    borrowed[k] = cfg["regions"].get(k)
+                    cfg.set_region(k, v)
+            saved = {"regions": borrowed,
+                     "active_task": json.loads(json.dumps(cfg.get("active_task") or {}))}
+            cfg["active_task"] = self._engine_task(task)
+        return saved
+
+    def _return_config(self, saved):
+        """把 _borrow_config 借走的东西还回去。"""
+        if not saved:
+            return
+        try:
+            with Config.transaction() as cfg:
+                for k, v in (saved.get("regions") or {}).items():
+                    if k in cfg["regions"]:
+                        cfg.set_region(k, v)
+                cfg["active_task"] = saved.get("active_task") or {}
+        except Exception:                    # noqa: BLE001
+            pass
+
+    def _drive_task(self, task, dry_run, mode, workflow):
+        tid = task["id"]
         cfg = Config.load()
-        # 把任务的区域和模板套到配置上，引擎只认配置
-        for k, v in (task["regions"] or {}).items():
-            if k in cfg["regions"]:
-                cfg.set_region(k, v)
-        # 列表模式的筛选条件也交给引擎：引擎读 active_task 决定买哪一条
-        cfg["active_task"] = self._engine_task(task)
-        cfg.save()
 
         # 任务自己的模板复制到全局位置，引擎从那儿读。任务没模板就退回全局的
         # ——加任务时是快照的，正常都有；全局的也缺才是真缺。

@@ -34,7 +34,19 @@ class _Cfg(dict):
 
 
 def _scheduler(monkeypatch):
-    monkeypatch.setattr(sch, "Config", types.SimpleNamespace(load=lambda: _Cfg()))
+    # 同一份内存配置：调度器每次 load() 拿到的必须是同一个对象，
+    # 否则加进去的任务下一次读就没了（真 Config 读的是同一个文件）
+    import contextlib
+    cfg = _Cfg()
+
+    @contextlib.contextmanager
+    def transaction():
+        yield cfg
+        cfg.save()
+
+    monkeypatch.setattr(sch, "Config",
+                        types.SimpleNamespace(load=lambda: cfg,
+                                              transaction=transaction))
     return sch.Scheduler()
 
 

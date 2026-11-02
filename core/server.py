@@ -14,6 +14,8 @@
   POST /api/timesync          校时
   GET  /api/hotkey            热键状态
   POST /api/hotkey            {spec, enabled} 换热键 / 开关
+  GET  /api/jobs              后台动作进度（?id=xxx 查具体一个）
+  POST /api/skins/locate      定位某件砖（异步，返回 job id；?sync 退回同步）
   GET  /api/records           成交记录
   POST /api/records/clear     清空记录
   POST /api/preflight         启动前检查
@@ -23,6 +25,7 @@
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -111,6 +114,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("index.html", "text/html; charset=utf-8")
         if path == "/api/config":
             return self._json(Config.load().public())
+        if path == "/api/jobs":
+            # 后台动作（定位那类慢活）的进度。不带 id 就返回「现在在跑什么」
+            from . import jobs
+            jid = (query.get("id", [""])[0] or "").strip()
+            if not jid:
+                return self._json({"ok": True, "busy": jobs.busy(),
+                                   "current": jobs.current()})
+            st = jobs.status(jid)
+            if st is None:
+                return self._json({"ok": False, "msg": "没有这个任务"}, 404)
+            return self._json({"ok": True, "job": st})
         if path == "/api/tasks":
             return self._json({"tasks": _scheduler.tasks()})
         if path == "/api/scheduler":
@@ -247,30 +261,33 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, f.read(), "image/jpeg")
 
     def _save_config(self, data):
-        cfg = Config.load()
-        for key in ("threshold", "click_hz", "confirm_clicks", "confirm_interval_ms",
-                    "fire_timeout_s", "failsafe", "trigger_mode", "workflow", "monitor",
-                    "save_shots", "arm_grace_s", "list_max_tries", "input_mode"):
-            if key in data:
-                cfg[key] = data[key]
-        # 界面上的抢购条件也存 —— 关掉再打开要能接着干
-        if isinstance(data.get("console"), dict):
-            cur = dict(cfg.get("console") or {})
-            for key in _CONSOLE_NUM:
-                if key in data["console"]:
-                    try:
-                        cur[key] = float(data["console"][key])
-                    except (TypeError, ValueError):
-                        pass
-            for key in _CONSOLE_TEXT:
-                if key in data["console"]:
-                    cur[key] = str(data["console"][key] or "")
-            for key in _CONSOLE_LIST:
-                if key in data["console"]:
-                    cur[key] = _as_list(data["console"][key])
-            cfg["console"] = cur
-        cfg.save()
-        return self._json({"ok": True, "config": cfg.public()})
+        # 事务：读盘 → 改 → 落盘 在同一把锁里。以前是 load 出一份全量快照
+        # 改完整份写回，调度器那边同时改任务状态时，两边后写的会把先写的
+        # 整份盖掉（用户看到「设置改完几秒后自己变回去」）。
+        with Config.transaction() as cfg:
+            for key in ("threshold", "click_hz", "confirm_clicks", "confirm_interval_ms",
+                        "fire_timeout_s", "failsafe", "trigger_mode", "workflow", "monitor",
+                        "save_shots", "arm_grace_s", "list_max_tries", "input_mode"):
+                if key in data:
+                    cfg[key] = data[key]
+            # 界面上的抢购条件也存 —— 关掉再打开要能接着干
+            if isinstance(data.get("console"), dict):
+                cur = dict(cfg.get("console") or {})
+                for key in _CONSOLE_NUM:
+                    if key in data["console"]:
+                        try:
+                            cur[key] = float(data["console"][key])
+                        except (TypeError, ValueError):
+                            pass
+                for key in _CONSOLE_TEXT:
+                    if key in data["console"]:
+                        cur[key] = str(data["console"][key] or "")
+                for key in _CONSOLE_LIST:
+                    if key in data["console"]:
+                        cur[key] = _as_list(data["console"][key])
+                cfg["console"] = cur
+            public = cfg.public()
+        return self._json({"ok": True, "config": public})
 
     # ---------- 队列 ----------
 
@@ -325,11 +342,16 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "seasons": out})
 
     def _skin_locate(self, data):
-        """在游戏里定位并选中某件砖（设筛选 → 滚列表 → 点中）。
+        """在游戏里定位并选中某件砖 —— 提交到后台执行，立刻返回 job id。
 
-        正在抢购时不许动鼠标 —— 两边一起点会点到别的地方去。
+        这个动作要抢前台、滚列表、跑 OCR，一次几秒到几十秒。以前它同步跑
+        在 handler 里：浏览器一直转圈、没有进度、超时了也不知道它在干
+        什么，而它正在动用户的鼠标。现在校验完参数就返回，前端轮询
+        /api/jobs?id=...。
+
+        传 {"sync": true} 可以退回同步执行（脚本/curl 调试用）。
         """
-        from . import bricks
+        from . import actions, bricks, jobs
         name = (data.get("name") or "").strip()
         if not name:
             return self._json({"ok": False, "msg": "没说要找哪一件"}, 400)
@@ -337,63 +359,44 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "msg": "正在抢购，先停掉再定位"}, 409)
 
         hit = bricks.find_skin(name, tier=data.get("tier") or None,
-                              season=data.get("season") or None)
+                               season=data.get("season") or None)
         if not hit:
             return self._json({"ok": False, "msg": f"目录里没有「{name}」"}, 404)
 
+        tier, season = data.get("tier") or None, data.get("season") or None
         try:
-            from .input import Keyboard, Mouse, find_game_window
-            from .nav import Navigator, NavError
-            from .screen import Screen
-            cfg = Config.load()
-            screen = Screen(1)
-            try:
-                # 找**游戏**的窗口，不是前台窗口 —— 前台可能是控制台自己
-                hwnd = find_game_window() or Mouse.foreground()
-                # **必须带游戏窗口句柄**：不带的话 Mouse.click 把消息发给
-                # 「当前前台窗口」，用户点了别的东西就点错地方（实测终端
-                # 压着游戏时，点全落在终端上，界面上一点反应没有）。
-                mouse = Mouse(screen, game_hwnd=hwnd,
-                              mode=cfg.get("input_mode") or "interception")
-                # **必须先把游戏提到前面**：控制台窗口就压在游戏上时，
-                # 游戏按「真实光标位置」判断点到了哪，而光标在控制台窗口里
-                # —— 点「筛选」「确认」全落空（引擎开跑时会做这一步，
-                # 定位这条路之前没做）。
-                if not mouse.ensure_foreground(hwnd, screen=screen):
-                    raise NavError("抢不到游戏前台 —— 先把游戏切到前台")
-                nav = Navigator(screen, mouse, Keyboard(hwnd, mode=mouse.mode),
-                                snap=screen.grab, dry_run=False)
-                # 游戏「赛季下拉」里列的是**砖名**（棱镜攻势/美杜莎…），
-                # 不是子系列（水墨迷彩/青纹…）—— 定位要按砖名筛。
-                # 用找皮肤的完整逻辑：筛不到就逐级放宽，最后全库扫。
-                from .skinfind import SkinFinder
-                finder = SkinFinder(
-                    nav, say=lambda m, lv="info": _scheduler.note(m, lv))
-                res = finder.find(hit["name"],
-                                  season=hit.get("brick") or hit.get("series") or None,
-                                  tier=hit.get("tier") or None,
-                                  gun=hit.get("gun") or None)
-                if not res.get("ok"):
-                    return self._json({"ok": False, "name": hit["name"],
-                                       "msg": res.get("msg") or "没找到",
-                                       "screens": res.get("screens"),
-                                       "tried": res.get("tried")}, 404)
-                return self._json({"ok": True, "name": hit["name"],
-                                    "y": res.get("y"), "title": res.get("title"),
-                                    "score": res.get("score"),
-                                    "plan": res.get("plan"),
-                                    "screens": res.get("screens"),
-                                    "tried": res.get("tried"),
-                                    "elapsed_s": res.get("elapsed_s"),
-                                    "season": hit.get("season", ""),
-                                    "series": hit.get("series", ""),
-                                    "tier": hit.get("tier", ""),
-                                    "weapon": hit.get("weapon", "")})
-            finally:
-                screen.close()
-        except Exception as e:
+            job_id = jobs.submit(
+                lambda log: actions.locate_skin(name, tier=tier, season=season,
+                                                log=log),
+                name=f"定位「{hit['name']}」")
+        except jobs.Busy as e:
             return self._json({"ok": False,
-                               "msg": f"定位失败：{type(e).__name__}: {e}"}, 500)
+                               "msg": f"{e}还没做完，等它结束再试"}, 409)
+        except Exception as e:                   # noqa: BLE001
+            return self._json({"ok": False,
+                               "msg": f"{type(e).__name__}: {e}"}, 500)
+
+        if data.get("sync"):
+            return self._json(self._wait_job(job_id))
+        return self._json({"ok": True, "job": job_id, "name": hit["name"],
+                           "msg": f"已开始定位「{hit['name']}」"})
+
+    @staticmethod
+    def _wait_job(job_id, timeout=120.0):
+        """同步等待一个后台动作跑完（只给 sync 模式用）。"""
+        from . import jobs
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            st = jobs.status(job_id)
+            if st is None:
+                return {"ok": False, "msg": "任务不见了"}
+            if st["state"] == "done":
+                return {"ok": True, "job": job_id, **st["result"]}
+            if st["state"] == "failed":
+                return {"ok": False, "job": job_id, "msg": st["error"],
+                        "log": st["log"]}
+            time.sleep(0.1)
+        return {"ok": False, "job": job_id, "msg": f"等太久了（>{timeout:.0f}s）"}
 
     def _set_switches(self, data):
         """保存开关。传 {"values": {key: value}}，只改传进来的那几项。
@@ -405,11 +408,10 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(values, dict):
             return self._json({"ok": False, "msg": "缺少 values"}, 400)
         try:
-            cfg = Config.load()
-            applied = switches.apply_all(cfg.data, values)
-            cfg.save()
-            return self._json({"ok": True, "applied": applied,
-                               "groups": switches.snapshot(cfg)})
+            with Config.transaction() as cfg:
+                applied = switches.apply_all(cfg.data, values)
+                groups = switches.snapshot(cfg)
+            return self._json({"ok": True, "applied": applied, "groups": groups})
         except Exception as e:                   # noqa: BLE001
             return self._json({"ok": False,
                                "msg": f"{type(e).__name__}: {e}"}, 500)
@@ -417,35 +419,16 @@ class Handler(BaseHTTPRequestHandler):
     def _follow(self, data):
         """把交易行里当前选中的这件挂单关注 / 取消关注。
 
-        星标在右侧详情面板顶部（标题右边、放大镜左边）。判据是颜色：
-        金色 = 已关注，灰白 = 未关注 —— 14px 的小星星 OCR 认不出，颜色
-        一眼能分（实测金色 R-B ≈ 135，灰白 ≈ 0）。
+        设备编排在 core/actions.py（和定位共用一套「抢前台 + 建设备」），
+        这里只管状态闸和回包。
         """
+        from . import actions
         want = bool(data.get("want", True))
         if _scheduler.status().get("running"):
             return self._json({"ok": False, "msg": "正在抢购，先停掉再动"}, 409)
         try:
-            from .input import Keyboard, Mouse, find_game_window
-            from .nav import Navigator
-            from .screen import Screen
-            cfg = Config.load()
-            screen = Screen(1)
-            try:
-                hwnd = find_game_window() or Mouse.foreground()
-                mouse = Mouse(screen, game_hwnd=hwnd,
-                              mode=cfg.get("input_mode") or "interception")
-                if not mouse.ensure_foreground(hwnd, screen=screen):
-                    return self._json({"ok": False, "msg": "抢不到游戏前台"}, 409)
-                nav = Navigator(screen, mouse, Keyboard(hwnd, mode=mouse.mode),
-                                snap=screen.grab, dry_run=False,
-                                log=lambda m, lv="info": _scheduler.note(m, lv))
-                before = nav.follow_state()
-                after = nav.set_follow(want)
-                return self._json({"ok": after == want, "before": before,
-                                   "after": after})
-            finally:
-                screen.close()
-        except Exception as e:
+            return self._json(actions.set_follow(want))
+        except Exception as e:                   # noqa: BLE001
             return self._json({"ok": False,
                                "msg": f"{type(e).__name__}: {e}"}, 500)
 
@@ -453,21 +436,21 @@ class Handler(BaseHTTPRequestHandler):
         """把某件砖标记成当前目标（抢购时优先去这一件）。"""
         from . import bricks
         name = (data.get("name") or "").strip()
-        cfg = Config.load()
-        cur = dict(cfg.get("console") or {})
-        if not name:
-            cur["target"] = {}
-        else:
+        if name:
             hit = bricks.find_skin(name)
             if not hit:
                 return self._json({"ok": False, "msg": f"目录里没有「{name}」"}, 404)
-            cur["target"] = {"name": hit["name"], "season": hit.get("season", ""),
-                             "series": hit.get("series", ""),
-                             "tier": hit.get("tier", ""),
-                             "weapon": hit.get("weapon", "")}
-        cfg["console"] = cur
-        cfg.save()
-        return self._json({"ok": True, "target": cur.get("target", {})})
+            target = {"name": hit["name"], "season": hit.get("season", ""),
+                      "series": hit.get("series", ""),
+                      "tier": hit.get("tier", ""),
+                      "weapon": hit.get("weapon", "")}
+        else:
+            target = {}
+        with Config.transaction() as cfg:
+            cur = dict(cfg.get("console") or {})
+            cur["target"] = target
+            cfg["console"] = cur
+        return self._json({"ok": True, "target": target})
 
     def _task_remove(self, data):
         """删掉一条任务。条件改了必须删旧的 —— 留着会按老条件再抢一遍。"""
@@ -506,9 +489,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _preflight(self, data):
         """启动前检查。慢（约 1 秒，要抓屏认页面），只在进第 3 步和手动重测时调。"""
+        from . import actions
         mode = "detail" if (data.get("mode") == "detail") else "list"
         try:
-            checks = preflight.evaluate(preflight.collect(Config.load(), mode), mode)
+            checks = actions.preflight_now(mode)
         except Exception as e:
             return self._json({"ok": False, "msg": f"检查失败：{type(e).__name__}: {e}",
                                "checks": []}, 500)
@@ -580,16 +564,16 @@ class Handler(BaseHTTPRequestHandler):
         return {"stop": stop, "start": start}
 
     def _set_hotkey(self, data):
-        cfg = Config.load()
-        old = cfg["hotkey"]
-        spec = (data.get("spec") or old.get("spec") or "F8").strip()
-        enabled = bool(data.get("enabled", old.get("enabled", True)))
-        start_spec = (data.get("start_spec") or old.get("start_spec") or "F7").strip()
-        start_enabled = bool(data.get("start_enabled", old.get("start_enabled", True)))
-        cfg["hotkey"] = {"enabled": enabled, "spec": spec,
-                         "start_enabled": start_enabled, "start_spec": start_spec}
-        cfg.save()
-        res = dict(_start_hotkeys(cfg["hotkey"]))
+        with Config.transaction() as cfg:
+            old = cfg["hotkey"]
+            spec = (data.get("spec") or old.get("spec") or "F8").strip()
+            enabled = bool(data.get("enabled", old.get("enabled", True)))
+            start_spec = (data.get("start_spec") or old.get("start_spec") or "F7").strip()
+            start_enabled = bool(data.get("start_enabled", old.get("start_enabled", True)))
+            cfg["hotkey"] = {"enabled": enabled, "spec": spec,
+                             "start_enabled": start_enabled, "start_spec": start_spec}
+            hk = dict(cfg["hotkey"])
+        res = dict(_start_hotkeys(hk))
         bad = [f"{label}：{msg}" for label, (ok, msg) in res.items() if not ok]
         return self._json({"ok": not bad, "msg": "；".join(bad) or "热键已就绪",
                            "status": self._hotkey_status()})
@@ -782,6 +766,8 @@ def serve(host="127.0.0.1", port=8777):
     httpd.daemon_threads = True
     print(f"  SJZ 控制台已启动 -> http://{host}:{port}")
     _seed_default_task()
+    # 清掉已删任务留下的模板目录（data/<id>/ 只建不删，实测堆了 799 个）
+    _scheduler.gc_task_dirs()
     _watcher.start()
     # OCR 服务的管家：定时/变慢/挂掉时自动蓝绿重启。没有 .venv-vl 就只是
     # 接管监控（用户自己起的服务照样管）。

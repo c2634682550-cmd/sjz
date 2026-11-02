@@ -1,5 +1,19 @@
-"""配置。坐标存 0-1 归一化比例，换分辨率不用重配。"""
+"""配置。坐标存 0-1 归一化比例，换分辨率不用重配。
+
+config.json 一份文件承担四件事：用户设置、任务队列、运行状态、模板索引。
+拆分成本高（旧配置要迁移），所以这里用**事务**兜住一致性：
+
+    with Config.transaction() as cfg:      # 读盘 + 改 + 落盘 全在一把锁里
+        cfg["queue"].append(task)
+
+以前每个调用方各自 Config.load() → 改一点 → save()，两边都持有一份
+**全量快照**，后写的把先写的整份盖掉 —— 表现就是「设置改完几秒后自己
+变回去」「开关拨了不生效」。
+"""
+import contextlib
 import json
+import re
+import shutil
 import threading
 import time
 import os
@@ -131,7 +145,11 @@ DEFAULTS = {
 }
 
 
-_save_lock = threading.Lock()
+# 可重入：load/save 内部也拿它，transaction 里再调 save 不会自己把自己锁死
+_save_lock = threading.RLock()
+
+# 任务 id 的形态（scheduler 用 uuid4().hex[:8] 生成）
+_TASK_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 
 
 class Config:
@@ -232,6 +250,35 @@ class Config:
             return cls._load_locked()
 
     @classmethod
+    @contextlib.contextmanager
+    def transaction(cls):
+        """读-改-写 的原子段。退出时落盘（块内抛异常则不落盘）。
+
+            with Config.transaction() as cfg:
+                cfg["queue"].append(task)
+
+        为什么需要：调用方各自 load() → 改 → save()，各自持一份全量
+        快照，后写的会把先写的整份覆盖 —— 这就是「设置改完自己变回去」
+        的根因。整段持锁之后，读到的永远是最新盘上内容。
+        """
+        with _save_lock:
+            cfg = cls._load_locked()
+            yield cfg
+            cfg._save_locked()
+
+    def reload(self):
+        """就地把盘上的内容合并进来（保留对象身份）。
+
+        给长时间运行的循环用：引擎在跑一轮抢购时手上握着 cfg 对象，
+        想让用户中途改的筛选条件生效，就得让这个对象的 data 换成最新的。
+        """
+        with _save_lock:
+            fresh = self._load_locked()
+            self.data.clear()
+            self.data.update(fresh.data)
+        return self
+
+    @classmethod
     def _load_locked(cls):
         """真正的读。调用方必须已经持有 _save_lock（所以不能调 save()）。"""
         if not os.path.isfile(CONFIG_PATH):
@@ -292,3 +339,41 @@ class Config:
 
     def has_template(self, name, task_id=None):
         return os.path.isfile(self.template_path(name, task_id))
+
+    def gc_task_dirs(self, keep=()):
+        """删掉队列里已经不存在的任务目录，返回删了几个。
+
+        task_dir() 每次加任务建一个 data/<id>/，但删任务、清已完成时没人
+        删它 —— 实测 data/ 里堆了 799 个目录、53MB，而队列通常只有 1-2 条。
+        只认「8 位十六进制」这种任务 id 命名的目录，shots/ 之类一律不碰。
+        """
+        keep = {str(k) for k in keep if k}
+        removed = 0
+        try:
+            names = os.listdir(DATA_DIR)
+        except OSError:
+            return 0
+        for name in names:
+            if name in keep or not _TASK_ID_RE.match(name):
+                continue
+            if drop_task_dir(name):
+                removed += 1
+        return removed
+
+
+def drop_task_dir(task_id):
+    """删掉一个任务的模板目录。删了返回 True。
+
+    放在模块级而不是 Config 方法里：调用方（scheduler）只需要一个 id，
+    不该为了删目录去读一遍配置。
+    """
+    if not task_id:
+        return False
+    path = os.path.join(DATA_DIR, str(task_id))
+    try:
+        if not os.path.isdir(path):
+            return False
+        shutil.rmtree(path)
+        return True
+    except OSError:
+        return False

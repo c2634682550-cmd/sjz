@@ -24,6 +24,9 @@ _SM_YVIRTUALSCREEN = 77
 _SM_CXVIRTUALSCREEN = 78
 _SM_CYVIRTUALSCREEN = 79
 
+# 提权重开一次之后，子进程靠这个环境变量知道「别再重开了」。
+ELEVATED_ENV = "SJZ_ELEVATED"
+
 
 class MouseStolen(Exception):
     """有别的程序或用户在动鼠标，导致点击没落到目标上。"""
@@ -642,11 +645,30 @@ def visible_max_integrity(exclude_pid=None):
 
 
 
+def game_integrity():
+    """游戏窗口的完整性级别。没找到游戏窗口返回 None。
+
+    判权限只该看**这个窗口**：UIPI 拦的是「往哪个窗口发消息」，
+    跟机器上别的窗口权限多高没有关系。
+    """
+    hwnd = find_game_window()
+    if not hwnd:
+        return None
+    return process_integrity(hwnd)
+
+
 def needs_elevation():
-    """有可见窗口比我们权限高吗？高的话我们点不动它（比如管理员的游戏）。"""
+    """游戏窗口比我们权限高吗？高的话我们点不动它。
+
+    **只看游戏窗口**。以前这里是 `visible_max_integrity()`（扫所有可见
+    窗口取最高权限），于是任务管理器、安装器、某些启动器一开着就判
+    「需要提权」，提权重开之后新进程又扫到同一个高权限窗口、再判一次
+    —— 死循环。日志实测 01:07–01:39 连弹 8 次 UAC，用户看到的就是
+    「双击之后一直弹窗、窗口永远出不来」。
+    """
     try:
         ours = process_integrity()
-        game = visible_max_integrity()
+        game = game_integrity()
     except Exception:
         return False
     return ours is not None and game is not None and game > ours
@@ -668,6 +690,12 @@ def elevate_self():
     import subprocess
     import sys
 
+    # 已经提过一次就别再提。判定逻辑万一还是认为「权限不够」（比如游戏
+    # 以 System 跑），重开只会变成无限弹 UAC —— 子进程继承这个环境变量，
+    # 进来第一件事就是放弃，把选择权交回用户（界面上会提示手动以管理员运行）。
+    if os.environ.get(ELEVATED_ENV) == "1":
+        return False
+
     if not needs_elevation():
         return False
 
@@ -678,12 +706,18 @@ def elevate_self():
         exe = sys.executable
         params = subprocess.list2cmdline([os.path.abspath(sys.argv[0])] + sys.argv[1:])
     try:
+        os.environ[ELEVATED_ENV] = "1"      # 子进程继承：它不会再重开自己
         # ShellExecuteW 的 "runas" 会弹 UAC；返回 > 32 表示成功启动
         rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params,
                                                  None, 1)
     except Exception:
         return False
-    return rc > 32
+    if rc <= 32:
+        # 没提起来（UAC 被拒/找不到程序）：把自己身上的标记撤掉，
+        # 免得用户手动再点一次「以管理员运行」时反而不提权了
+        os.environ.pop(ELEVATED_ENV, None)
+        return False
+    return True
 
 
 
