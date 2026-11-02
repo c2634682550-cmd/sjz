@@ -369,6 +369,19 @@ class Scheduler:
                 self._active_id = None
 
     @staticmethod
+    def _engine_reason(st):
+        """引擎日志里最后一条 warn/error，当作失败原因。
+
+        引擎 abort 时只把 Aborted 的文案写进自己的日志（`_error` 只有
+        鼠标被抢/窗口不在前台这类才填），所以调度器这边要主动去捞，
+        否则清单页永远只显示「未抢到」。
+        """
+        for e in reversed(st.get("log") or []):
+            if e.get("level") in ("warn", "error") and e.get("msg"):
+                return str(e["msg"])[:120]
+        return ""
+
+    @staticmethod
     def _engine_task(task):
         """任务 → 引擎读的 active_task。
 
@@ -490,6 +503,13 @@ class Scheduler:
             self._set_status(tid, PENDING, "被停止")
             self._say(f"{self._label(task)}：被停止", "warn")
         else:
-            res = st.get("error") or "未抢到"
+            # 失败原因要能看懂。以前只写「未抢到」，可真正的原因（比如
+            # 「公示期里没有符合条件、还在倒计时的商品」「界面导航失败」）
+            # 只在引擎日志里，用户盯着清单页的「失败」两字完全不知道为什么。
+            res = st.get("error") or self._engine_reason(st) or "未抢到"
+            if dry_run:
+                # 演练跑出来的「失败」不是真失败：没点鼠标，本来就不会成交。
+                # 不标出来，用户会以为程序坏了。
+                res = f"演练：{res}"
             self._set_status(tid, FAILED, res)
             self._say(f"{self._label(task)}：{res}", "warn")

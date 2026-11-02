@@ -167,6 +167,13 @@
   .swhead .arw{transition:transform .15s;color:var(--dim);font-size:10px}
   .swgroup.closed .arw{transform:rotate(-90deg)}
   .swgroup.closed .swbody{display:none}
+  /* 演练徽章：一眼看出「这一轮不会真买」 */
+  .drybadge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;
+    font-size:10px;font-weight:700;letter-spacing:.3px;
+    background:#4a3a12;color:#ffcf5c;border:1px solid #7a5f1e;vertical-align:middle}
+  .buy.dry{background:linear-gradient(180deg,#e0b44a,#b98c1e);color:#241a02}
+  .btn.primary.dry{background:linear-gradient(180deg,#e0b44a,#b98c1e);color:#241a02}
+
   .switem{display:flex;align-items:center;gap:10px;padding:5px 0}
   .switem .nm{flex:1;min-width:0;font-size:12px}
   .switem .ds{display:block;color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.35}
@@ -570,7 +577,11 @@ async function poll(){
     $('#btnStart').disabled = running;
     $('#btnStop').disabled = !running;
     $('#btnBuy').disabled = running;
-    $('#btnBuy').textContent = running ? '正在抢购…' : '开始抢购';
+    // 这里每秒重写一次文案，必须自己带上演练标记，否则 syncDryBadge
+    // 设的字一秒后就被抹掉（实测：按钮上「（演练）」闪一下就不见了）
+    $('#btnBuy').textContent = running ? '正在抢购…'
+      : (isDry() ? '开始抢购（演练）' : '开始抢购');
+    $('#btnBuy').classList.toggle('dry', !running && isDry());
 
     $('#sbConn').textContent = '已连接';
     $('#sbClock2').textContent = new Date().toLocaleTimeString('zh-CN');
@@ -614,7 +625,8 @@ function renderTasks(tasks){
       '<td><input type="checkbox" class="taskOn" ' + (on ? 'checked' : '') + '></td>' +
       '<td class="muted">' + (i+1) + '</td>' +
       '<td class="name">' + esc(t.name || '所有皮肤') + '</td>' +
-      '<td class="muted">' + esc(condText(t)) + '</td>' +
+      '<td class="muted">' + esc(condText(t)) +
+        (isDry() ? '<span class="drybadge">演练</span>' : '') + '</td>' +
       '<td style="color:' + stColor + '">' + esc(st) + '</td>' +
       '<td><button class="taskDel" title="删除" style="color:var(--dim)">✕</button></td>' +
     '</tr>';
@@ -839,6 +851,27 @@ $('#btnStop').addEventListener('click', async () => {
   poll();
 });
 
+/* 演练状态要显眼：开关藏在设置页，按钮上不写出来，用户会以为
+   「点了没反应 = 程序坏了」。 */
+function syncDryBadge(){
+  const dry = isDry();
+  const run = $('#btnRunQueue');
+  const buy = $('#btnBuy');
+  const start = $('#btnStart');
+  if(run){
+    run.textContent = dry ? '开始执行（演练）' : '开始执行';
+    run.classList.toggle('dry', dry);
+  }
+  if(buy){
+    buy.textContent = dry ? '开始抢购（演练）' : '开始抢购';
+    buy.classList.toggle('dry', dry);
+  }
+  if(start){
+    start.textContent = dry ? '开始抢购（演练）' : '开始抢购';
+    start.classList.toggle('dry', dry);
+  }
+}
+
 /* ---------------- 开关面板 ---------------- */
 /* 全部开关从 /api/switches 拉：分组、名字、说明、类型都是后端给的。
    前端只负责画和回传 —— 新增一个开关不用改这里。 */
@@ -890,6 +923,7 @@ async function loadSwitches(){
     STATE.switches = {};
     (r.groups || []).forEach(g => g.items.forEach(it => { STATE.switches[it.key] = it.value; }));
     renderSwitches(r.groups || []);
+    syncDryBadge();
   }catch(e){ /* 后端没起时静默 */ }
 }
 
@@ -898,6 +932,7 @@ async function saveSwitch(key, value){
     const r = await api('/api/switches', {values: {[key]: value}});
     if(r.ok === false){ $('#preflightOut').textContent = r.msg || '保存失败'; return; }
     STATE.switches[key] = (r.applied || {})[key];
+    if(key === 'env.dry_run'){ syncDryBadge(); loadTasks(); }
   }catch(e){ $('#preflightOut').textContent = '保存失败：' + e.message; }
 }
 

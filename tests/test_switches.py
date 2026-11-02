@@ -397,3 +397,31 @@ def test_task_fields_win_over_global_switches(monkeypatch):
     assert t["craft"] == "优品"
     assert t["sort"] == "price"
     assert t["quota"] == 1
+
+
+# ---------------------------------------------------------------- 失败原因
+
+def test_failed_task_carries_the_engine_reason(monkeypatch):
+    """任务失败时要把引擎日志里最后一条 warn/error 带出来。
+
+    以前只写「未抢到」，真正的原因（「公示期里没有符合条件、还在倒计时的
+    商品」「界面导航失败」）只在引擎日志里，用户盯着清单页的「失败」两字
+    完全不知道为什么。
+    """
+    from core import scheduler as sched_mod
+
+    st = {"state": "abort", "error": None,
+          "log": [{"level": "info", "msg": "输入通道：驱动注入"},
+                  {"level": "warn", "msg": "公示期里没有符合条件、还在倒计时的商品"}]}
+    assert "公示期" in sched_mod.Scheduler._engine_reason(st)
+
+    # 这个辅助函数只负责「从日志里捞」；引擎自己报了 error 时，
+    # 调用方会优先用 error（见 _run_task 里的 `st.get("error") or ...`）
+    st2 = {"state": "abort", "error": "鼠标被抢：X", "log": [{"level": "warn", "msg": "别的"}]}
+    assert sched_mod.Scheduler._engine_reason(st2) == "别的"
+
+
+def test_engine_reason_returns_empty_when_no_warnings():
+    from core import scheduler as sched_mod
+    assert sched_mod.Scheduler._engine_reason({"log": [{"level": "info", "msg": "x"}]}) == ""
+    assert sched_mod.Scheduler._engine_reason({}) == ""
