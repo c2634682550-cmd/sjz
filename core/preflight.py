@@ -114,7 +114,13 @@ def evaluate(facts, mode="list"):
     if ours is None:
         # 读不到就当没问题 —— 拦错了比不拦更烦
         out.append(_ck("integrity", "程序权限", True, "读不到权限信息"))
-    elif game is not None and game > ours:
+    elif game is None:
+        # 没找到游戏窗口：这一项无从判断，交给「游戏窗口」那一项去拦，
+        # 这里不误报成「权限不够」。
+        out.append(_ck("integrity", "程序权限", True,
+                       f"{_INTEGRITY_CN.get(ours, hex(ours))}权限（没找到游戏窗口）",
+                       warn=True))
+    elif game > ours:
         out.append(_ck("integrity", "程序权限", False,
                        f"控制台是{_INTEGRITY_CN.get(ours, hex(ours))}权限，"
                        f"游戏是{_INTEGRITY_CN.get(game, hex(game))}权限",
@@ -144,8 +150,25 @@ def evaluate(facts, mode="list"):
         out.append(_ck("page", "游戏页面", False,
                        facts.get("page_error") or "认不出当前页面",
                        {"hint": "确认游戏窗口在前面，没被别的程序挡住"}))
+    elif page == "unknown" and facts.get("game_hwnd") is False:
+        # 连游戏窗口都没找到：这时候放行就是对着桌面盲点。
+        out.append(_ck("page", "游戏页面", False, "没找到游戏窗口",
+                       {"hint": "先启动游戏，进到交易行"}))
+    elif page == "unknown" and facts.get("game_fore") is False:
+        # 游戏在跑，但前台是别的窗口（绝大多数时候是**控制台自己**）。
+        # 抓屏抓的是桌面，看到的是压在上面的控制台，认不出页面是必然的 ——
+        # 这不是环境错，是「检查方式」的固有偏差。拦下来的后果很荒谬：
+        # 用户点「开始」→ 控制台在前台 → 报认不出 → 切到游戏看一眼 →
+        # 切回来再点 → 又被拦。
+        # 引擎开工第一步就是 `ensure_foreground(游戏窗口)` 再 `_navigate`
+        # （见 engine.py 里每次点击前的 ensure_foreground），真站错页它会
+        # 自己导航，导航不了就记一条带原因的 miss —— 比在门口猜准得多。
+        out.append(_ck("page", "游戏页面", False,
+                       "看不出是哪个页面（游戏被别的窗口挡着）",
+                       {"hint": "开抢时会自动把游戏提到前面；想现在就确认，切到游戏看一眼"},
+                       warn=True))
     elif page == "unknown":
-        # 认不出就别放行：可能是别的窗口盖着游戏，也可能在某个不认识的页面
+        # 游戏就在前台却认不出：可能在某个不认识的页面（对局里、加载中）
         out.append(_ck("page", "游戏页面", False, "认不出当前页面",
                        {"hint": "把游戏切到交易行，停在「在售」页"}))
     elif is_list and page != "onsale":
@@ -174,7 +197,7 @@ def all_ok(checks):
 def collect(cfg, mode="list"):
     """真的去查一遍。慢的只有「认页面」那一步（抓屏 + OCR，约 1 秒）。"""
     from . import ocr, timesync
-    from .input import Mouse, process_integrity, visible_max_integrity
+    from .input import Mouse, process_integrity
     from .nav import Navigator
     from .screen import Screen
 
@@ -198,11 +221,14 @@ def collect(cfg, mode="list"):
 
     # 权限：游戏跑得比我们高（UIPI）的话，鼠标键盘消息全被系统拦掉，
     # 而且**一声不吭** —— 症状是「点了没反应」，看起来像代码坏了。
-    # 查的是**所有可见窗口**的最高权限，不是只看前台 —— 游戏被别的
-    # 窗口盖住时，前台查不到它的权限，这一项就漏了。
+    # 查的是**游戏窗口**的权限，不是「所有可见窗口里最高的那个」：
+    # 后者会让任务管理器/安装器一开着就误报（提权重开还判不过，见
+    # core/input.py 里 needs_elevation 的说明）。游戏被别的窗口盖住时
+    # 按窗口类名照样找得到它，不需要靠前台。
     try:
+        from .input import game_integrity
         facts["integrity"] = {"ours": process_integrity(),
-                              "game": visible_max_integrity()}
+                              "game": game_integrity()}
     except Exception:
         facts["integrity"] = {}
 
@@ -227,6 +253,16 @@ def collect(cfg, mode="list"):
         facts["screen_error"] = f"抓不到屏幕：{type(e).__name__}: {e}"
 
     if s is not None and facts.get("ocr"):
+        # 先记下「游戏窗口在不在、在不在前台」：认页面靠抓屏，抓屏抓的是
+        # 桌面 —— 控制台压在游戏上时，看到的永远是控制台，页面必然认不出。
+        # 有了这两条，「被挡着」和「真的站在不认识的页面上」才分得开。
+        try:
+            from .input import Mouse, find_game_window
+            hwnd = find_game_window()
+            facts["game_hwnd"] = bool(hwnd)
+            facts["game_fore"] = bool(hwnd) and Mouse.foreground() == hwnd
+        except Exception:                        # noqa: BLE001
+            facts["game_hwnd"], facts["game_fore"] = None, None
         try:
             facts["page"] = Navigator(s, Mouse(s)).where()[0]
         except Exception as e:

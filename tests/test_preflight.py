@@ -21,6 +21,7 @@ def _facts(**kw):
             "templates": {"buy": True, "confirm": True},
             "regions": {"buy": True, "confirm": True, "list": True, "clock": True},
             "page": "onsale",
+            "game_hwnd": True, "game_fore": True,
             "driver": {"ok": True, "why": None}}
     base.update(kw)
     return base
@@ -156,9 +157,33 @@ def test_standing_on_another_market_page_warns_but_does_not_block():
 def test_unknown_page_blocks_the_start():
     checks = preflight.evaluate(_facts(page=None, page_error="认不出页面：X"), "list")
     assert not _by_id(checks, "page")["ok"]
-    # 详情模式下也认不出页面 → 同样不许启动（可能是别的窗口盖着游戏）
+    # 游戏就在前台，却认不出页面（对局里、加载中）→ 不许启动
     checks2 = preflight.evaluate(_facts(page="unknown"), "detail")
     assert not _by_id(checks2, "page")["ok"], "详情模式把「认不出」当通过，等于没检查"
+
+
+def test_game_window_missing_blocks():
+    checks = preflight.evaluate(_facts(page="unknown", game_hwnd=False,
+                                       game_fore=False), "list")
+    c = _by_id(checks, "page")
+    assert not c["ok"] and not c.get("warn"), "连窗口都没有还放行，等于对着桌面盲点"
+    assert "没找到游戏窗口" in c["detail"]
+
+
+def test_game_behind_console_warns_instead_of_blocking():
+    """游戏被控制台挡着 → 只是警告，不拦启动。
+
+    抓屏抓的是桌面，控制台压在上面时页面永远认不出 —— 这是检查方式自带的
+    偏差，不是环境错。拦死的后果：点「开始」→ 报认不出 → 切游戏看一眼 →
+    切回来再点 → 又被拦。引擎开工第一步会 ensure_foreground + _navigate。
+    """
+    checks = preflight.evaluate(_facts(page="unknown", game_hwnd=True,
+                                       game_fore=False), "list")
+    c = _by_id(checks, "page")
+    assert not c["ok"], "认不出就是认不出，不能报绿"
+    assert c.get("warn"), "被挡着要按警告放行"
+    assert preflight.all_ok(checks), "警告项不能拦启动"
+    assert "挡" in c["detail"] and c["fix"]["hint"]
 
 
 def test_all_ok_is_false_when_any_single_check_fails():
