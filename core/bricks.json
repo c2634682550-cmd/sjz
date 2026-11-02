@@ -1,195 +1,4212 @@
 {
-  "updated": "2026-10-19",
-  "note": "国服赛季与曼德尔砖典藏外观。来源：官方实录 / 更新公告，17173 转载官方公众号。",
-  "seasons": [
+ "updated": "2026-10-24",
+ "note": "国服赛季与曼德尔砖典藏外观。条目来自 tools/bricks_source.csv（三角洲曼德尔砖枪皮数据库，243 条），由 tools/build_bricks.py 生成；枪种已按游戏自己的筛选核对过（2026-10-23，典藏外观页按枪种筛选、滚到底读全部卡片名），游戏说算数的以游戏为准。",
+ "seasons": [
+  {
+   "season": "S1",
+   "name": "起源",
+   "date": "2024-09-26",
+   "skins": [
     {
-      "season": "S1",
-      "name": "起源",
-      "date": "2024-09-26",
-      "skins": [
-        {
-          "skin": "棱镜攻势",
-          "weapons": [{"name": "M4A1 突击步枪", "token": "M4A1"}],
-          "alias": ["棱镜", "M4棱镜", "棱镜M4", "M4A1棱镜攻势", "棱镜攻势M4A1"],
-          "note": "首个赛季砖皮。透明枪身，能看到内部机械结构。"
-        }
-      ]
+     "skin": "棱镜攻势",
+     "weapons": [
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      }
+     ],
+     "alias": [
+      "棱镜攻势",
+      "Spectrum Blitz",
+      "棱镜",
+      "M4棱镜",
+      "棱镜M4",
+      "M4A1棱镜攻势",
+      "棱镜攻势M4A1"
+     ],
+     "note": "首个赛季砖皮。透明枪身，能看到内部机械结构。",
+     "series": []
     },
     {
-      "season": "S2",
-      "name": "聚变",
-      "date": "2024-11-21",
-      "skins": [
-        {
-          "skin": "美杜莎",
-          "weapons": [{"name": "Vector 冲锋枪", "token": "Vector"}],
-          "alias": ["维克托", "维克托美杜莎", "Vector美杜莎", "美杜莎维克托"],
-          "note": "磨损反而成了装饰，低成色有特殊视觉效果。",
-          "series": [
-            {"name": "暗鸦", "weapons": ["K416"]},
-            {"name": "青纹", "weapons": ["AKM"]},
-            {"name": "花岗岩", "weapons": ["QBZ95-1"]},
-            {"name": "淘金者", "weapons": ["S12K"]},
-            {"name": "常青藤", "weapons": ["93R"]}
-          ]
-        }
-      ]
+     "skin": "飓风行动",
+     "weapons": [
+      {
+       "name": "ASH-12战斗步枪",
+       "token": "ASH-12"
+      },
+      {
+       "name": "SMG-45冲锋枪",
+       "token": "SMG-45"
+      },
+      {
+       "name": "M870霰弹枪",
+       "token": "M870"
+      }
+     ],
+     "alias": [
+      "飓风行动"
+     ],
+     "note": "官方概率公示：本系列每款2.36%，为传说以外最高档（史诗）",
+     "series": []
     },
     {
-      "season": "S3",
-      "name": "焰火",
-      "date": "2025-01-15",
-      "skins": [
-        {
-          "skin": "电玩高手",
-          "weapons": [{"name": "SCAR-H 战斗步枪", "token": "SCAR-H"}],
-          "alias": ["SCAR电玩", "电玩高手SCAR", "电玩SCAR"],
-          "note": "电玩像素风，灯带光效。"
-        }
-      ]
+     "skin": "阿萨拉卫队",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "AKM突击步枪",
+       "token": "AKM"
+      },
+      {
+       "name": "M700狙击步枪",
+       "token": "M700"
+      },
+      {
+       "name": "M870霰弹枪",
+       "token": "M870"
+      }
+     ],
+     "alias": [
+      "阿萨拉卫队"
+     ],
+     "note": "官方概率公示：本系列每款3.17%（稀有档）",
+     "series": []
     },
     {
-      "season": "S4",
-      "name": "黑夜之子",
-      "date": "2025-04-17",
-      "skins": [
-        {
-          "skin": "命运",
-          "weapons": [{"name": "K416 突击步枪", "token": "K416"}],
-          "alias": ["K416命运", "命运K416", "命运王牌"],
-          "note": "命运&王牌之剑系列，双典藏可指定。首次带特殊曳光弹。"
-        },
-        {
-          "skin": "王牌之剑",
-          "weapons": [{"name": "QBZ95-1 突击步枪", "token": "QBZ95-1"}],
-          "alias": ["95王牌", "王牌之剑95", "QBZ95王牌之剑", "王牌之剑QBZ951", "王牌"],
-          "note": "命运&王牌之剑系列。颜色、图案、成色随机。"
-        }
-      ]
+     "skin": "银灰金属",
+     "weapons": [
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      },
+      {
+       "name": "Vector冲锋枪",
+       "token": "Vector"
+      },
+      {
+       "name": "M1014霰弹枪",
+       "token": "M1014"
+      },
+      {
+       "name": "G18手枪",
+       "token": "G18"
+      }
+     ],
+     "alias": [
+      "银灰金属"
+     ],
+     "note": "官方概率公示：本系列每款3.17%（稀有档）",
+     "series": []
     },
     {
-      "season": "S5",
-      "name": "破壁",
-      "date": "2025-07-03",
-      "skins": [
-        {
-          "skin": "气象感应",
-          "weapons": [
-            {"name": "AUG 突击步枪", "token": "AUG"},
-            {"name": "腾龙 突击步枪", "token": "腾龙"}
-          ],
-          "alias": ["气象", "AUG气象", "腾龙气象", "气象感应AUG", "气象感应腾龙"],
-          "note": "冰雪/炎热/雷电/酸雨四种动态气象，极品独有。"
-        }
-      ]
+     "skin": "水墨迷彩",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      },
+      {
+       "name": "G3战斗步枪",
+       "token": "G3"
+      }
+     ],
+     "alias": [
+      "水墨迷彩"
+     ],
+     "note": "官方概率公示：本系列每款6.74%（普通档）",
+     "series": []
     },
     {
-      "season": "S6",
-      "name": "烈火冲天",
-      "date": "2025-09-17",
-      "skins": [
-        {
-          "skin": "棱镜攻势S2",
-          "weapons": [{"name": "M7 战斗步枪", "token": "M7"}],
-          "alias": ["棱镜攻势2.0", "棱镜2.0", "M7棱镜", "棱镜M7", "M7棱镜攻势", "棱镜攻势M7", "M7棱镜攻势S2"],
-          "note": "S1 棱镜攻势的续作，全息数据显示俯仰角、转速。"
-        }
-      ]
+     "skin": "纯白涂装",
+     "weapons": [
+      {
+       "name": "K416突击步枪",
+       "token": "K416"
+      },
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      },
+      {
+       "name": "SCAR-H战斗步枪",
+       "token": "SCAR-H"
+      },
+      {
+       "name": "M700狙击步枪",
+       "token": "M700"
+      }
+     ],
+     "alias": [
+      "纯白涂装"
+     ],
+     "note": "官方概率公示：本系列每款6.74%（普通档）",
+     "series": []
     },
     {
-      "season": "S7",
-      "name": "阿萨拉",
-      "date": "2025-11-13",
-      "skins": [
-        {
-          "skin": "悬赏令",
-          "weapons": [{"name": "AS Val 突击步枪", "token": "AS Val"}],
-          "alias": ["ASVal悬赏令", "悬赏令ASVal", "ASVal悬赏", "悬赏令ASVal突击步枪", "VAL悬赏"],
-          "note": "左轮弹仓元素。保底进度与其它系列独立计算。"
-        }
-      ]
-    },
-    {
-      "season": "S8",
-      "name": "蝶变时刻",
-      "date": "2026-01-29",
-      "skins": [
-        {
-          "skin": "电玩高手S2",
-          "weapons": [
-            {"name": "M250 通用机枪", "token": "M250"},
-            {"name": "MP7 冲锋枪", "token": "MP7"}
-          ],
-          "alias": ["电玩2.0", "电玩高手2", "电玩高手二", "M250电玩", "MP7电玩", "电玩高手S2M250", "电玩高手S2MP7"],
-          "note": "机箱水冷主题，检视里内置两款可玩小游戏。"
-        }
-      ]
-    },
-    {
-      "season": "S9",
-      "name": "回声",
-      "date": "2026-04-16",
-      "skins": [
-        {
-          "skin": "造物纪元",
-          "weapons": [{"name": "KC17 突击步枪", "token": "KC17"}],
-          "alias": ["KC17造物纪元", "造物纪元KC17", "造物", "造物纪元KC17突击步枪"],
-          "note": "首个变形皮肤，检视时 3D 打印重组枪身。极品带击败计数器。"
-        }
-      ]
-    },
-    {
-      "season": "S10",
-      "name": "裂变",
-      "date": "2026-06-26",
-      "skins": [
-        {
-          "skin": "群星",
-          "weapons": [{"name": "AKM 突击步枪", "token": "AKM"}],
-          "alias": ["AKM群星", "群星AKM", "AKM群星突击步枪"],
-          "note": "星轨时间主题，空仓检视可校准真实时间。有隐藏模板（星河光）。注意：网上大量攻略把 S10 砖皮写成 SR-3M 深渊之核，那是爆料，官方实录是 AKM 群星。",
-          "series": [
-            {"name": "海韵之星", "weapons": ["QJB201", "QCQ171", "PSG-1"]},
-            {"name": "剑兰", "weapons": ["KC17", "沙漠之鹰", "SV-98", "CAR-15"]},
-            {"name": "磁暴脉冲", "weapons": ["AUG", "QCQ171", "M16A4", "SR-3M"]},
-            {"name": "幻夜", "weapons": ["S12K", "G18", "MP5", "SCAR-H", "PTR-32"]},
-            {"name": "叠锋", "weapons": [".357左轮", "SVD", "QBZ95-1", "G3", "M249"]}
-          ]
-        }
-      ]
-    },
-    {
-      "season": "S11",
-      "name": "群星",
-      "date": "2026-09-04",
-      "skins": [
-        {
-          "skin": "疾光魅影",
-          "weapons": [{"name": "MK4 冲锋枪", "token": "MK4"}],
-          "alias": ["MK4疾光魅影", "疾光魅影MK4", "极光魅影", "MK4极光魅影", "极光魅影MK4", "现代骑士", "MK4现代骑士"],
-          "note": "超跑/赛摩主题，电镀银枪身 + 蓝色等离子排气。爆料期叫过「现代骑士」。同系列还有 黑银先锋-AS Val。注意：S11 的赛季名也叫「群星」，和 S10 的砖皮同名，别搞混。",
-          "series": [
-            {"name": "黑银先锋", "weapons": ["AS Val"]}
-          ]
-        }
-      ]
+     "skin": "雪地迷彩",
+     "weapons": [
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      },
+      {
+       "name": "ASH-12战斗步枪",
+       "token": "ASH-12"
+      },
+      {
+       "name": "SR-25射手步枪",
+       "token": "SR-25"
+      }
+     ],
+     "alias": [
+      "雪地迷彩"
+     ],
+     "note": "官方概率公示：本系列每款6.74%（普通档）",
+     "series": []
     }
-  ],
-  "tiers": [
-    {"name": "普通", "color": "绿", "note": "基础涂装，无特效"},
-    {"name": "稀有", "color": "蓝", "note": ""},
-    {"name": "史诗", "color": "紫", "note": "合成 S 级成色的常用材料"},
-    {"name": "传说", "color": "橙", "note": "通行证 / 活动主力档"},
-    {"name": "典藏", "color": "红金", "note": "砖皮，只能开曼德尔砖出，最高一档"}
-  ],
-  "craft": [
-    {"name": "极品", "note": "完整动态特效：金色曳光弹、电镀变色枪身、击杀计数、专属语音"},
-    {"name": "优品", "note": "特效简化：蓝色曳光弹，无动态纹理与语音，部分无击杀特效"}
-  ],
-  "wear": [
-    {"grade": "S", "name": "典藏级", "max": 0.4, "note": "无磨损无划痕，光泽最满"},
-    {"grade": "A", "name": "", "max": 1.25, "note": "轻微磨损，接近新品"},
-    {"grade": "B", "name": "", "max": 2.5, "note": "中等磨损，可见划痕掉漆"},
-    {"grade": "C", "name": "", "max": null, "note": "磨损严重，颜色发暗"}
+   ],
+   "series": "棱镜攻势",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·棱镜攻势",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "棱镜攻势",
+      "series": "棱镜攻势"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "ASH-12战斗步枪",
+      "name": "ASH-12战斗步枪·飓风行动",
+      "model": "ASH-12",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "飓风行动",
+      "series": "飓风行动"
+     },
+     {
+      "weapon": "SMG-45冲锋枪",
+      "name": "SMG-45冲锋枪·飓风行动",
+      "model": "SMG-45",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "飓风行动",
+      "series": "飓风行动"
+     },
+     {
+      "weapon": "M870霰弹枪",
+      "name": "M870霰弹枪·飓风行动",
+      "model": "M870",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "飓风行动",
+      "series": "飓风行动"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·阿萨拉卫队",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "阿萨拉卫队",
+      "series": "阿萨拉卫队"
+     },
+     {
+      "weapon": "AKM突击步枪",
+      "name": "AKM突击步枪·阿萨拉卫队",
+      "model": "AKM",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "阿萨拉卫队",
+      "series": "阿萨拉卫队"
+     },
+     {
+      "weapon": "M700狙击步枪",
+      "name": "M700狙击步枪·阿萨拉卫队",
+      "model": "M700",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "阿萨拉卫队",
+      "series": "阿萨拉卫队"
+     },
+     {
+      "weapon": "M870霰弹枪",
+      "name": "M870霰弹枪·阿萨拉卫队",
+      "model": "M870",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "阿萨拉卫队",
+      "series": "阿萨拉卫队"
+     },
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·银灰金属",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "银灰金属",
+      "series": "银灰金属"
+     },
+     {
+      "weapon": "Vector冲锋枪",
+      "name": "Vector冲锋枪·银灰金属",
+      "model": "Vector",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "银灰金属",
+      "series": "银灰金属"
+     },
+     {
+      "weapon": "M1014霰弹枪",
+      "name": "M1014霰弹枪·银灰金属",
+      "model": "M1014",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "银灰金属",
+      "series": "银灰金属"
+     },
+     {
+      "weapon": "G18手枪",
+      "name": "G18手枪·银灰金属",
+      "model": "G18",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "银灰金属",
+      "series": "银灰金属"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·水墨迷彩",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "水墨迷彩",
+      "series": "水墨迷彩"
+     },
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·水墨迷彩",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "水墨迷彩",
+      "series": "水墨迷彩"
+     },
+     {
+      "weapon": "G3战斗步枪",
+      "name": "G3战斗步枪·水墨迷彩",
+      "model": "G3",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "水墨迷彩",
+      "series": "水墨迷彩"
+     },
+     {
+      "weapon": "K416突击步枪",
+      "name": "K416突击步枪·纯白涂装",
+      "model": "K416",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "纯白涂装",
+      "series": "纯白涂装"
+     },
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·纯白涂装",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "纯白涂装",
+      "series": "纯白涂装"
+     },
+     {
+      "weapon": "SCAR-H战斗步枪",
+      "name": "SCAR-H战斗步枪·纯白涂装",
+      "model": "SCAR-H",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "纯白涂装",
+      "series": "纯白涂装"
+     },
+     {
+      "weapon": "M700狙击步枪",
+      "name": "M700狙击步枪·纯白涂装",
+      "model": "M700",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "纯白涂装",
+      "series": "纯白涂装"
+     },
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·雪地迷彩",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "雪地迷彩",
+      "series": "雪地迷彩"
+     },
+     {
+      "weapon": "ASH-12战斗步枪",
+      "name": "ASH-12战斗步枪·雪地迷彩",
+      "model": "ASH-12",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "雪地迷彩",
+      "series": "雪地迷彩"
+     },
+     {
+      "weapon": "SR-25射手步枪",
+      "name": "SR-25射手步枪·雪地迷彩",
+      "model": "SR-25",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "雪地迷彩",
+      "series": "雪地迷彩"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S2",
+   "name": "聚变",
+   "date": "2024-11-21",
+   "skins": [
+    {
+     "skin": "美杜莎",
+     "weapons": [
+      {
+       "name": "Vector冲锋枪",
+       "token": "Vector"
+      }
+     ],
+     "alias": [
+      "美杜莎",
+      "Medusa",
+      "维克托",
+      "维克托美杜莎",
+      "Vector美杜莎",
+      "美杜莎维克托"
+     ],
+     "note": "磨损反而成了装饰，低成色有特殊视觉效果。",
+     "series": []
+    },
+    {
+     "skin": "暗鸦",
+     "weapons": [
+      {
+       "name": "K416突击步枪",
+       "token": "K416"
+      },
+      {
+       "name": "P90冲锋枪",
+       "token": "P90"
+      },
+      {
+       "name": "M1014霰弹枪",
+       "token": "M1014"
+      }
+     ],
+     "alias": [
+      "暗鸦"
+     ],
+     "note": "官方产物列表第2系列；gamewith 紫スキン各2.36%（史诗）",
+     "series": []
+    },
+    {
+     "skin": "青纹",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "AKM突击步枪",
+       "token": "AKM"
+      },
+      {
+       "name": "M1014霰弹枪",
+       "token": "M1014"
+      },
+      {
+       "name": "M249轻机枪",
+       "token": "M249"
+      }
+     ],
+     "alias": [
+      "青纹"
+     ],
+     "note": "官方产物列表第3系列；gamewith 青スキン各3.16%（稀有）",
+     "series": []
+    },
+    {
+     "skin": "花岗岩",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      },
+      {
+       "name": "Vector冲锋枪",
+       "token": "Vector"
+      },
+      {
+       "name": "M14射手步枪",
+       "token": "M14"
+      }
+     ],
+     "alias": [
+      "花岗岩"
+     ],
+     "note": "官方产物列表第4系列；gamewith 青スキン各3.16%（稀有）",
+     "series": []
+    },
+    {
+     "skin": "淘金者",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "AKM突击步枪",
+       "token": "AKM"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      },
+      {
+       "name": ".357左轮手枪",
+       "token": ".357左轮"
+      },
+      {
+       "name": "PKM轻机枪",
+       "token": "PKM"
+      }
+     ],
+     "alias": [
+      "淘金者"
+     ],
+     "note": "官方产物列表第5系列；gamewith 緑スキン各6.73%（普通）",
+     "series": []
+    },
+    {
+     "skin": "常青藤",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "M16A4突击步枪",
+       "token": "M16A4"
+      },
+      {
+       "name": "Mini-14射手步枪",
+       "token": "Mini-14"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "93R手枪",
+       "token": "93R"
+      }
+     ],
+     "alias": [
+      "常青藤"
+     ],
+     "note": "官方产物列表第6系列；gamewith 緑スキン各6.73%（普通）",
+     "series": []
+    }
+   ],
+   "series": "美杜莎",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "Vector冲锋枪",
+      "name": "Vector冲锋枪·美杜莎",
+      "model": "Vector",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "美杜莎",
+      "series": "美杜莎"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "K416突击步枪",
+      "name": "K416突击步枪·暗鸦",
+      "model": "K416",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "暗鸦",
+      "series": "暗鸦"
+     },
+     {
+      "weapon": "P90冲锋枪",
+      "name": "P90冲锋枪·暗鸦",
+      "model": "P90",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "暗鸦",
+      "series": "暗鸦"
+     },
+     {
+      "weapon": "M1014霰弹枪",
+      "name": "M1014霰弹枪·暗鸦",
+      "model": "M1014",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "暗鸦",
+      "series": "暗鸦"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·青纹",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "青纹",
+      "series": "青纹"
+     },
+     {
+      "weapon": "AKM突击步枪",
+      "name": "AKM突击步枪·青纹",
+      "model": "AKM",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "青纹",
+      "series": "青纹"
+     },
+     {
+      "weapon": "M1014霰弹枪",
+      "name": "M1014霰弹枪·青纹",
+      "model": "M1014",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "青纹",
+      "series": "青纹"
+     },
+     {
+      "weapon": "M249轻机枪",
+      "name": "M249轻机枪·青纹",
+      "model": "M249",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "青纹",
+      "series": "青纹"
+     },
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·花岗岩",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     },
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·花岗岩",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     },
+     {
+      "weapon": "Vector冲锋枪",
+      "name": "Vector冲锋枪·花岗岩",
+      "model": "Vector",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     },
+     {
+      "weapon": "M14射手步枪",
+      "name": "M14射手步枪·花岗岩",
+      "model": "M14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·淘金者",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "淘金者",
+      "series": "淘金者"
+     },
+     {
+      "weapon": "AKM突击步枪",
+      "name": "AKM突击步枪·淘金者",
+      "model": "AKM",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "淘金者",
+      "series": "淘金者"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·淘金者",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "淘金者",
+      "series": "淘金者"
+     },
+     {
+      "weapon": ".357左轮手枪",
+      "name": ".357左轮手枪·淘金者",
+      "model": ".357左轮",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "淘金者",
+      "series": "淘金者"
+     },
+     {
+      "weapon": "PKM轻机枪",
+      "name": "PKM轻机枪·淘金者",
+      "model": "PKM",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "淘金者",
+      "series": "淘金者"
+     },
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·常青藤",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "常青藤",
+      "series": "常青藤"
+     },
+     {
+      "weapon": "M16A4突击步枪",
+      "name": "M16A4突击步枪·常青藤",
+      "model": "M16A4",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "常青藤",
+      "series": "常青藤"
+     },
+     {
+      "weapon": "Mini-14射手步枪",
+      "name": "Mini-14射手步枪·常青藤",
+      "model": "Mini-14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "常青藤",
+      "series": "常青藤"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·常青藤",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "常青藤",
+      "series": "常青藤"
+     },
+     {
+      "weapon": "93R手枪",
+      "name": "93R手枪·常青藤",
+      "model": "93R",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "常青藤",
+      "series": "常青藤"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S3",
+   "name": "焰火",
+   "date": "2025-01-15",
+   "skins": [
+    {
+     "skin": "电玩高手",
+     "weapons": [
+      {
+       "name": "SCAR-H战斗步枪",
+       "token": "SCAR-H"
+      }
+     ],
+     "alias": [
+      "电玩高手",
+      "Pro Gamer|プロゲーマー",
+      "SCAR电玩",
+      "电玩高手SCAR",
+      "电玩SCAR"
+     ],
+     "note": "电玩像素风，灯带光效。",
+     "series": []
+    },
+    {
+     "skin": "潜袭者",
+     "weapons": [
+      {
+       "name": "K416突击步枪",
+       "token": "K416"
+      },
+      {
+       "name": "Vector冲锋枪",
+       "token": "Vector"
+      },
+      {
+       "name": "M1014霰弹枪",
+       "token": "M1014"
+      }
+     ],
+     "alias": [
+      "潜袭者"
+     ],
+     "note": "官方概率公示：本系列每款2.36%（史诗）",
+     "series": []
+    },
+    {
+     "skin": "星之彩",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "K416突击步枪",
+       "token": "K416"
+      },
+      {
+       "name": "MP5冲锋枪",
+       "token": "MP5"
+      },
+      {
+       "name": "P90冲锋枪",
+       "token": "P90"
+      }
+     ],
+     "alias": [
+      "星之彩"
+     ],
+     "note": "官方概率公示：本系列每款3.17%（稀有档）",
+     "series": []
+    },
+    {
+     "skin": "黑潮",
+     "weapons": [
+      {
+       "name": "PTR-32突击步枪",
+       "token": "PTR-32"
+      },
+      {
+       "name": "MP7冲锋枪",
+       "token": "MP7"
+      },
+      {
+       "name": "野牛冲锋枪",
+       "token": "野牛"
+      },
+      {
+       "name": "PKM轻机枪",
+       "token": "PKM"
+      }
+     ],
+     "alias": [
+      "黑潮"
+     ],
+     "note": "官方概率公示：本系列每款3.17%（稀有档）",
+     "series": []
+    },
+    {
+     "skin": "蛇纹涂装",
+     "weapons": [
+      {
+       "name": "AKS-74U突击步枪",
+       "token": "AKS-74U"
+      },
+      {
+       "name": "MP5冲锋枪",
+       "token": "MP5"
+      },
+      {
+       "name": "UZI冲锋枪",
+       "token": "UZI"
+      },
+      {
+       "name": "M14射手步枪",
+       "token": "M14"
+      },
+      {
+       "name": "沙漠之鹰手枪",
+       "token": "沙漠之鹰"
+      }
+     ],
+     "alias": [
+      "蛇纹涂装"
+     ],
+     "note": "官方概率公示：本系列每款6.74%（普通档）",
+     "series": []
+    },
+    {
+     "skin": "蝴蝶",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "SMG-45冲锋枪",
+       "token": "SMG-45"
+      },
+      {
+       "name": "SKS射手步枪",
+       "token": "SKS"
+      },
+      {
+       "name": "M700狙击步枪",
+       "token": "M700"
+      },
+      {
+       "name": "M249轻机枪",
+       "token": "M249"
+      }
+     ],
+     "alias": [
+      "蝴蝶"
+     ],
+     "note": "官方概率公示：本系列每款6.74%（普通档）",
+     "series": []
+    }
+   ],
+   "series": "电玩高手",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "SCAR-H战斗步枪",
+      "name": "SCAR-H战斗步枪·电玩高手",
+      "model": "SCAR-H",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "电玩高手",
+      "series": "电玩高手"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "K416突击步枪",
+      "name": "K416突击步枪·潜袭者",
+      "model": "K416",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "潜袭者",
+      "series": "潜袭者"
+     },
+     {
+      "weapon": "Vector冲锋枪",
+      "name": "Vector冲锋枪·潜袭者",
+      "model": "Vector",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "潜袭者",
+      "series": "潜袭者"
+     },
+     {
+      "weapon": "M1014霰弹枪",
+      "name": "M1014霰弹枪·潜袭者",
+      "model": "M1014",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "潜袭者",
+      "series": "潜袭者"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·星之彩",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "K416突击步枪",
+      "name": "K416突击步枪·星之彩",
+      "model": "K416",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "MP5冲锋枪",
+      "name": "MP5冲锋枪·星之彩",
+      "model": "MP5",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "P90冲锋枪",
+      "name": "P90冲锋枪·星之彩",
+      "model": "P90",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "PTR-32突击步枪",
+      "name": "PTR-32突击步枪·黑潮",
+      "model": "PTR-32",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "黑潮",
+      "series": "黑潮"
+     },
+     {
+      "weapon": "MP7冲锋枪",
+      "name": "MP7冲锋枪·黑潮",
+      "model": "MP7",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "黑潮",
+      "series": "黑潮"
+     },
+     {
+      "weapon": "野牛冲锋枪",
+      "name": "野牛冲锋枪·黑潮",
+      "model": "野牛",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "黑潮",
+      "series": "黑潮"
+     },
+     {
+      "weapon": "PKM轻机枪",
+      "name": "PKM轻机枪·黑潮",
+      "model": "PKM",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "黑潮",
+      "series": "黑潮"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AKS-74U突击步枪",
+      "name": "AKS-74U突击步枪·蛇纹涂装",
+      "model": "AKS-74U",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "蛇纹涂装",
+      "series": "蛇纹涂装"
+     },
+     {
+      "weapon": "MP5冲锋枪",
+      "name": "MP5冲锋枪·蛇纹涂装",
+      "model": "MP5",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "蛇纹涂装",
+      "series": "蛇纹涂装"
+     },
+     {
+      "weapon": "UZI冲锋枪",
+      "name": "UZI冲锋枪·蛇纹涂装",
+      "model": "UZI",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "蛇纹涂装",
+      "series": "蛇纹涂装"
+     },
+     {
+      "weapon": "M14射手步枪",
+      "name": "M14射手步枪·蛇纹涂装",
+      "model": "M14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "蛇纹涂装",
+      "series": "蛇纹涂装"
+     },
+     {
+      "weapon": "沙漠之鹰手枪",
+      "name": "沙漠之鹰手枪·蛇纹涂装",
+      "model": "沙漠之鹰",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "蛇纹涂装",
+      "series": "蛇纹涂装"
+     },
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·蝴蝶",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "蝴蝶",
+      "series": "蝴蝶"
+     },
+     {
+      "weapon": "SMG-45冲锋枪",
+      "name": "SMG-45冲锋枪·蝴蝶",
+      "model": "SMG-45",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "蝴蝶",
+      "series": "蝴蝶"
+     },
+     {
+      "weapon": "SKS射手步枪",
+      "name": "SKS射手步枪·蝴蝶",
+      "model": "SKS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "蝴蝶",
+      "series": "蝴蝶"
+     },
+     {
+      "weapon": "M700狙击步枪",
+      "name": "M700狙击步枪·蝴蝶",
+      "model": "M700",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "蝴蝶",
+      "series": "蝴蝶"
+     },
+     {
+      "weapon": "M249轻机枪",
+      "name": "M249轻机枪·蝴蝶",
+      "model": "M249",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "蝴蝶",
+      "series": "蝴蝶"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S4",
+   "name": "黑夜之子",
+   "date": "2025-04-17",
+   "skins": [
+    {
+     "skin": "命运",
+     "weapons": [
+      {
+       "name": "K416突击步枪",
+       "token": "K416"
+      }
+     ],
+     "alias": [
+      "命运王牌",
+      "運命のエース"
+     ],
+     "note": "官方产物列表双核心典藏传说；gamewith 目玉スキン（K416/QBZ95-1）",
+     "series": []
+    },
+    {
+     "skin": "王牌之剑",
+     "weapons": [
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      }
+     ],
+     "alias": [
+      "命运王牌",
+      "運命のエース"
+     ],
+     "note": "官方产物列表双核心典藏传说；gamewith 目玉スキン（K416/QBZ95-1）",
+     "series": []
+    },
+    {
+     "skin": "原型机",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "MP7冲锋枪",
+       "token": "MP7"
+      },
+      {
+       "name": "PSG-1射手步枪",
+       "token": "PSG-1"
+      }
+     ],
+     "alias": [
+      "原型机"
+     ],
+     "note": "gamewith 紫スキン各2.36%（プロトタイプ=原型机，史诗）",
+     "series": []
+    },
+    {
+     "skin": "基地勘察队",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "PSG-1射手步枪",
+       "token": "PSG-1"
+      },
+      {
+       "name": "M700狙击步枪",
+       "token": "M700"
+      },
+      {
+       "name": "PKM轻机枪",
+       "token": "PKM"
+      }
+     ],
+     "alias": [
+      "基地勘察队"
+     ],
+     "note": "gamewith 青スキン各3.16%（極致偵察隊=基地勘察队，稀有）",
+     "series": []
+    },
+    {
+     "skin": "天际线",
+     "weapons": [
+      {
+       "name": "SG552突击步枪",
+       "token": "SG552"
+      },
+      {
+       "name": "M7战斗步枪",
+       "token": "M7"
+      },
+      {
+       "name": "M14射手步枪",
+       "token": "M14"
+      },
+      {
+       "name": "沙漠之鹰手枪",
+       "token": "沙漠之鹰"
+      }
+     ],
+     "alias": [
+      "天际线"
+     ],
+     "note": "gamewith 青スキン各3.16%（スカイライン=天际线，稀有）",
+     "series": []
+    },
+    {
+     "skin": "黄铜",
+     "weapons": [
+      {
+       "name": "AKM突击步枪",
+       "token": "AKM"
+      },
+      {
+       "name": "Mini-14射手步枪",
+       "token": "Mini-14"
+      },
+      {
+       "name": ".357左轮手枪",
+       "token": ".357左轮"
+      }
+     ],
+     "alias": [
+      "黄铜"
+     ],
+     "note": "gamewith 緑スキン各6.73%（ブラスコレクション=黄铜，普通）",
+     "series": []
+    },
+    {
+     "skin": "马赛克",
+     "weapons": [
+      {
+       "name": "AKS-74U突击步枪",
+       "token": "AKS-74U"
+      },
+      {
+       "name": "P90冲锋枪",
+       "token": "P90"
+      },
+      {
+       "name": "SV-98狙击步枪",
+       "token": "SV-98"
+      },
+      {
+       "name": "M870霰弹枪",
+       "token": "M870"
+      },
+      {
+       "name": "G18手枪",
+       "token": "G18"
+      }
+     ],
+     "alias": [
+      "马赛克"
+     ],
+     "note": "gamewith 緑スキン各6.73%（モザイク=马赛克，普通）",
+     "series": []
+    }
+   ],
+   "series": "命运王牌",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "K416突击步枪",
+      "name": "K416突击步枪·命运",
+      "model": "K416",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "命运",
+      "series": "命运王牌"
+     },
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·王牌之剑",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "王牌之剑",
+      "series": "命运王牌"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·原型机",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "原型机",
+      "series": "原型机"
+     },
+     {
+      "weapon": "MP7冲锋枪",
+      "name": "MP7冲锋枪·原型机",
+      "model": "MP7",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "原型机",
+      "series": "原型机"
+     },
+     {
+      "weapon": "PSG-1射手步枪",
+      "name": "PSG-1射手步枪·原型机",
+      "model": "PSG-1",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "原型机",
+      "series": "原型机"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·基地勘察队",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "基地勘察队",
+      "series": "基地勘察队"
+     },
+     {
+      "weapon": "PSG-1射手步枪",
+      "name": "PSG-1射手步枪·基地勘察队",
+      "model": "PSG-1",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "基地勘察队",
+      "series": "基地勘察队"
+     },
+     {
+      "weapon": "M700狙击步枪",
+      "name": "M700狙击步枪·基地勘察队",
+      "model": "M700",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "基地勘察队",
+      "series": "基地勘察队"
+     },
+     {
+      "weapon": "PKM轻机枪",
+      "name": "PKM轻机枪·基地勘察队",
+      "model": "PKM",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "基地勘察队",
+      "series": "基地勘察队"
+     },
+     {
+      "weapon": "SG552突击步枪",
+      "name": "SG552突击步枪·天际线",
+      "model": "SG552",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "天际线",
+      "series": "天际线"
+     },
+     {
+      "weapon": "M7战斗步枪",
+      "name": "M7战斗步枪·天际线",
+      "model": "M7",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "天际线",
+      "series": "天际线"
+     },
+     {
+      "weapon": "M14射手步枪",
+      "name": "M14射手步枪·天际线",
+      "model": "M14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "天际线",
+      "series": "天际线"
+     },
+     {
+      "weapon": "沙漠之鹰手枪",
+      "name": "沙漠之鹰手枪·天际线",
+      "model": "沙漠之鹰",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "天际线",
+      "series": "天际线"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AKM突击步枪",
+      "name": "AKM突击步枪·黄铜",
+      "model": "AKM",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "黄铜",
+      "series": "黄铜"
+     },
+     {
+      "weapon": "Mini-14射手步枪",
+      "name": "Mini-14射手步枪·黄铜",
+      "model": "Mini-14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "黄铜",
+      "series": "黄铜"
+     },
+     {
+      "weapon": ".357左轮手枪",
+      "name": ".357左轮手枪·黄铜",
+      "model": ".357左轮",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "黄铜",
+      "series": "黄铜"
+     },
+     {
+      "weapon": "AKS-74U突击步枪",
+      "name": "AKS-74U突击步枪·马赛克",
+      "model": "AKS-74U",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "马赛克",
+      "series": "马赛克"
+     },
+     {
+      "weapon": "P90冲锋枪",
+      "name": "P90冲锋枪·马赛克",
+      "model": "P90",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "马赛克",
+      "series": "马赛克"
+     },
+     {
+      "weapon": "SV-98狙击步枪",
+      "name": "SV-98狙击步枪·马赛克",
+      "model": "SV-98",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "马赛克",
+      "series": "马赛克"
+     },
+     {
+      "weapon": "M870霰弹枪",
+      "name": "M870霰弹枪·马赛克",
+      "model": "M870",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "马赛克",
+      "series": "马赛克"
+     },
+     {
+      "weapon": "G18手枪",
+      "name": "G18手枪·马赛克",
+      "model": "G18",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "马赛克",
+      "series": "马赛克"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S5",
+   "name": "破壁",
+   "date": "2025-07-03",
+   "skins": [
+    {
+     "skin": "气象感应",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "腾龙突击步枪",
+       "token": "腾龙"
+      }
+     ],
+     "alias": [
+      "气象感应",
+      "Meteorology",
+      "气象",
+      "AUG气象",
+      "腾龙气象",
+      "气象感应AUG",
+      "气象感应腾龙"
+     ],
+     "note": "冰雪/炎热/雷电/酸雨四种动态气象，极品独有。",
+     "series": []
+    },
+    {
+     "skin": "私人定制",
+     "weapons": [
+      {
+       "name": "K437突击步枪",
+       "token": "K437"
+      },
+      {
+       "name": "勇士冲锋枪",
+       "token": "勇士"
+      },
+      {
+       "name": "AWM狙击步枪",
+       "token": "AWM"
+      }
+     ],
+     "alias": [
+      "私人定制"
+     ],
+     "note": "官方概率表：本系列每款2.36%（史诗）",
+     "series": []
+    },
+    {
+     "skin": "精湛工艺",
+     "weapons": [
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      },
+      {
+       "name": "Mini-14射手步枪",
+       "token": "Mini-14"
+      },
+      {
+       "name": "SKS射手步枪",
+       "token": "SKS"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "PKM轻机枪",
+       "token": "PKM"
+      }
+     ],
+     "alias": [
+      "精湛工艺"
+     ],
+     "note": "官方概率表：本系列每款3.17%（稀有档）",
+     "series": []
+    },
+    {
+     "skin": "海岸线",
+     "weapons": [
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      },
+      {
+       "name": "SV-98狙击步枪",
+       "token": "SV-98"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      }
+     ],
+     "alias": [
+      "海岸线"
+     ],
+     "note": "官方概率表：本系列每款3.17%（稀有档）",
+     "series": []
+    },
+    {
+     "skin": "监察",
+     "weapons": [
+      {
+       "name": "AKS-74U突击步枪",
+       "token": "AKS-74U"
+      },
+      {
+       "name": "CAR-15突击步枪",
+       "token": "CAR-15"
+      },
+      {
+       "name": "MP5冲锋枪",
+       "token": "MP5"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      }
+     ],
+     "alias": [
+      "监察"
+     ],
+     "note": "官方概率表：本系列每款6.74%（普通档）",
+     "series": []
+    },
+    {
+     "skin": "凶兽",
+     "weapons": [
+      {
+       "name": "K437突击步枪",
+       "token": "K437"
+      },
+      {
+       "name": "G3战斗步枪",
+       "token": "G3"
+      },
+      {
+       "name": "QCQ171冲锋枪",
+       "token": "QCQ171"
+      },
+      {
+       "name": "SKS射手步枪",
+       "token": "SKS"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      }
+     ],
+     "alias": [
+      "凶兽"
+     ],
+     "note": "官方概率表：本系列每款6.74%（普通档）",
+     "series": []
+    }
+   ],
+   "series": "气象感应",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·气象感应",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "气象感应",
+      "series": "气象感应"
+     },
+     {
+      "weapon": "腾龙突击步枪",
+      "name": "腾龙突击步枪·气象感应",
+      "model": "腾龙",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "气象感应",
+      "series": "气象感应"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "K437突击步枪",
+      "name": "K437突击步枪·私人定制",
+      "model": "K437",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "私人定制",
+      "series": "私人定制"
+     },
+     {
+      "weapon": "勇士冲锋枪",
+      "name": "勇士冲锋枪·私人定制",
+      "model": "勇士",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "私人定制",
+      "series": "私人定制"
+     },
+     {
+      "weapon": "AWM狙击步枪",
+      "name": "AWM狙击步枪·私人定制",
+      "model": "AWM",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "私人定制",
+      "series": "私人定制"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·精湛工艺",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "精湛工艺",
+      "series": "精湛工艺"
+     },
+     {
+      "weapon": "Mini-14射手步枪",
+      "name": "Mini-14射手步枪·精湛工艺",
+      "model": "Mini-14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "精湛工艺",
+      "series": "精湛工艺"
+     },
+     {
+      "weapon": "SKS射手步枪",
+      "name": "SKS射手步枪·精湛工艺",
+      "model": "SKS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "精湛工艺",
+      "series": "精湛工艺"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·精湛工艺",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "精湛工艺",
+      "series": "精湛工艺"
+     },
+     {
+      "weapon": "PKM轻机枪",
+      "name": "PKM轻机枪·精湛工艺",
+      "model": "PKM",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "精湛工艺",
+      "series": "精湛工艺"
+     },
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·海岸线",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "海岸线",
+      "series": "海岸线"
+     },
+     {
+      "weapon": "SV-98狙击步枪",
+      "name": "SV-98狙击步枪·海岸线",
+      "model": "SV-98",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "海岸线",
+      "series": "海岸线"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·海岸线",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "海岸线",
+      "series": "海岸线"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AKS-74U突击步枪",
+      "name": "AKS-74U突击步枪·监察",
+      "model": "AKS-74U",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "监察",
+      "series": "监察"
+     },
+     {
+      "weapon": "CAR-15突击步枪",
+      "name": "CAR-15突击步枪·监察",
+      "model": "CAR-15",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "监察",
+      "series": "监察"
+     },
+     {
+      "weapon": "MP5冲锋枪",
+      "name": "MP5冲锋枪·监察",
+      "model": "MP5",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "监察",
+      "series": "监察"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·监察",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "监察",
+      "series": "监察"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·监察",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "监察",
+      "series": "监察"
+     },
+     {
+      "weapon": "K437突击步枪",
+      "name": "K437突击步枪·凶兽",
+      "model": "K437",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "凶兽",
+      "series": "凶兽"
+     },
+     {
+      "weapon": "G3战斗步枪",
+      "name": "G3战斗步枪·凶兽",
+      "model": "G3",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "凶兽",
+      "series": "凶兽"
+     },
+     {
+      "weapon": "QCQ171冲锋枪",
+      "name": "QCQ171冲锋枪·凶兽",
+      "model": "QCQ171",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "凶兽",
+      "series": "凶兽"
+     },
+     {
+      "weapon": "SKS射手步枪",
+      "name": "SKS射手步枪·凶兽",
+      "model": "SKS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "凶兽",
+      "series": "凶兽"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·凶兽",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "凶兽",
+      "series": "凶兽"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S6",
+   "name": "烈火冲天",
+   "date": "2025-09-17",
+   "skins": [
+    {
+     "skin": "棱镜攻势S2",
+     "weapons": [
+      {
+       "name": "M7战斗步枪",
+       "token": "M7"
+      }
+     ],
+     "alias": [
+      "棱镜攻势S2",
+      "Spectrum Blitz S2|棱镜攻势2.0",
+      "棱镜攻势2.0",
+      "棱镜2.0",
+      "M7棱镜",
+      "棱镜M7",
+      "M7棱镜攻势",
+      "棱镜攻势M7",
+      "M7棱镜攻势S2"
+     ],
+     "note": "S1 棱镜攻势的续作，全息数据显示俯仰角、转速。",
+     "series": []
+    },
+    {
+     "skin": "天命",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "P90冲锋枪",
+       "token": "P90"
+      },
+      {
+       "name": "SR-25射手步枪",
+       "token": "SR-25"
+      }
+     ],
+     "alias": [
+      "天命"
+     ],
+     "note": "gamewith 紫スキン各2.36%（天命=史诗）",
+     "series": []
+    },
+    {
+     "skin": "地平线",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "QCQ171冲锋枪",
+       "token": "QCQ171"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "M870霰弹枪",
+       "token": "M870"
+      }
+     ],
+     "alias": [
+      "地平线"
+     ],
+     "note": "gamewith 青スキン各3.16%（ホライゾン=地平线，稀有）",
+     "series": []
+    },
+    {
+     "skin": "花岗岩",
+     "weapons": [
+      {
+       "name": "PTR-32突击步枪",
+       "token": "PTR-32"
+      },
+      {
+       "name": "SR-3M突击步枪",
+       "token": "SR-3M"
+      },
+      {
+       "name": "SV-98狙击步枪",
+       "token": "SV-98"
+      },
+      {
+       "name": "M1014霰弹枪",
+       "token": "M1014"
+      }
+     ],
+     "alias": [
+      "花岗岩"
+     ],
+     "note": "gamewith 青スキン各3.16%（ブルーマーブル=花岗岩，稀有）",
+     "series": []
+    },
+    {
+     "skin": "旧工业",
+     "weapons": [
+      {
+       "name": "AK-12突击步枪",
+       "token": "AK-12"
+      },
+      {
+       "name": "SCAR-H战斗步枪",
+       "token": "SCAR-H"
+      },
+      {
+       "name": "勇士冲锋枪",
+       "token": "勇士"
+      },
+      {
+       "name": "M1014霰弹枪",
+       "token": "M1014"
+      },
+      {
+       "name": "PKM轻机枪",
+       "token": "PKM"
+      }
+     ],
+     "alias": [
+      "旧工业"
+     ],
+     "note": "gamewith 緑スキン各6.73%（過去の工業=旧工业，普通）",
+     "series": []
+    },
+    {
+     "skin": "猛兽",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "SVD狙击步枪",
+       "token": "SVD"
+      }
+     ],
+     "alias": [
+      "猛兽"
+     ],
+     "note": "gamewith 緑スキン各6.73%（猛獣=猛兽，普通）",
+     "series": []
+    }
+   ],
+   "series": "棱镜攻势S2",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "M7战斗步枪",
+      "name": "M7战斗步枪·棱镜攻势S2",
+      "model": "M7",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "棱镜攻势S2",
+      "series": "棱镜攻势S2"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·天命",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "天命",
+      "series": "天命"
+     },
+     {
+      "weapon": "P90冲锋枪",
+      "name": "P90冲锋枪·天命",
+      "model": "P90",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "天命",
+      "series": "天命"
+     },
+     {
+      "weapon": "SR-25射手步枪",
+      "name": "SR-25射手步枪·天命",
+      "model": "SR-25",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "天命",
+      "series": "天命"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·地平线",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "地平线",
+      "series": "地平线"
+     },
+     {
+      "weapon": "QCQ171冲锋枪",
+      "name": "QCQ171冲锋枪·地平线",
+      "model": "QCQ171",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "地平线",
+      "series": "地平线"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·地平线",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "地平线",
+      "series": "地平线"
+     },
+     {
+      "weapon": "M870霰弹枪",
+      "name": "M870霰弹枪·地平线",
+      "model": "M870",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "地平线",
+      "series": "地平线"
+     },
+     {
+      "weapon": "PTR-32突击步枪",
+      "name": "PTR-32突击步枪·花岗岩",
+      "model": "PTR-32",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     },
+     {
+      "weapon": "SR-3M突击步枪",
+      "name": "SR-3M突击步枪·花岗岩",
+      "model": "SR-3M",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     },
+     {
+      "weapon": "SV-98狙击步枪",
+      "name": "SV-98狙击步枪·花岗岩",
+      "model": "SV-98",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     },
+     {
+      "weapon": "M1014霰弹枪",
+      "name": "M1014霰弹枪·花岗岩",
+      "model": "M1014",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "花岗岩",
+      "series": "花岗岩"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AK-12突击步枪",
+      "name": "AK-12突击步枪·旧工业",
+      "model": "AK-12",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "旧工业",
+      "series": "旧工业"
+     },
+     {
+      "weapon": "SCAR-H战斗步枪",
+      "name": "SCAR-H战斗步枪·旧工业",
+      "model": "SCAR-H",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "旧工业",
+      "series": "旧工业"
+     },
+     {
+      "weapon": "勇士冲锋枪",
+      "name": "勇士冲锋枪·旧工业",
+      "model": "勇士",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "旧工业",
+      "series": "旧工业"
+     },
+     {
+      "weapon": "M1014霰弹枪",
+      "name": "M1014霰弹枪·旧工业",
+      "model": "M1014",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "旧工业",
+      "series": "旧工业"
+     },
+     {
+      "weapon": "PKM轻机枪",
+      "name": "PKM轻机枪·旧工业",
+      "model": "PKM",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "旧工业",
+      "series": "旧工业"
+     },
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·猛兽",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "猛兽",
+      "series": "猛兽"
+     },
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·猛兽",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "猛兽",
+      "series": "猛兽"
+     },
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·猛兽",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "猛兽",
+      "series": "猛兽"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·猛兽",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "猛兽",
+      "series": "猛兽"
+     },
+     {
+      "weapon": "SVD狙击步枪",
+      "name": "SVD狙击步枪·猛兽",
+      "model": "SVD",
+      "gun": "精准射手步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "猛兽",
+      "series": "猛兽",
+      "gun_source": "游戏筛选核对"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S7",
+   "name": "阿萨拉",
+   "date": "2025-11-13",
+   "skins": [
+    {
+     "skin": "悬赏令",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      }
+     ],
+     "alias": [
+      "悬赏令",
+      "Procurado|指名手配書",
+      "ASVal悬赏令",
+      "悬赏令ASVal",
+      "ASVal悬赏",
+      "悬赏令ASVal突击步枪",
+      "VAL悬赏"
+     ],
+     "note": "左轮弹仓元素。保底进度与其它系列独立计算。",
+     "series": []
+    },
+    {
+     "skin": "碎冰行动",
+     "weapons": [
+      {
+       "name": "KC17突击步枪",
+       "token": "KC17"
+      },
+      {
+       "name": "PTR-32突击步枪",
+       "token": "PTR-32"
+      },
+      {
+       "name": "ASH-12战斗步枪",
+       "token": "ASH-12"
+      }
+     ],
+     "alias": [
+      "碎冰行动"
+     ],
+     "note": "gamewith 紫スキン2.36%（碎冰行动=史诗）",
+     "series": []
+    },
+    {
+     "skin": "旧梦",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "SCAR-H战斗步枪",
+       "token": "SCAR-H"
+      },
+      {
+       "name": "UZI冲锋枪",
+       "token": "UZI"
+      },
+      {
+       "name": "M700狙击步枪",
+       "token": "M700"
+      }
+     ],
+     "alias": [
+      "旧梦"
+     ],
+     "note": "gamewith 青スキン3.16%（古き夢=旧梦，稀有）",
+     "series": []
+    },
+    {
+     "skin": "巨兽",
+     "weapons": [
+      {
+       "name": "K437突击步枪",
+       "token": "K437"
+      },
+      {
+       "name": "SG552突击步枪",
+       "token": "SG552"
+      },
+      {
+       "name": "SR-3M突击步枪",
+       "token": "SR-3M"
+      },
+      {
+       "name": "M14射手步枪",
+       "token": "M14"
+      }
+     ],
+     "alias": [
+      "巨兽"
+     ],
+     "note": "gamewith 青スキン3.16%（巨獣=巨兽，稀有）",
+     "series": []
+    },
+    {
+     "skin": "噬菌体",
+     "weapons": [
+      {
+       "name": "AKM突击步枪",
+       "token": "AKM"
+      },
+      {
+       "name": "PTR-32突击步枪",
+       "token": "PTR-32"
+      },
+      {
+       "name": "M7战斗步枪",
+       "token": "M7"
+      },
+      {
+       "name": "勇士冲锋枪",
+       "token": "勇士"
+      },
+      {
+       "name": "VSS射手步枪",
+       "token": "VSS"
+      }
+     ],
+     "alias": [
+      "噬菌体"
+     ],
+     "note": "gamewith 緑スキン6.73%（バクテリオファージ=噬菌体，普通）",
+     "series": []
+    },
+    {
+     "skin": "古铜",
+     "weapons": [
+      {
+       "name": "腾龙突击步枪",
+       "token": "腾龙"
+      },
+      {
+       "name": "MP5冲锋枪",
+       "token": "MP5"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      },
+      {
+       "name": "G17手枪",
+       "token": "G17"
+      },
+      {
+       "name": "M249轻机枪",
+       "token": "M249"
+      }
+     ],
+     "alias": [
+      "古铜"
+     ],
+     "note": "gamewith 緑スキン6.73%（ブロンズエイジ=古铜，普通）",
+     "series": []
+    }
+   ],
+   "series": "悬赏令",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·悬赏令",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "悬赏令",
+      "series": "悬赏令"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "KC17突击步枪",
+      "name": "KC17突击步枪·碎冰行动",
+      "model": "KC17",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "碎冰行动",
+      "series": "碎冰行动"
+     },
+     {
+      "weapon": "PTR-32突击步枪",
+      "name": "PTR-32突击步枪·碎冰行动",
+      "model": "PTR-32",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "碎冰行动",
+      "series": "碎冰行动"
+     },
+     {
+      "weapon": "ASH-12战斗步枪",
+      "name": "ASH-12战斗步枪·碎冰行动",
+      "model": "ASH-12",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "碎冰行动",
+      "series": "碎冰行动"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·旧梦",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "旧梦",
+      "series": "旧梦"
+     },
+     {
+      "weapon": "SCAR-H战斗步枪",
+      "name": "SCAR-H战斗步枪·旧梦",
+      "model": "SCAR-H",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "旧梦",
+      "series": "旧梦"
+     },
+     {
+      "weapon": "UZI冲锋枪",
+      "name": "UZI冲锋枪·旧梦",
+      "model": "UZI",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "旧梦",
+      "series": "旧梦"
+     },
+     {
+      "weapon": "M700狙击步枪",
+      "name": "M700狙击步枪·旧梦",
+      "model": "M700",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "旧梦",
+      "series": "旧梦"
+     },
+     {
+      "weapon": "K437突击步枪",
+      "name": "K437突击步枪·巨兽",
+      "model": "K437",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "巨兽",
+      "series": "巨兽"
+     },
+     {
+      "weapon": "SG552突击步枪",
+      "name": "SG552突击步枪·巨兽",
+      "model": "SG552",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "巨兽",
+      "series": "巨兽"
+     },
+     {
+      "weapon": "SR-3M突击步枪",
+      "name": "SR-3M突击步枪·巨兽",
+      "model": "SR-3M",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "巨兽",
+      "series": "巨兽"
+     },
+     {
+      "weapon": "M14射手步枪",
+      "name": "M14射手步枪·巨兽",
+      "model": "M14",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "巨兽",
+      "series": "巨兽"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AKM突击步枪",
+      "name": "AKM突击步枪·噬菌体",
+      "model": "AKM",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "噬菌体",
+      "series": "噬菌体"
+     },
+     {
+      "weapon": "PTR-32突击步枪",
+      "name": "PTR-32突击步枪·噬菌体",
+      "model": "PTR-32",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "噬菌体",
+      "series": "噬菌体"
+     },
+     {
+      "weapon": "M7战斗步枪",
+      "name": "M7战斗步枪·噬菌体",
+      "model": "M7",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "噬菌体",
+      "series": "噬菌体"
+     },
+     {
+      "weapon": "勇士冲锋枪",
+      "name": "勇士冲锋枪·噬菌体",
+      "model": "勇士",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "噬菌体",
+      "series": "噬菌体"
+     },
+     {
+      "weapon": "VSS射手步枪",
+      "name": "VSS射手步枪·噬菌体",
+      "model": "VSS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "噬菌体",
+      "series": "噬菌体"
+     },
+     {
+      "weapon": "腾龙突击步枪",
+      "name": "腾龙突击步枪·古铜",
+      "model": "腾龙",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "古铜",
+      "series": "古铜"
+     },
+     {
+      "weapon": "MP5冲锋枪",
+      "name": "MP5冲锋枪·古铜",
+      "model": "MP5",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "古铜",
+      "series": "古铜"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·古铜",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "古铜",
+      "series": "古铜"
+     },
+     {
+      "weapon": "G17手枪",
+      "name": "G17手枪·古铜",
+      "model": "G17",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "古铜",
+      "series": "古铜"
+     },
+     {
+      "weapon": "M249轻机枪",
+      "name": "M249轻机枪·古铜",
+      "model": "M249",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "古铜",
+      "series": "古铜"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S8",
+   "name": "蝶变时刻",
+   "date": "2026-01-29",
+   "skins": [
+    {
+     "skin": "电玩高手S2",
+     "weapons": [
+      {
+       "name": "MP7冲锋枪",
+       "token": "MP7"
+      },
+      {
+       "name": "M250轻机枪",
+       "token": "M250"
+      }
+     ],
+     "alias": [
+      "电玩高手S2",
+      "Pro Gamer S2|电玩高手2.0",
+      "电玩2.0",
+      "电玩高手2",
+      "电玩高手二",
+      "M250电玩",
+      "MP7电玩",
+      "电玩高手S2M250",
+      "电玩高手S2MP7"
+     ],
+     "note": "机箱水冷主题，检视里内置两款可玩小游戏。",
+     "series": []
+    },
+    {
+     "skin": "檀劫铳影",
+     "weapons": [
+      {
+       "name": "腾龙突击步枪",
+       "token": "腾龙"
+      },
+      {
+       "name": "勇士冲锋枪",
+       "token": "勇士"
+      },
+      {
+       "name": "SVD狙击步枪",
+       "token": "SVD"
+      }
+     ],
+     "alias": [
+      "檀劫铳影"
+     ],
+     "note": "账号交易页【史诗外观】分组列有该系列；gamewith 紫スキン各2.36%",
+     "series": []
+    },
+    {
+     "skin": "休闲时光",
+     "weapons": [
+      {
+       "name": "AKS-74U突击步枪",
+       "token": "AKS-74U"
+      },
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "SCAR-H战斗步枪",
+       "token": "SCAR-H"
+      },
+      {
+       "name": "PSG-1射手步枪",
+       "token": "PSG-1"
+      }
+     ],
+     "alias": [
+      "休闲时光"
+     ],
+     "note": "gamewith 青スキン各3.16%（休息のひととき=休闲时光，稀有）",
+     "series": []
+    },
+    {
+     "skin": "千里骏骨",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      },
+      {
+       "name": "野牛冲锋枪",
+       "token": "野牛"
+      },
+      {
+       "name": "QJB201轻机枪",
+       "token": "QJB201"
+      }
+     ],
+     "alias": [
+      "千里骏骨"
+     ],
+     "note": "账号交易页【稀有外观】分组列有该系列；gamewith 青スキン各3.16%",
+     "series": []
+    },
+    {
+     "skin": "斑马",
+     "weapons": [
+      {
+       "name": "K437突击步枪",
+       "token": "K437"
+      },
+      {
+       "name": "M16A4突击步枪",
+       "token": "M16A4"
+      },
+      {
+       "name": "SMG-45冲锋枪",
+       "token": "SMG-45"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "G17手枪",
+       "token": "G17"
+      }
+     ],
+     "alias": [
+      "斑马"
+     ],
+     "note": "gamewith 緑スキン各6.73%（ゼブラ=斑马，普通）",
+     "series": []
+    },
+    {
+     "skin": "彩墨涂鸦",
+     "weapons": [
+      {
+       "name": "SG552突击步枪",
+       "token": "SG552"
+      },
+      {
+       "name": "勇士冲锋枪",
+       "token": "勇士"
+      },
+      {
+       "name": "SKS射手步枪",
+       "token": "SKS"
+      },
+      {
+       "name": "G18手枪",
+       "token": "G18"
+      },
+      {
+       "name": "M249轻机枪",
+       "token": "M249"
+      }
+     ],
+     "alias": [
+      "彩墨涂鸦"
+     ],
+     "note": "gamewith 緑スキン各6.73%（インクグラフィティ=彩墨涂鸦，普通）",
+     "series": []
+    }
+   ],
+   "series": "电玩高手S2",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "MP7冲锋枪",
+      "name": "MP7冲锋枪·电玩高手S2",
+      "model": "MP7",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "电玩高手S2",
+      "series": "电玩高手S2"
+     },
+     {
+      "weapon": "M250轻机枪",
+      "name": "M250轻机枪·电玩高手S2",
+      "model": "M250",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "电玩高手S2",
+      "series": "电玩高手S2"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "腾龙突击步枪",
+      "name": "腾龙突击步枪·檀劫铳影",
+      "model": "腾龙",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "檀劫铳影",
+      "series": "檀劫铳影"
+     },
+     {
+      "weapon": "勇士冲锋枪",
+      "name": "勇士冲锋枪·檀劫铳影",
+      "model": "勇士",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "檀劫铳影",
+      "series": "檀劫铳影"
+     },
+     {
+      "weapon": "SVD狙击步枪",
+      "name": "SVD狙击步枪·檀劫铳影",
+      "model": "SVD",
+      "gun": "精准射手步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "檀劫铳影",
+      "series": "檀劫铳影",
+      "gun_source": "游戏筛选核对"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AKS-74U突击步枪",
+      "name": "AKS-74U突击步枪·休闲时光",
+      "model": "AKS-74U",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "休闲时光",
+      "series": "休闲时光"
+     },
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·休闲时光",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "休闲时光",
+      "series": "休闲时光"
+     },
+     {
+      "weapon": "SCAR-H战斗步枪",
+      "name": "SCAR-H战斗步枪·休闲时光",
+      "model": "SCAR-H",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "休闲时光",
+      "series": "休闲时光"
+     },
+     {
+      "weapon": "PSG-1射手步枪",
+      "name": "PSG-1射手步枪·休闲时光",
+      "model": "PSG-1",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "休闲时光",
+      "series": "休闲时光"
+     },
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·千里骏骨",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "千里骏骨",
+      "series": "千里骏骨"
+     },
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·千里骏骨",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "千里骏骨",
+      "series": "千里骏骨"
+     },
+     {
+      "weapon": "野牛冲锋枪",
+      "name": "野牛冲锋枪·千里骏骨",
+      "model": "野牛",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "千里骏骨",
+      "series": "千里骏骨"
+     },
+     {
+      "weapon": "QJB201轻机枪",
+      "name": "QJB201轻机枪·千里骏骨",
+      "model": "QJB201",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "千里骏骨",
+      "series": "千里骏骨"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "K437突击步枪",
+      "name": "K437突击步枪·斑马",
+      "model": "K437",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "斑马",
+      "series": "斑马"
+     },
+     {
+      "weapon": "M16A4突击步枪",
+      "name": "M16A4突击步枪·斑马",
+      "model": "M16A4",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "斑马",
+      "series": "斑马"
+     },
+     {
+      "weapon": "SMG-45冲锋枪",
+      "name": "SMG-45冲锋枪·斑马",
+      "model": "SMG-45",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "斑马",
+      "series": "斑马"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·斑马",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "斑马",
+      "series": "斑马"
+     },
+     {
+      "weapon": "G17手枪",
+      "name": "G17手枪·斑马",
+      "model": "G17",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "斑马",
+      "series": "斑马"
+     },
+     {
+      "weapon": "SG552突击步枪",
+      "name": "SG552突击步枪·彩墨涂鸦",
+      "model": "SG552",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "彩墨涂鸦",
+      "series": "彩墨涂鸦"
+     },
+     {
+      "weapon": "勇士冲锋枪",
+      "name": "勇士冲锋枪·彩墨涂鸦",
+      "model": "勇士",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "彩墨涂鸦",
+      "series": "彩墨涂鸦"
+     },
+     {
+      "weapon": "SKS射手步枪",
+      "name": "SKS射手步枪·彩墨涂鸦",
+      "model": "SKS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "彩墨涂鸦",
+      "series": "彩墨涂鸦"
+     },
+     {
+      "weapon": "G18手枪",
+      "name": "G18手枪·彩墨涂鸦",
+      "model": "G18",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "彩墨涂鸦",
+      "series": "彩墨涂鸦"
+     },
+     {
+      "weapon": "M249轻机枪",
+      "name": "M249轻机枪·彩墨涂鸦",
+      "model": "M249",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "彩墨涂鸦",
+      "series": "彩墨涂鸦"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S9",
+   "name": "回声",
+   "date": "2026-04-16",
+   "skins": [
+    {
+     "skin": "造物纪元",
+     "weapons": [
+      {
+       "name": "KC17突击步枪",
+       "token": "KC17"
+      }
+     ],
+     "alias": [
+      "造物纪元",
+      "Genesis|創世紀元",
+      "KC17造物纪元",
+      "造物纪元KC17",
+      "造物",
+      "造物纪元KC17突击步枪"
+     ],
+     "note": "首个变形皮肤，检视时 3D 打印重组枪身。极品带击败计数器。",
+     "series": []
+    },
+    {
+     "skin": "益趣游戏",
+     "weapons": [
+      {
+       "name": "KC17突击步枪",
+       "token": "KC17"
+      },
+      {
+       "name": "G3战斗步枪",
+       "token": "G3"
+      },
+      {
+       "name": "725霰弹枪",
+       "token": "725"
+      }
+     ],
+     "alias": [
+      "益趣游戏",
+      "725双管"
+     ],
+     "note": "账号页将该系列列入【史诗】分组（725双管霰弹枪-益趣游戏）；官方产物列表第2系列",
+     "series": []
+    },
+    {
+     "skin": "星之彩",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "SR-3M突击步枪",
+       "token": "SR-3M"
+      },
+      {
+       "name": "G3战斗步枪",
+       "token": "G3"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      }
+     ],
+     "alias": [
+      "星之彩"
+     ],
+     "note": "按官方产物顺序推定（第3系列，4款，与各砖稀有档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "酸蚀",
+     "weapons": [
+      {
+       "name": "K437突击步枪",
+       "token": "K437"
+      },
+      {
+       "name": "P90冲锋枪",
+       "token": "P90"
+      },
+      {
+       "name": "SVD狙击步枪",
+       "token": "SVD"
+      },
+      {
+       "name": "M870霰弹枪",
+       "token": "M870"
+      }
+     ],
+     "alias": [
+      "酸蚀"
+     ],
+     "note": "按官方产物顺序推定（第4系列，4款，与各砖稀有档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "生存玩家",
+     "weapons": [
+      {
+       "name": "M16A4突击步枪",
+       "token": "M16A4"
+      },
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      },
+      {
+       "name": "SR9射手步枪",
+       "token": "SR9"
+      },
+      {
+       "name": "M1911手枪",
+       "token": "M1911"
+      },
+      {
+       "name": "M249轻机枪",
+       "token": "M249"
+      }
+     ],
+     "alias": [
+      "生存玩家"
+     ],
+     "note": "按官方产物顺序推定（第5系列，5款，与各砖普通档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "猎豹图案",
+     "weapons": [
+      {
+       "name": "M4A1突击步枪",
+       "token": "M4A1"
+      },
+      {
+       "name": "SG552突击步枪",
+       "token": "SG552"
+      },
+      {
+       "name": "G3战斗步枪",
+       "token": "G3"
+      },
+      {
+       "name": "SKS射手步枪",
+       "token": "SKS"
+      },
+      {
+       "name": "M870霰弹枪",
+       "token": "M870"
+      }
+     ],
+     "alias": [
+      "猎豹图案"
+     ],
+     "note": "按官方产物顺序推定（第6系列，5款，与各砖普通档结构一致）",
+     "series": []
+    }
+   ],
+   "series": "造物纪元",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "KC17突击步枪",
+      "name": "KC17突击步枪·造物纪元",
+      "model": "KC17",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "造物纪元",
+      "series": "造物纪元"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "KC17突击步枪",
+      "name": "KC17突击步枪·益趣游戏",
+      "model": "KC17",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "益趣游戏",
+      "series": "益趣游戏"
+     },
+     {
+      "weapon": "G3战斗步枪",
+      "name": "G3战斗步枪·益趣游戏",
+      "model": "G3",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "益趣游戏",
+      "series": "益趣游戏"
+     },
+     {
+      "weapon": "725霰弹枪",
+      "name": "725霰弹枪·益趣游戏",
+      "model": "725",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "益趣游戏",
+      "series": "益趣游戏"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·星之彩",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "SR-3M突击步枪",
+      "name": "SR-3M突击步枪·星之彩",
+      "model": "SR-3M",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "G3战斗步枪",
+      "name": "G3战斗步枪·星之彩",
+      "model": "G3",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·星之彩",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "星之彩",
+      "series": "星之彩"
+     },
+     {
+      "weapon": "K437突击步枪",
+      "name": "K437突击步枪·酸蚀",
+      "model": "K437",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "酸蚀",
+      "series": "酸蚀"
+     },
+     {
+      "weapon": "P90冲锋枪",
+      "name": "P90冲锋枪·酸蚀",
+      "model": "P90",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "酸蚀",
+      "series": "酸蚀"
+     },
+     {
+      "weapon": "SVD狙击步枪",
+      "name": "SVD狙击步枪·酸蚀",
+      "model": "SVD",
+      "gun": "精准射手步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "酸蚀",
+      "series": "酸蚀",
+      "gun_source": "游戏筛选核对"
+     },
+     {
+      "weapon": "M870霰弹枪",
+      "name": "M870霰弹枪·酸蚀",
+      "model": "M870",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "酸蚀",
+      "series": "酸蚀"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "M16A4突击步枪",
+      "name": "M16A4突击步枪·生存玩家",
+      "model": "M16A4",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "生存玩家",
+      "series": "生存玩家"
+     },
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·生存玩家",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "生存玩家",
+      "series": "生存玩家"
+     },
+     {
+      "weapon": "SR9射手步枪",
+      "name": "SR9射手步枪·生存玩家",
+      "model": "SR9",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "生存玩家",
+      "series": "生存玩家"
+     },
+     {
+      "weapon": "M1911手枪",
+      "name": "M1911手枪·生存玩家",
+      "model": "M1911",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "生存玩家",
+      "series": "生存玩家"
+     },
+     {
+      "weapon": "M249轻机枪",
+      "name": "M249轻机枪·生存玩家",
+      "model": "M249",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "生存玩家",
+      "series": "生存玩家"
+     },
+     {
+      "weapon": "M4A1突击步枪",
+      "name": "M4A1突击步枪·猎豹图案",
+      "model": "M4A1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "猎豹图案",
+      "series": "猎豹图案"
+     },
+     {
+      "weapon": "SG552突击步枪",
+      "name": "SG552突击步枪·猎豹图案",
+      "model": "SG552",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "猎豹图案",
+      "series": "猎豹图案"
+     },
+     {
+      "weapon": "G3战斗步枪",
+      "name": "G3战斗步枪·猎豹图案",
+      "model": "G3",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "猎豹图案",
+      "series": "猎豹图案"
+     },
+     {
+      "weapon": "SKS射手步枪",
+      "name": "SKS射手步枪·猎豹图案",
+      "model": "SKS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "猎豹图案",
+      "series": "猎豹图案"
+     },
+     {
+      "weapon": "M870霰弹枪",
+      "name": "M870霰弹枪·猎豹图案",
+      "model": "M870",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "猎豹图案",
+      "series": "猎豹图案"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S10",
+   "name": "裂变",
+   "date": "2026-06-26",
+   "skins": [
+    {
+     "skin": "群星",
+     "weapons": [
+      {
+       "name": "AKM突击步枪",
+       "token": "AKM"
+      }
+     ],
+     "alias": [
+      "群星",
+      "Astromancy|群星纪元",
+      "AKM群星",
+      "群星AKM",
+      "AKM群星突击步枪"
+     ],
+     "note": "星轨时间主题，空仓检视可校准真实时间。有隐藏模板（星河光）。注意：网上大量攻略把 S10 砖皮写成 SR-3M 深渊之核，那是爆料，官方实录是 AKM 群星。",
+     "series": []
+    },
+    {
+     "skin": "海韵之星",
+     "weapons": [
+      {
+       "name": "QCQ171冲锋枪",
+       "token": "QCQ171"
+      },
+      {
+       "name": "PSG-1射手步枪",
+       "token": "PSG-1"
+      },
+      {
+       "name": "QJB201轻机枪",
+       "token": "QJB201"
+      }
+     ],
+     "alias": [
+      "海韵之星"
+     ],
+     "note": "gamewith 紫スキン各2.36%（海韵之星=史诗）",
+     "series": []
+    },
+    {
+     "skin": "磁暴脉冲",
+     "weapons": [
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "M16A4突击步枪",
+       "token": "M16A4"
+      },
+      {
+       "name": "SR-3M突击步枪",
+       "token": "SR-3M"
+      },
+      {
+       "name": "QCQ171冲锋枪",
+       "token": "QCQ171"
+      }
+     ],
+     "alias": [
+      "磁暴脉冲"
+     ],
+     "note": "gamewith 青スキン各3.16%（磁気圏=磁暴脉冲，稀有）",
+     "series": []
+    },
+    {
+     "skin": "剑兰",
+     "weapons": [
+      {
+       "name": "CAR-15突击步枪",
+       "token": "CAR-15"
+      },
+      {
+       "name": "KC17突击步枪",
+       "token": "KC17"
+      },
+      {
+       "name": "SV-98狙击步枪",
+       "token": "SV-98"
+      },
+      {
+       "name": "沙漠之鹰手枪",
+       "token": "沙漠之鹰"
+      }
+     ],
+     "alias": [
+      "剑兰"
+     ],
+     "note": "gamewith 青スキン各3.16%（グラジオラス=剑兰，稀有）",
+     "series": []
+    },
+    {
+     "skin": "幻夜",
+     "weapons": [
+      {
+       "name": "PTR-32突击步枪",
+       "token": "PTR-32"
+      },
+      {
+       "name": "SCAR-H战斗步枪",
+       "token": "SCAR-H"
+      },
+      {
+       "name": "MP5冲锋枪",
+       "token": "MP5"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      },
+      {
+       "name": "G18手枪",
+       "token": "G18"
+      }
+     ],
+     "alias": [
+      "幻夜"
+     ],
+     "note": "gamewith 緑スキン各6.73%（スターリーナイト=幻夜，普通）",
+     "series": []
+    },
+    {
+     "skin": "叠锋",
+     "weapons": [
+      {
+       "name": "QBZ95-1突击步枪",
+       "token": "QBZ95-1"
+      },
+      {
+       "name": "G3战斗步枪",
+       "token": "G3"
+      },
+      {
+       "name": "SVD狙击步枪",
+       "token": "SVD"
+      },
+      {
+       "name": ".357左轮手枪",
+       "token": ".357左轮"
+      },
+      {
+       "name": "M249轻机枪",
+       "token": "M249"
+      }
+     ],
+     "alias": [
+      "叠锋"
+     ],
+     "note": "gamewith 緑スキン各6.73%（ダマスカス=叠锋，普通）",
+     "series": []
+    }
+   ],
+   "series": "群星",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "AKM突击步枪",
+      "name": "AKM突击步枪·群星",
+      "model": "AKM",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "群星",
+      "series": "群星"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "QCQ171冲锋枪",
+      "name": "QCQ171冲锋枪·海韵之星",
+      "model": "QCQ171",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "海韵之星",
+      "series": "海韵之星"
+     },
+     {
+      "weapon": "PSG-1射手步枪",
+      "name": "PSG-1射手步枪·海韵之星",
+      "model": "PSG-1",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "海韵之星",
+      "series": "海韵之星"
+     },
+     {
+      "weapon": "QJB201轻机枪",
+      "name": "QJB201轻机枪·海韵之星",
+      "model": "QJB201",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "海韵之星",
+      "series": "海韵之星"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·磁暴脉冲",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "磁暴脉冲",
+      "series": "磁暴脉冲"
+     },
+     {
+      "weapon": "M16A4突击步枪",
+      "name": "M16A4突击步枪·磁暴脉冲",
+      "model": "M16A4",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "磁暴脉冲",
+      "series": "磁暴脉冲"
+     },
+     {
+      "weapon": "SR-3M突击步枪",
+      "name": "SR-3M突击步枪·磁暴脉冲",
+      "model": "SR-3M",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "磁暴脉冲",
+      "series": "磁暴脉冲"
+     },
+     {
+      "weapon": "QCQ171冲锋枪",
+      "name": "QCQ171冲锋枪·磁暴脉冲",
+      "model": "QCQ171",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "磁暴脉冲",
+      "series": "磁暴脉冲"
+     },
+     {
+      "weapon": "CAR-15突击步枪",
+      "name": "CAR-15突击步枪·剑兰",
+      "model": "CAR-15",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "剑兰",
+      "series": "剑兰"
+     },
+     {
+      "weapon": "KC17突击步枪",
+      "name": "KC17突击步枪·剑兰",
+      "model": "KC17",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "剑兰",
+      "series": "剑兰"
+     },
+     {
+      "weapon": "SV-98狙击步枪",
+      "name": "SV-98狙击步枪·剑兰",
+      "model": "SV-98",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "剑兰",
+      "series": "剑兰"
+     },
+     {
+      "weapon": "沙漠之鹰手枪",
+      "name": "沙漠之鹰手枪·剑兰",
+      "model": "沙漠之鹰",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "剑兰",
+      "series": "剑兰"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "PTR-32突击步枪",
+      "name": "PTR-32突击步枪·幻夜",
+      "model": "PTR-32",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "幻夜",
+      "series": "幻夜"
+     },
+     {
+      "weapon": "SCAR-H战斗步枪",
+      "name": "SCAR-H战斗步枪·幻夜",
+      "model": "SCAR-H",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "幻夜",
+      "series": "幻夜"
+     },
+     {
+      "weapon": "MP5冲锋枪",
+      "name": "MP5冲锋枪·幻夜",
+      "model": "MP5",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "幻夜",
+      "series": "幻夜"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·幻夜",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "幻夜",
+      "series": "幻夜"
+     },
+     {
+      "weapon": "G18手枪",
+      "name": "G18手枪·幻夜",
+      "model": "G18",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "幻夜",
+      "series": "幻夜"
+     },
+     {
+      "weapon": "QBZ95-1突击步枪",
+      "name": "QBZ95-1突击步枪·叠锋",
+      "model": "QBZ95-1",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "叠锋",
+      "series": "叠锋"
+     },
+     {
+      "weapon": "G3战斗步枪",
+      "name": "G3战斗步枪·叠锋",
+      "model": "G3",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "叠锋",
+      "series": "叠锋"
+     },
+     {
+      "weapon": "SVD狙击步枪",
+      "name": "SVD狙击步枪·叠锋",
+      "model": "SVD",
+      "gun": "精准射手步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "叠锋",
+      "series": "叠锋",
+      "gun_source": "游戏筛选核对"
+     },
+     {
+      "weapon": ".357左轮手枪",
+      "name": ".357左轮手枪·叠锋",
+      "model": ".357左轮",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "叠锋",
+      "series": "叠锋"
+     },
+     {
+      "weapon": "M249轻机枪",
+      "name": "M249轻机枪·叠锋",
+      "model": "M249",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "叠锋",
+      "series": "叠锋"
+     }
+    ]
+   }
+  },
+  {
+   "season": "S11",
+   "name": "群星",
+   "date": "2026-09-04",
+   "skins": [
+    {
+     "skin": "疾光魅影",
+     "weapons": [
+      {
+       "name": "MK4冲锋枪",
+       "token": "MK4"
+      }
+     ],
+     "alias": [
+      "疾光魅影",
+      "Velocity|ヴェロシティ",
+      "MK4疾光魅影",
+      "疾光魅影MK4",
+      "极光魅影",
+      "MK4极光魅影",
+      "极光魅影MK4",
+      "现代骑士",
+      "MK4现代骑士"
+     ],
+     "note": "超跑/赛摩主题，电镀银枪身 + 蓝色等离子排气。爆料期叫过「现代骑士」。同系列还有 黑银先锋-AS Val。注意：S11 的赛季名也叫「群星」，和 S10 的砖皮同名，别搞混。",
+     "series": []
+    },
+    {
+     "skin": "黑银先锋",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "AUG突击步枪",
+       "token": "AUG"
+      },
+      {
+       "name": "P90冲锋枪",
+       "token": "P90"
+      }
+     ],
+     "alias": [
+      "黑银先锋"
+     ],
+     "note": "按官方产物顺序推定（第2系列，3款，与S1-S10史诗档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "管弦乐队",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "CAR-15突击步枪",
+       "token": "CAR-15"
+      },
+      {
+       "name": "UZI冲锋枪",
+       "token": "UZI"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      }
+     ],
+     "alias": [
+      "管弦乐队"
+     ],
+     "note": "按官方产物顺序推定（第3系列，4款，与各砖稀有档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "征服者",
+     "weapons": [
+      {
+       "name": "M16A4突击步枪",
+       "token": "M16A4"
+      },
+      {
+       "name": "M7战斗步枪",
+       "token": "M7"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      },
+      {
+       "name": "G18手枪",
+       "token": "G18"
+      }
+     ],
+     "alias": [
+      "征服者"
+     ],
+     "note": "按官方产物顺序推定（第4系列，4款，与各砖稀有档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "夜穹",
+     "weapons": [
+      {
+       "name": "AS Val突击步枪",
+       "token": "AS Val"
+      },
+      {
+       "name": "M16A4突击步枪",
+       "token": "M16A4"
+      },
+      {
+       "name": "腾龙突击步枪",
+       "token": "腾龙"
+      },
+      {
+       "name": "SMG-45冲锋枪",
+       "token": "SMG-45"
+      },
+      {
+       "name": "FS-12霰弹枪",
+       "token": "FS-12"
+      }
+     ],
+     "alias": [
+      "夜穹"
+     ],
+     "note": "按官方产物顺序推定（第5系列，5款，与各砖普通档结构一致）",
+     "series": []
+    },
+    {
+     "skin": "龙焱",
+     "weapons": [
+      {
+       "name": "Vector冲锋枪",
+       "token": "Vector"
+      },
+      {
+       "name": "SKS射手步枪",
+       "token": "SKS"
+      },
+      {
+       "name": "R93狙击步枪",
+       "token": "R93"
+      },
+      {
+       "name": "S12K霰弹枪",
+       "token": "S12K"
+      },
+      {
+       "name": "PKM轻机枪",
+       "token": "PKM"
+      }
+     ],
+     "alias": [
+      "龙焱"
+     ],
+     "note": "按官方产物顺序推定（第6系列，5款，与各砖普通档结构一致）",
+     "series": []
+    }
+   ],
+   "series": "疾光魅影",
+   "tiers": {
+    "传说": [
+     {
+      "weapon": "MK4冲锋枪",
+      "name": "MK4冲锋枪·疾光魅影",
+      "model": "MK4",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "疾光魅影",
+      "series": "疾光魅影"
+     }
+    ],
+    "史诗": [
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·黑银先锋",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "黑银先锋",
+      "series": "黑银先锋"
+     },
+     {
+      "weapon": "AUG突击步枪",
+      "name": "AUG突击步枪·黑银先锋",
+      "model": "AUG",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "黑银先锋",
+      "series": "黑银先锋"
+     },
+     {
+      "weapon": "P90冲锋枪",
+      "name": "P90冲锋枪·黑银先锋",
+      "model": "P90",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "黑银先锋",
+      "series": "黑银先锋"
+     }
+    ],
+    "稀有": [
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·管弦乐队",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "管弦乐队",
+      "series": "管弦乐队"
+     },
+     {
+      "weapon": "CAR-15突击步枪",
+      "name": "CAR-15突击步枪·管弦乐队",
+      "model": "CAR-15",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "管弦乐队",
+      "series": "管弦乐队"
+     },
+     {
+      "weapon": "UZI冲锋枪",
+      "name": "UZI冲锋枪·管弦乐队",
+      "model": "UZI",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "管弦乐队",
+      "series": "管弦乐队"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·管弦乐队",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "管弦乐队",
+      "series": "管弦乐队"
+     },
+     {
+      "weapon": "M16A4突击步枪",
+      "name": "M16A4突击步枪·征服者",
+      "model": "M16A4",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "征服者",
+      "series": "征服者"
+     },
+     {
+      "weapon": "M7战斗步枪",
+      "name": "M7战斗步枪·征服者",
+      "model": "M7",
+      "gun": "步枪",
+      "gun_fine": "战斗步枪",
+      "skin": "征服者",
+      "series": "征服者"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·征服者",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "征服者",
+      "series": "征服者"
+     },
+     {
+      "weapon": "G18手枪",
+      "name": "G18手枪·征服者",
+      "model": "G18",
+      "gun": "手枪",
+      "gun_fine": "手枪",
+      "skin": "征服者",
+      "series": "征服者"
+     }
+    ],
+    "普通": [
+     {
+      "weapon": "AS Val突击步枪",
+      "name": "AS Val突击步枪·夜穹",
+      "model": "AS Val",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "夜穹",
+      "series": "夜穹"
+     },
+     {
+      "weapon": "M16A4突击步枪",
+      "name": "M16A4突击步枪·夜穹",
+      "model": "M16A4",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "夜穹",
+      "series": "夜穹"
+     },
+     {
+      "weapon": "腾龙突击步枪",
+      "name": "腾龙突击步枪·夜穹",
+      "model": "腾龙",
+      "gun": "步枪",
+      "gun_fine": "突击步枪",
+      "skin": "夜穹",
+      "series": "夜穹"
+     },
+     {
+      "weapon": "SMG-45冲锋枪",
+      "name": "SMG-45冲锋枪·夜穹",
+      "model": "SMG-45",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "夜穹",
+      "series": "夜穹"
+     },
+     {
+      "weapon": "FS-12霰弹枪",
+      "name": "FS-12霰弹枪·夜穹",
+      "model": "FS-12",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "夜穹",
+      "series": "夜穹"
+     },
+     {
+      "weapon": "Vector冲锋枪",
+      "name": "Vector冲锋枪·龙焱",
+      "model": "Vector",
+      "gun": "冲锋枪",
+      "gun_fine": "冲锋枪",
+      "skin": "龙焱",
+      "series": "龙焱"
+     },
+     {
+      "weapon": "SKS射手步枪",
+      "name": "SKS射手步枪·龙焱",
+      "model": "SKS",
+      "gun": "精准射手步枪",
+      "gun_fine": "射手步枪",
+      "skin": "龙焱",
+      "series": "龙焱"
+     },
+     {
+      "weapon": "R93狙击步枪",
+      "name": "R93狙击步枪·龙焱",
+      "model": "R93",
+      "gun": "狙击步枪",
+      "gun_fine": "狙击步枪",
+      "skin": "龙焱",
+      "series": "龙焱"
+     },
+     {
+      "weapon": "S12K霰弹枪",
+      "name": "S12K霰弹枪·龙焱",
+      "model": "S12K",
+      "gun": "霰弹枪",
+      "gun_fine": "霰弹枪",
+      "skin": "龙焱",
+      "series": "龙焱"
+     },
+     {
+      "weapon": "PKM轻机枪",
+      "name": "PKM轻机枪·龙焱",
+      "model": "PKM",
+      "gun": "轻机枪",
+      "gun_fine": "轻机枪",
+      "skin": "龙焱",
+      "series": "龙焱"
+     }
+    ]
+   }
+  }
+ ],
+ "tiers": [
+  {
+   "name": "普通",
+   "color": "绿",
+   "note": "基础涂装，无特效"
+  },
+  {
+   "name": "稀有",
+   "color": "蓝",
+   "note": ""
+  },
+  {
+   "name": "史诗",
+   "color": "紫",
+   "note": "合成 S 级成色的常用材料"
+  },
+  {
+   "name": "传说",
+   "color": "橙",
+   "note": "通行证 / 活动主力档"
+  },
+  {
+   "name": "典藏",
+   "color": "红金",
+   "note": "砖皮，只能开曼德尔砖出，最高一档"
+  }
+ ],
+ "craft": [
+  {
+   "name": "极品",
+   "note": "完整动态特效：金色曳光弹、电镀变色枪身、击杀计数、专属语音"
+  },
+  {
+   "name": "优品",
+   "note": "特效简化：蓝色曳光弹，无动态纹理与语音，部分无击杀特效"
+  }
+ ],
+ "wear": [
+  {
+   "grade": "S",
+   "name": "典藏级",
+   "max": 0.4,
+   "note": "无磨损无划痕，光泽最满"
+  },
+  {
+   "grade": "A",
+   "name": "",
+   "max": 1.25,
+   "note": "轻微磨损，接近新品"
+  },
+  {
+   "grade": "B",
+   "name": "",
+   "max": 2.5,
+   "note": "中等磨损，可见划痕掉漆"
+  },
+  {
+   "grade": "C",
+   "name": "",
+   "max": null,
+   "note": "磨损严重，颜色发暗"
+  }
+ ],
+ "gun_verified": {
+  "date": "2026-10-23",
+  "method": "典藏外观页按枪种筛选，滚到底读全部卡片名",
+  "counts": {
+   "步枪": 139,
+   "冲锋枪": 15,
+   "霰弹枪": 17,
+   "轻机枪": 20,
+   "精准射手步枪": 30,
+   "狙击步枪": 24,
+   "手枪": 0
+  },
+  "changed": [
+   {
+    "name": "SVD狙击步枪·猛兽",
+    "season": "S6",
+    "tier": "普通",
+    "gun": "精准射手步枪"
+   },
+   {
+    "name": "SVD狙击步枪·檀劫铳影",
+    "season": "S8",
+    "tier": "史诗",
+    "gun": "精准射手步枪"
+   },
+   {
+    "name": "SVD狙击步枪·酸蚀",
+    "season": "S9",
+    "tier": "稀有",
+    "gun": "精准射手步枪"
+   },
+   {
+    "name": "SVD狙击步枪·叠锋",
+    "season": "S10",
+    "tier": "普通",
+    "gun": "精准射手步枪"
+   }
   ]
+ }
 }

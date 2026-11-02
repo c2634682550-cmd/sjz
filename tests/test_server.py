@@ -1,11 +1,7 @@
-"""server.py 的回归测试：MJPEG 流必须真的发数据。
+"""server.py 的回归测试：前端用到的那些端点必须真的能用。
 
-本地回归的是一条**很难发现的原有缺陷**：`_stream()` 是无限循环、响应永不
-结束，而 `BaseHTTPRequestHandler.wfile` 带缓冲 —— 不 flush 的话第一帧永远
-卡在缓冲区里，浏览器一个字节都收不到，直接把 `<img>` 判成 broken，
-表现为预览区全黑。
-
-源码模式下这个 bug 也在，只是当时没人去点"预览到底有没有画面"。
+界面是三页版（抢购 / 记录 / 设置），它只依赖这些 JSON 端点 ——
+预览流（/api/stream）在这一版里没有页面用它，已经删掉了。
 """
 import json
 import os
@@ -41,115 +37,12 @@ def server():
     httpd.server_close()
 
 
-def _read_stream(base, seconds=2.0, timeout=8.0):
-    """读一段时间流，返回 (字节数, 帧数)。"""
-    total = frames = 0
-    end = time.time() + seconds
-    req = urllib.request.Request(base + "/api/stream")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        assert r.headers.get("Content-Type", "").startswith("multipart/x-mixed-replace"), \
-            r.headers.get("Content-Type")
-        while time.time() < end:
-            chunk = r.read(65536)
-            if not chunk:
-                break
-            total += len(chunk)
-            frames += chunk.count(b"\xff\xd8")
-    return total, frames
-
-
-def test_stream_flushes_every_frame(server):
-    """每帧之后必须 flush。
-
-    为什么这条测试要单独存在：源码模式下单帧 93KB 会撞满 8KB 缓冲自动刷出，
-    所以"流有没有数据"在源码模式下**测不出** flush 缺失。只有在 PyInstaller
-    打包后的 exe 里，wfile 不自动刷，去掉 flush 就是 0 字节（实测：有 flush
-    327,680 字节 / 无 flush 超时）。
-
-    直接对着源码断言，比依赖运行时行为可靠 —— 这是**结构性检查**：
-    _stream 里出现 wfile.write 就必须有 wfile.flush。
-    """
-    import inspect
-    from core import server as srv
-    src = inspect.getsource(srv.Handler._stream)
-    assert "self.wfile.write" in src, "取不到 _stream 源码"
-    assert "self.wfile.flush()" in src, (
-        "_stream 漏了 self.wfile.flush()。打包后的 exe 里这会让预览区全黑 —— "
-        "客户端收不到任何字节，浏览器把 <img> 判成 broken。")
-
-
-def test_dropping_flush_would_break_the_stream(server):
-    """反证：把 flush 从源码里拿掉，上面的断言必须失败。
-
-    防止 test_stream_flushes_every_frame 变成永真的空断言。
-    """
-    import inspect
-    from core import server as srv
-    src = inspect.getsource(srv.Handler._stream)
-    mutated = src.replace("self.wfile.flush()", "pass")
-    assert mutated != src, "没找到 flush，测试本身失效了"
-    assert "self.wfile.flush()" not in mutated, "替换没生效"
-
-
-def test_stream_actually_sends_frames(server):
-    """流的字节数必须真的到客户端（基本连通性）。"""
-    total, frames = _read_stream(server, seconds=2.0)
-    assert total > 0, "一个字节都没收到"
-    assert frames >= 3, f"2 秒才 {frames} 帧，太少了（应约 10 帧）"
-
-
-def test_stream_frame_is_valid_jpeg(server):
-    """帧头是 FFD8、帧尾是 FFD9 —— 不然浏览器解不出图。"""
-    req = urllib.request.Request(server + "/api/stream")
-    with urllib.request.urlopen(req, timeout=8) as r:
-        buf = b""
-        end = time.time() + 3
-        while len(buf) < 200_000 and time.time() < end:
-            chunk = r.read(65536)
-            if not chunk:
-                break
-            buf += chunk
-    assert b"\xff\xd8" in buf, "没有 JPEG 帧头"
-    assert b"\xff\xd9" in buf, "没有 JPEG 帧尾，帧可能被截断"
-    assert b"Content-Length:" in buf, "缺 Content-Length，浏览器无法切分帧"
-
-
 def test_config_endpoint_serves_json(server):
-    """流不影响别的端点 —— 拒绝在预览开着时也能读配置。"""
+    """配置端点要能直接读出配置本体 —— 设置页靠它回显开关状态。"""
     with urllib.request.urlopen(server + "/api/config", timeout=10) as r:
         assert r.status == 200
         cfg = json.loads(r.read().decode("utf-8"))
     assert "regions" in cfg and "threshold" in cfg
-
-
-def test_stream_does_not_block_other_endpoints(server):
-    """一边挂着流，一边请求配置必须还能通。
-
-    ThreadingHTTPServer 保证这点；如果用单线程 Server 会直接卡死。
-    """
-    stop = threading.Event()
-    got = {}
-
-    def reader():
-        try:
-            req = urllib.request.Request(server + "/api/stream")
-            with urllib.request.urlopen(req, timeout=8) as r:
-                while not stop.is_set():
-                    if not r.read(65536):
-                        break
-        except Exception:                    # 关闭时的正常中断
-            pass
-
-    t = threading.Thread(target=reader, daemon=True)
-    t.start()
-    time.sleep(1.0)
-    try:
-        with urllib.request.urlopen(server + "/api/screen", timeout=10) as r:
-            got["status"] = r.status
-    finally:
-        stop.set()
-        t.join(timeout=3)
-    assert got.get("status") == 200
 
 
 # ---------------------------------------------------------------- assets
@@ -284,3 +177,175 @@ def test_asset_rejects_non_image_extensions(server):
         assert code2 == 200, "对照失败：assets 里的合法图片也取不到"
     finally:
         os.remove(dst)
+
+
+# ---------------------------------------------------------------- 记录
+
+@pytest.fixture
+def tmp_records(tmp_path):
+    """把记录文件指到临时目录 —— 测试绝不能清掉用户真实的成交记录。"""
+    from core import records
+    old = records.PATH
+    records.PATH = str(tmp_path / "records.jsonl")
+    try:
+        yield records
+    finally:
+        records.PATH = old
+
+
+def test_records_endpoint_returns_rows_and_stats(server, tmp_records):
+    tmp_records.add(name="MK4 疾光魅影", price=2050, result="hit", elapsed=1.28)
+    tmp_records.add(name="AKM 群星", price=1888, result="miss", elapsed=8.0)
+    code, body = _get(server + "/", "/api/records")
+    assert code == 200
+    data = json.loads(body)
+    assert len(data["rows"]) == 2
+    assert data["stats"]["hits"] == 1 and data["stats"]["tries"] == 2
+    assert data["stats"]["rate"] == 50.0
+    assert data["stats"]["spent"] == 2050.0
+
+
+def test_records_clear_endpoint_empties_the_list(server, tmp_records):
+    tmp_records.add(name="X", price=1, result="hit")
+    code, body = _get(server + "/", "/api/records")
+    assert len(json.loads(body)["rows"]) == 1
+
+    req = urllib.request.Request(server + "/api/records/clear",
+                                 data=b"{}", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = json.load(r)
+    assert data["ok"] is True
+    assert data["stats"]["tries"] == 0
+    assert tmp_records.load() == []
+
+
+def test_shot_route_rejects_traversal_and_other_files(server):
+    """截图路由只发 data/shots 里的 .jpg。路径来自 HTTP，必须挡 `../`。"""
+    # 第三个必须指向一个**真实存在**的 .jpg：只测不存在的路径，
+    # 就算守卫被删掉也照样 404，测了个寂寞。
+    for raw in ("/shots/../config.json", "/shots/..%2fconfig.json",
+                "/shots/../../web/assets/df-bg.jpg",
+                "/shots/x.txt", "/shots/nope.jpg"):
+        code, _ = _get_raw(server, raw)
+        assert code == 404, f"{raw} 返回 {code}，穿越或非图片文件被发出去了"
+
+
+def test_shot_route_serves_a_chinese_filename(server, tmp_path, monkeypatch):
+    """商品名带中文时，URL 里是 percent-encoded 的 —— 不 unquote 就永远 404。
+
+    真机症状：记录页里「看图」点开是一张破图，服务端日志什么都没说。
+    """
+    import urllib.parse
+    from core import server as srv_mod
+
+    shots = tmp_path / "data" / "shots"
+    shots.mkdir(parents=True)
+    name = "20261022_022921_看图测试.jpg"
+    (shots / name).write_bytes(b"\xff\xd8\xff\xe0" + b"0" * 200)
+
+    monkeypatch.setattr(srv_mod, "DATA_DIR", str(tmp_path / "data"))
+    code, body = _get(server + "/", "/shots/" + urllib.parse.quote(name))
+    assert code == 200, f"中文文件名取不到（{code}）"
+    assert body.startswith(b"\xff\xd8\xff"), "发出来的不是 JPEG"
+
+
+def test_advanced_settings_survive_a_round_trip(server, tmp_path, monkeypatch):
+    """设置页「抢购高级」那四个数字必须真的落到 config.json。
+
+    白名单漏一个键，前端就变成「点保存、提示已保存、其实什么都没存」——
+    这种失败没有任何报错，只有下次开抢才发现还是老参数。
+    """
+    import core.config as cfgmod
+
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(cfgmod, "CONFIG_PATH", str(path))
+
+    body = json.dumps({"arm_grace_s": 2.5, "list_max_tries": 7,
+                       "threshold": 0.91, "fire_timeout_s": 12}).encode()
+    req = urllib.request.Request(server + "/api/config", data=body,
+                                 headers={"Content-Type": "application/json"},
+                                 method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        assert json.loads(r.read().decode("utf-8"))["ok"]
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["arm_grace_s"] == 2.5
+    assert saved["list_max_tries"] == 7
+    assert saved["threshold"] == 0.91
+    assert saved["fire_timeout_s"] == 12
+
+
+# ---------------------------------------------------------------- 任务清单
+
+def _post(base, path, payload, timeout=10):
+    import urllib.request
+    req = urllib.request.Request(
+        base + path, data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status, json.loads(r.read().decode("utf-8"))
+
+
+def test_task_can_be_disabled_and_reenabled(server):
+    """清单页的勾选框要能真正关掉一条任务。
+
+    引擎跑之前会过滤 `enabled`，所以这个开关不是纯装饰 —— 关掉的必须
+    真的被跳过。以前 /api/tasks/update 的白名单里没有 enabled，
+    界面点了没反应（接口静默忽略）。
+    """
+    code, data = _post(server, "/api/tasks/add",
+                       {"name": "测试皮肤-勾选开关", "mode": "list",
+                        "min_price": 100, "max_price": 200})
+    assert code == 200 and data.get("ok") is not False, data
+    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
+    tid = [t for t in tasks["tasks"] if t["name"] == "测试皮肤-勾选开关"][0]["id"]
+
+    _post(server, "/api/tasks/update", {"id": tid, "enabled": False})
+    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
+    got = [t for t in tasks["tasks"] if t["id"] == tid][0]
+    assert got["enabled"] is False, "关不掉"
+
+    _post(server, "/api/tasks/update", {"id": tid, "enabled": True})
+    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
+    got = [t for t in tasks["tasks"] if t["id"] == tid][0]
+    assert got["enabled"] is True, "开不回来"
+
+    _post(server, "/api/tasks/remove", {"id": tid})
+
+
+# ---------------------------------------------------------------- 任务清单
+
+def _post(base, path, payload, timeout=10):
+    import urllib.request
+    req = urllib.request.Request(
+        base + path, data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status, json.loads(r.read().decode("utf-8"))
+
+
+def test_task_can_be_disabled_and_reenabled(server):
+    """清单页的勾选框要能真正关掉一条任务。
+
+    引擎跑之前会过滤 `enabled`，所以这个开关不是纯装饰 —— 关掉的必须
+    真的被跳过。以前 /api/tasks/update 的白名单里没有 enabled，
+    界面点了没反应（接口静默忽略）。
+    """
+    code, data = _post(server, "/api/tasks/add",
+                       {"name": "测试皮肤-勾选开关", "mode": "list",
+                        "min_price": 100, "max_price": 200})
+    assert code == 200 and data.get("ok") is not False, data
+    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
+    tid = [t for t in tasks["tasks"] if t["name"] == "测试皮肤-勾选开关"][0]["id"]
+
+    _post(server, "/api/tasks/update", {"id": tid, "enabled": False})
+    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
+    got = [t for t in tasks["tasks"] if t["id"] == tid][0]
+    assert got["enabled"] is False, "关不掉"
+
+    _post(server, "/api/tasks/update", {"id": tid, "enabled": True})
+    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
+    got = [t for t in tasks["tasks"] if t["id"] == tid][0]
+    assert got["enabled"] is True, "开不回来"
+
+    _post(server, "/api/tasks/remove", {"id": tid})

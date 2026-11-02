@@ -13,18 +13,20 @@ import os
 import re
 import time
 
-_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bricks.json")
+from . import ocr
 
-# 汉字 + 字母数字，去掉空格和标点。OCR 出来的「AS Val」「QBZ95-1」都要能对上
-_KEEP = re.compile(r"[^0-9a-z\u4e00-\u9fff]+")
+_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bricks.json")
 
 _cache = {"mtime": 0, "data": None}
 
 
 def normalize(s):
-    if not s:
-        return ""
-    return _KEEP.sub("", str(s).lower())
+    """汉字 + 字母数字，去掉空格和标点。
+
+    OCR 出来的「AS Val」「QBZ95-1」都要能对上。和 OCR 模块共用同一份实现
+    （以前这里自己写了一份正则，两边规则一漂就对不上）。
+    """
+    return ocr.normalize(s)
 
 
 def _load():
@@ -194,22 +196,56 @@ def candidates():
 
 _GRADE = re.compile(r"(极品|优品)\s*[-－]?\s*([SABC])?", re.I)
 _WEAR_ONLY = re.compile(r"成色\s*[-－:：]?\s*([SABC])", re.I)
+# 行文本里的成色字母：渲染是 `极品丨成色 A`，做工和字母之间常隔着杂字符，
+# 所以允许中间有少量任意非字母字符（早期只允许一个连字符，实测 6/6 张卡片
+# 成色都读不出来）。
+_WEAR_ROW = re.compile(r"(?:极品|优品)[^SABC]{0,8}?([SABC])(?![A-Za-z])", re.I)
+_CRAFT = re.compile(r"(极品|优品)")
+
+
+def parse_craft(text):
+    """做工：极品 / 优品。认不出返回 None。"""
+    m = _CRAFT.search(text or "")
+    return m.group(1) if m else None
+
+
+def parse_wear(text, strict=False):
+    """成色字母 S/A/B/C。
+
+    认两种写法：「成色 A」和「极品丨成色 A」（做工和字母中间隔着杂字符）。
+    **不猜**没有「成色」字样也没有做工前缀的裸字母 —— 名称里的 M4A1、
+    SCAR-H 也能匹配出字母。
+
+    strict=True 时只认「成色 X」这一种写法：用在那块**商品名称**上 ——
+    名称里本来就有 M4A1 / SCAR-H 这种字母。
+    """
+    if not text:
+        return None
+    m = _WEAR_ONLY.search(text)
+    if m:
+        return m.group(1).upper()
+    if strict:
+        return None
+    m = _WEAR_ROW.search(text)
+    if m:
+        return m.group(1).upper()
+    return None
+
+
+def parse_wear_loose(text):
+    """整块图里的成色字母：取最后一个独立的 S/A/B/C。
+
+    只用在「成色块」上 —— 那块图里就只有「极品 | 成色 A」，不用绕。
+    """
+    got = re.findall(r"[SABC](?![A-Za-z])", text or "")
+    return got[-1] if got else None
 
 
 def parse_grade(text):
     """从「…-极品S」「…优品A」里抠做工和成色。"""
     if not text:
         return {"craft": None, "wear": None}
-    craft = wear = None
-    m = _GRADE.search(text)
-    if m:
-        craft = m.group(1)
-        wear = (m.group(2) or "").upper() or None
-    if not wear:
-        m2 = _WEAR_ONLY.search(text)
-        if m2:
-            wear = m2.group(1).upper()
-    return {"craft": craft, "wear": wear}
+    return {"craft": parse_craft(text), "wear": parse_wear(text)}
 
 
 def summary(text):
@@ -229,3 +265,85 @@ def summary(text):
     elif g["wear"]:
         bits.append(g["wear"] + " 成色")
     return "，".join(bits)
+
+
+# ---------------- 品阶目录（每个赛季 × 四个品阶） ----------------
+#
+# 砖皮知识库原来只有每个赛季的**典藏**档砖皮。游戏里每个系列（赛季）
+# 都有 普通/稀有/史诗/传说 四个品阶的皮肤，典藏外观页的筛选面板就是按
+# 「系列 + 品阶」过滤的 —— 要「找到某一件」，就得知道它在哪个系列、哪一档。
+#
+# 数据是 2026-10-23 真机采集的（每个系列 × 每个品阶逐张卡片点开读标题）。
+# 结构：seasons[].tiers = {品阶: [{weapon, name}]}
+
+TIER_ORDER = ("传说", "史诗", "稀有", "普通")
+
+
+def catalog():
+    """整个品阶目录：[(赛季, 系列, 品阶, 枪种, 皮肤)]。
+
+    **系列看条目自己的**，不看赛季那一层的 —— 一块砖有 1 传说 + 3 史诗 +
+    8 稀有 + 10 普通，跨十几个系列（同一赛季里有「棱镜攻势」也有
+    「水墨迷彩」）。按赛季的系列列会把二十来件全写成同一个系列。
+    """
+    data = _load()
+    out = []
+    for s in data.get("seasons", []):
+        for tier in TIER_ORDER:
+            for item in (s.get("tiers") or {}).get(tier, []):
+                out.append({
+                    "season": s.get("season", ""),
+                    "season_name": s.get("name", ""),
+                    # series 是这一件自己的系列（「水墨迷彩」「青纹」…），
+                    # brick 是这一砖的名（「棱镜攻势」「美杜莎」…）——
+                    # 游戏「赛季下拉」里列的是**砖名**，定位时要用它。
+                    "series": item.get("series") or s.get("series") or "",
+                    "brick": s.get("series") or "",
+                    "tier": tier,
+                    "weapon": item.get("weapon", ""),
+                    "model": item.get("model", ""),
+                    "gun": item.get("gun", ""),
+                    "gun_fine": item.get("gun_fine", ""),
+                    "skin": item.get("skin", ""),
+                    "name": item.get("name", ""),
+                })
+    return out
+
+
+def skins_of(season=None, tier=None, series=None):
+    """查目录：按赛季 / 系列 / 品阶过滤。返回 [{weapon, name, ...}]。"""
+    out = []
+    for row in catalog():
+        if season and row["season"] != season:
+            continue
+        if series and row["series"] != series:
+            continue
+        if tier and row["tier"] != tier:
+            continue
+        out.append(row)
+    return out
+
+
+def find_skin(name, tier=None, season=None, floor=0.72):
+    """按名字找皮肤（模糊匹配），返回目录里最像的那条。
+
+    为什么要模糊：游戏用的是花体字，OCR 认不准的字很多
+    （「彩」→「采/未/米」、「白」→「自」、「QBZ95-1」→「OBZ．1」）。
+    归一化后比相似度，比字符串相等稳得多。
+    """
+    if not name:
+        return None
+    best, best_score = None, 0.0
+    for row in catalog():
+        if tier and row["tier"] != tier:
+            continue
+        if season and row["season"] != season:
+            continue
+        score = ocr.similarity(name, row["name"])
+        if score > best_score:
+            best, best_score = row, score
+    if best is None or best_score < floor:
+        return None
+    out = dict(best)
+    out["score"] = round(best_score, 3)
+    return out

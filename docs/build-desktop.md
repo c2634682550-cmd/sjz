@@ -47,7 +47,7 @@ exe 是无控制台的（windowed），`print` 什么都看不见。所以 `desk
 端口没选出来、服务没起来、还是 `webview.start()` 立刻返回（后者基本是
 WebView2 运行时缺失）。
 
-## 打包时踩过的两个坑
+## 打包时踩过的三个坑
 
 ### 1. winrt 是惰性导入，PyInstaller 扫不到
 
@@ -76,6 +76,42 @@ WebView2 运行时缺失）。
 `core/config.py` 因此分流：冻结时用 `sys.executable` 的目录（exe 同级），
 源码运行时用仓库根。`core/server.py` 的静态资源不用改 —— `web/` 是只读资源，
 放在解包目录里正合适。
+
+**但只读数据文件要跟着解包目录走**，不能和 config 一样放 exe 同级：
+
+| 文件 | 放哪 | 为什么 |
+|---|---|---|
+| `config.json` / `templates/` / `data/` | exe 同级 | 用户要能改、能备份 |
+| `web/` | `_MEIPASS` | 只读静态资源 |
+| `core/bricks.json` | **`_MEIPASS/core/`** | `bricks.py` 用 `__file__` 找同目录 |
+
+`data/` 里有两个东西是运行时写的，都必须跟着 exe 走：
+
+| 文件 | 谁写的 | 放哪 |
+|---|---|---|
+| `data/records.jsonl` | `core/records.py` | `config.DATA_DIR`（exe 同级的 `data/`） |
+| `data/shots/*.jpg` | `core/engine.py` 成交后存图 | 同上 |
+
+这两处以前各自用 `dirname(dirname(__file__))` 推路径 —— 冻结后那是解包目录，
+**记录和截图写进去随 exe 退出一起没了**。现在统一走 `config.DATA_DIR`。
+
+`core/bricks.json` 漏收进 `sjz.spec` 的 `datas` 时**不会报错**：`_load()` 读不到
+就返回空 seasons，`identify()` 永远回「对不上任何赛季砖皮」，而界面上仍然
+写着「11 个赛季」。这种静默空库只能靠测试抓 —— 见 `tests/test_packaging.py`。
+
+### 3. js_api 对象的属性名必须以下划线开头
+
+`desktop.py` 的 `WinCtl` 要持有 pywebview 的 `Window` 引用才能 minimize/destroy。
+pywebview 的 `get_functions()`（`webview/util.py`）会把 js_api 对象的**所有不以
+`_` 开头的属性递归展开**成 JS 可调用项，而 `Window` 的对象图里有大量互相引用。
+
+后果是**窗口能开、页面白屏、所有 HTTP 请求超时** —— 后台线程连 `Thread.start()`
+都等不到 GIL。Python 3.11 和 3.14 都能复现，源码运行和打包 exe 都一样。
+排查时 `faulthandler` 的线程栈一眼能看出来：一个线程停在
+`webview/util.py:196 get_functions` 的递归里。
+
+所以那条引用必须叫 `_win`。`tests/test_desktop_jsapi.py` 钉住了 `WinCtl`
+对外可见的名字集合。
 
 ## 参数
 

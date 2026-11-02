@@ -13,9 +13,8 @@
 """
 import re
 
-import cv2
-
-from . import bricks, ocr
+from . import bricks, cards as cardmod, ocr
+from . import vision
 
 # 交易行里价格是带千位逗号的整数（15,000 / 9,999,999），磨损是 0~10 的小数
 # （0.583）。所以逗号必须当千位分隔符去掉，不能当小数点 —— 早期版本把
@@ -28,14 +27,26 @@ from . import bricks, ocr
 # 所以下面先把数字串里的空格挤掉，再按逗号当千位分隔符解析。
 _NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _CURRENCY = re.compile(r"[¥￥]\s*(\d[\d,]*(?:\.\d+)?)")
-_CRAFT = re.compile(r"(极品|优品)")
-# 成色字母：实际渲染是 `极品丨成色 A` / `极品成色 S`。解析出来的文本里「做工」
-# 和字母之间可能隔着 `丨 成色 ` 这类字符，所以允许中间有少量任意非字母字符。
-# 早期版本只允许一个连字符，于是所有成色都读不出来（实测 6/6 张 wear=None）。
-_WEAR_LETTER = re.compile(r"(?:极品|优品)[^SABC]{0,8}?([SABC])(?![A-Za-z])")
 
 # 数字之间的空格（可能连着 OCR 认错的单字，如 `15 囤 00`）
 _DIGIT_GAP = re.compile(r"(?<=\d)\s*[\u4e00-\u9fff]?\s*(?=\d)")
+
+# 型号 token：字母开头、内部含数字（QBZ95-1 / M250 / MP7 / KC17 / S2）。
+# 这些数字**不是价格**，必须先从文本里摘掉再取数。
+#
+# 本地回归（录屏实测）：卡片文字 `QBZ951 突击步枪王牌之剑` 里 95-1 被 OCR 粘成 951，
+# 早期实现「取最大整数当价格」于是 price=951.0。而 pick() 按价格升序挑最便宜的，
+# 这条读不出真价格的行就永远排在真价格（25000）前面被选中 —— 点进去买的是别的挂单。
+# `M250` 得 250、`M7` 得 7、`QBZ95-1` 得 95，同一个 bug 的其它写法。
+#
+# 只认「字母开头」：数字开头的型号（93R）靠下面的 _MIN_PRICE 兜底，
+# 否则 `15000S` 这种价格和字母粘在一起的写法会被整段吃掉。
+_MODEL_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9.\-]*\d[A-Za-z0-9.\-]*")
+
+# 价格至少三位数。一两位的整数在这些卡片里全部来自型号残片或认错的 `S2` 尾巴，
+# 当成价格只会让 pick() 选中垃圾行。宁可判「读不出价」（该行被跳过），
+# 也不能让它冒充最便宜的一条。
+_MIN_PRICE = 100
 
 
 def _squeeze_digits(text):
@@ -99,17 +110,43 @@ def parse_row(text, words=None):
     if m:
         price = _to_number(m.group(1))
 
-    ints, floats = [], []
-    for tok in _NUM.findall(text):
+    # 先把型号 token 整段摘掉，剩下的数字才是价格/磨损的候选。
+    # 不摘的话 `QBZ95-1` 的 951、`M250` 的 250、`M7` 的 7 都会被当成价格，
+    # 而 pick() 按价格升序挑，这些假低价会挤掉真挂单。
+    rest = _MODEL_TOKEN.sub(" ", text)
+
+    ints, floats, float_toks = [], [], []
+    for tok in _NUM.findall(rest):
         v = _to_number(tok)
         if v is None:
             continue
-        (floats if _is_decimal_token(tok) else ints).append(v)
+        if _is_decimal_token(tok):
+            floats.append(v)
+            float_toks.append(tok)
+        else:
+            ints.append(v)
 
     # 价格没带 ¥ 时取最大的整数：列表里通常只有价格和数量两种整数，
-    # 价格远大于数量
+    # 价格远大于数量。低于 _MIN_PRICE 的不算候选（见该常量的注释）。
     if price is None and ints:
-        price = max(ints)
+        cand = [v for v in ints if v >= _MIN_PRICE]
+        if cand:
+            price = max(cand)
+
+    # 千位分隔符被认成句点：`9,000` -> `9.000`。
+    # 2026-11-01 换 PP-OCRv5 之后才出现（Windows OCR 是丢逗号/认成汉字），
+    # 而 `_to_number` 会把它当小数 —— 9000 变 9，pick() 立刻挑中它去买。
+    # 只在这个前提下才当分隔符：
+    #   · 整数部分 > 5（磨损值是 0~5 的小数，价格不可能 6 块以下）
+    #   · 小数部分正好三位
+    # 两条都满足才转换，宁可少认一个价，也不能把磨损当成价格。
+    if price is None:
+        for tok in float_toks:
+            ip, _, fp = tok.replace(",", "").partition(".")
+            if len(fp) == 3 and ip.isdigit() and 1 <= len(ip) <= 3 and int(ip) > 5:
+                v = int(ip + fp)
+                if v >= _MIN_PRICE and (price is None or v > price):
+                    price = v
 
     # 磨损值：优先取 0~5 之间的小数，排除掉价格本身
     wear_value = None
@@ -118,15 +155,8 @@ def parse_row(text, words=None):
             wear_value = v
             break
 
-    craft = None
-    mc = _CRAFT.search(text)
-    if mc:
-        craft = mc.group(1)
-
-    wear = None
-    mw = _WEAR_LETTER.search(text)
-    if mw:
-        wear = mw.group(1).upper()
+    craft = bricks.parse_craft(text)
+    wear = bricks.parse_wear(text)
 
     return {"text": text, "price": price, "craft": craft, "wear": wear,
             "wear_value": wear_value, "numbers": ints + floats}
@@ -170,27 +200,188 @@ def _rect_of(ws):
     }
 
 
-def scan(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None):
-    """OCR 一张列表截图，返回卡片列表（带像素坐标，相对这张图）。
+def scan(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None, read_text=None):
+    """扫描一张列表截图，返回卡片列表（带像素坐标，相对这张图）。
 
-    每张卡片在 parse_row 的基础上加 x0/y0/x1/y1/cy，供点击定位。
+    走的是「先定位、再认字」：OpenCV 找卡片矩形（cards.locate_cards），
+    再按卡片切出 名称/成色/价格 三块、各自放大后交给 OCR。
+    整屏 OCR 再按词距聚类的老路子留着当退路（cards 找不到线时用），
+    因为卡片内「名字到价格」的距离比卡片之间的缝隙还大，聚类会拆错卡。
 
-    upscale: 放大倍数，默认 2。实测决定性：13px 高的价格数字直接 OCR 会把
-    `15,000` 读成 `1500`、`8,888` 读成 `888`（千位逗号和首位数字被吞），
-    放大 2 倍后 6 个价格全部读对，而且更快（174ms vs 325ms）。返回的坐标
-    会缩回原尺寸。
-
-    card_h: 卡片高度（原尺寸像素），默认 206（1920x1080 截图实测）。
-    cols: 列表列数，默认 2。
-    col_split: 两列的 x 分界（原尺寸像素），默认取宽度的中点。
+    upscale: 文字块放大倍数，默认 2。13px 的价格不放大读不出千位逗号。
+    card_h / cols / col_split: 只在退回固定网格时用。
+    read_text: 可注入的 OCR（测试用），默认 core.ocr.read_text。
     """
     if img is None or getattr(img, "size", 0) == 0:
         return []
-    h, w = img.shape[:2]
+
+    found = cardmod.locate_cards(img)
+    if found:
+        return _scan_cards(img, found, upscale=max(3, upscale or 1),
+                           read_text=read_text)
+    return _scan_grid(img, min_row_h=min_row_h, upscale=upscale,
+                      card_h=card_h, cols=cols, col_split=col_split)
+
+
+class Scanner:
+    """带帧间缓存的扫描器：没变的卡片不重复认字。
+
+    列表模式的循环是 20 次/秒，但一屏六张卡里通常只有一张在变。
+    每帧都把六张全认一遍，等于把 OCR 的时间全花在没变的卡上，
+    抢购最贵的就是那几百毫秒。
+
+    用法：scanner = Scanner(); rows = scanner.scan(frame)
+    """
+
+    def __init__(self, upscale=3, read_text=None, delta=None):
+        self.upscale = upscale
+        self.read_text = read_text
+        self.delta = delta
+        self.prev = None
+        self.cards = []
+        self.cache = {}
+        self.ocr_calls = 0        # 测试用：数一共认了几张卡
+
+    def reset(self):
+        """列表刷新/翻页后调用：上一帧的缓存全作废。"""
+        self.prev = None
+        self.cards = []
+        self.cache.clear()
+
+    def scan(self, img):
+        if img is None or getattr(img, "size", 0) == 0:
+            return []
+        found = cardmod.locate_cards(img)
+        if not found:
+            # 找不到卡片线，退回整屏 OCR；这条路上没有缓存可谈。
+            # 只用默认值时按原样调用，测试替换掉 scan() 也还能接得上。
+            kw = {}
+            if self.upscale != 3:
+                kw["upscale"] = self.upscale
+            if self.read_text is not None:
+                kw["read_text"] = self.read_text
+            return scan(img, **kw)
+
+        kw = {} if self.delta is None else {"delta": self.delta}
+        changed = cardmod.changed_cards(self.prev, img, found, **kw)
+        read = self.read_text or ocr.read_text
+
+        rows = []
+        for i, rect in enumerate(found):
+            if i not in changed and i in self.cache:
+                row = dict(self.cache[i])
+                x0, y0, x1, y1 = rect
+                row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
+            else:
+                got = cardmod.read_card(img, rect, upscale=self.upscale, read_text=read)
+                self.ocr_calls += 1
+                text = ocr.clean(got["text"])
+                if not text:
+                    self.cache.pop(i, None)
+                    continue
+                row = parse_row(text)
+                price = _price_from_block(got["price"], img, rect, read)
+                if price is not None:
+                    row["price"] = float(price)
+                wear = bricks.parse_wear_loose(got["grade"]) or row.get("wear")
+                if wear:
+                    row["wear"] = wear
+                x0, y0, x1, y1 = rect
+                row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
+                self.cache[i] = row
+            rows.append(row)
+
+        self.prev = img.copy()
+        self.cards = found
+        rows.sort(key=lambda r: (r["y0"], r["x0"]))
+        return rows
+
+
+def _scan_cards(img, found, upscale=3, read_text=None):
+    """逐张卡片认字，拼成和 _scan_grid 一样的行结构。"""
+    if read_text is None:
+        read_text = ocr.read_text
+    out = []
+    for rect in found:
+        got = cardmod.read_card(img, rect, upscale=upscale, read_text=read_text)
+        text = ocr.clean(got["text"])
+        if not text:
+            continue
+        row = parse_row(text)
+        # 价格是单独一块认出来的，直接用它，别让 parse_row 在拼起来的
+        # 整段文字里猜 —— 名字里的型号数字（QBZ95 / M250）会被当成价格。
+        price = _price_from_block(got["price"], img, rect, read_text)
+        # 价格只信「价格块」里认出来的那一个：认不出来就是 None，
+        # 不能让 parse_row 在整段文字里猜出来的数留着（会把 9,500 读成 500）。
+        row["price"] = float(price) if price is not None else None
+        craft, wear = _grade_from_block(got["grade"], img, rect, read_text)
+        if not wear:
+            # 在售页的成色印在卡片**左上角**（名称上方），不在底行；
+            # 但只认「成色 X」这种写法 —— 名称里的 M4A1 / SCAR-H 也是字母。
+            craft2, wear2 = _grade_from_block(got["name"], strict=True)
+            craft, wear = craft or craft2, wear2
+        row["craft"] = craft or row.get("craft")
+        row["wear"] = wear or row.get("wear")
+        x0, y0, x1, y1 = rect
+        row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
+        out.append(row)
+    out.sort(key=lambda r: (r["y0"], r["x0"]))
+    return out
+
+
+def _grade_from_block(text, img=None, rect=None, read_text=None, strict=False):
+    """成色块 → (做工, 成色字母)。认不全就放大再认一次。
+
+    `极品 | 成色 A` 这一块里两个信息都有；放大到 5 倍基本都能认全，
+    认不出就返回 (None, None)，由调用方保留整段文字的解析结果。
+
+    strict=True 用在**名称**块上：名称里本来就有 M4A1 / SCAR-H 这种字母，
+    只认「成色 X」这一种写法。
+    """
+    craft = bricks.parse_craft(text)
+    wear = bricks.parse_wear(text, strict=strict)
+    if (craft and wear) or (img is None or rect is None or read_text is None):
+        return craft, wear
+    big = cardmod.read_card(img, rect, upscale=5, read_text=read_text)
+    return (bricks.parse_craft(big.get("grade")) or craft,
+            bricks.parse_wear(big.get("grade"), strict=strict) or wear)
+
+
+def _price_from_block(text, img=None, rect=None, read_text=None):
+    """价格块单独认出来的数字 → 价格。
+
+    只留数字：`025,000` 里的前导 0 是金币图标被认成 0，`15,000` 的逗号是
+    千位分隔符 —— 两种都得去掉，否则 25000 会变成 25。
+
+    **不设位数下限**：真机上真的有 2 个三角币的挂单（用户确认过），
+    按「至少四位」过滤会把它们全丢掉。这块图里只有「金币图标 + 价格」，
+    没有型号数字，所以短数字是可信的；读不出来（空 / 0 / 超过八位）才返回 None。
+    退路 `_scan_grid` 那条路上仍然按 _MIN_PRICE 兜底，因为那里是从整段文字里猜。
+    """
+    def digits(t):
+        return ocr.digits_only(t, strip_zeros=True)
+
+    d = digits(text)
+    if d and len(d) <= 8:
+        return int(d)
+    if img is not None and rect is not None and read_text is not None:
+        big = cardmod.read_card(img, rect, upscale=5, read_text=read_text)
+        d2 = digits(big.get("price"))
+        if d2 and len(d2) <= 8:
+            return int(d2)
+    return None
+
+
+def _scan_grid(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None):
+    """退路：整屏 OCR，再按固定网格把词分到卡片里。
+
+    只有在 locate_cards 一条线都找不到时才会走到这里（比如换了个分辨率、
+    或者列表是半透明浮在场景上的）。
+    """
     src = img
     up = upscale or 1
     if up != 1:
-        src = cv2.resize(img, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC)
+        src = vision.upscale(img, up)
 
     words = [w for w in ocr.read_words(src) if w["h"] >= min_row_h * up]
     if not words:
@@ -212,7 +403,6 @@ def scan(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None):
         out.append(row)
 
     if up != 1:
-        # 词框坐标是在放大图上量的，缩回原尺寸，调用方才能直接用于点击
         for row in out:
             for k in ("x0", "y0", "x1", "y1", "cy"):
                 row[k] = row[k] / up
@@ -226,11 +416,8 @@ def _matches_name(row, task):
     names = [n for n in names if n]
     if not names:
         return True, 1.0
-    best = 0.0
-    for n in names:
-        s = ocr.similarity(row["text"], n)
-        best = max(best, s)
-    return best >= 0.55, round(best, 3)
+    hit, score = ocr.best_match(row["text"], names, floor=0.55)
+    return hit is not None, round(score, 3)
 
 
 def _matches_brick(row, task):
@@ -322,8 +509,11 @@ def pick(rows, task, exclude=None):
         hits.sort(key=lambda r: (r["price"] is None, r["price"] or 0))
     elif sort == "wear":
         hits.sort(key=lambda r: (r["wear_value"] is None, r["wear_value"] or 0))
-    else:  # 列表顺序
-        hits.sort(key=lambda r: r["y0"])
+    else:
+        # 屏幕上的阅读顺序：先上后下，同一排先左后右。
+        # 只按 y0 排是不够的 —— 列表是两列，同一排两张卡的 y0 相同，
+        # 排出来的先后取决于 OCR 返回的顺序（不稳定）。
+        hits.sort(key=lambda r: (r["y0"], r["x0"]))
 
     best = hits[0]
     return best, f"选中第 {len(diag)} 行里的 1 条", diag

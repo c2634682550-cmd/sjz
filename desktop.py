@@ -7,6 +7,7 @@
 两者共用 core.server 的全部端点。
 """
 import argparse
+import ctypes
 import os
 import socket
 import sys
@@ -23,7 +24,10 @@ else:
     APPDIR = BASE
 sys.path.insert(0, BASE)
 
-import webview  # noqa: E402
+try:
+    import webview                      # noqa: E402
+except Exception:                       # 没装 pywebview / WebView2 缺失
+    webview = None
 
 from core.server import serve  # noqa: E402
 
@@ -58,23 +62,37 @@ def _pick_port(host, want):
     raise RuntimeError(f"{want}~{want + 20} 都被占用")
 
 
+def _open_browser(url):
+    import webbrowser
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
 class WinCtl:
     """暴露给页面 JS 的窗口控制。
 
     无边框窗口没有系统标题栏，最小化/关闭得由页面自己触发，
     而 pywebview 不内置这些方法 —— 必须用 js_api 显式暴露。
+
+    属性名**必须以下划线开头**：pywebview 的 `get_functions()` 会把 js_api
+    对象的所有公开属性递归展开成 JS 可调用的东西（`webview/util.py`）。
+    `self.win` 指向 pywebview 的 `Window`，它的对象图里有大量互相引用，
+    递归展开会长时间占住 GIL —— 表现为**窗口能开、页面白屏、HTTP 全挂**
+    （后台线程连 `Thread.start()` 都等不到 GIL）。改名 `_win` 即跳过展开。
     """
 
     def __init__(self):
-        self.win = None
+        self._win = None
 
     def minimize(self):
-        if self.win is not None:
-            self.win.minimize()
+        if self._win is not None:
+            self._win.minimize()
 
     def destroy(self):
-        if self.win is not None:
-            self.win.destroy()
+        if self._win is not None:
+            self._win.destroy()
 
 
 def _doctor():
@@ -98,8 +116,35 @@ def _doctor():
     try:
         from core import ocr
         print("OCR 后端      =", ocr.backend_name())
+        print("OCR 通道      =", ocr.describe())
     except Exception as e:
         print("OCR 自检失败  =", type(e).__name__, e)
+
+
+def _elevate_if_needed():
+    """游戏比我们权限高时，用管理员身份把自己重开一遍。
+
+    真正的判断和重开逻辑在 core/input.py（两个入口共用），这里只负责
+    把话说清楚、决定要不要退出本进程。
+    """
+    try:
+        from core.input import elevate_self, foreground_integrity, process_integrity
+    except Exception:
+        return False
+    try:
+        ours, game = process_integrity(), foreground_integrity()
+    except Exception:
+        ours = game = None
+    if ours is None or game is None or game <= ours:
+        return False
+
+    _log(f"!! 游戏是管理员权限（{hex(game)}），本程序是 {hex(ours)}")
+    _log("   UIPI 会把我们发的鼠标键盘消息全部拦掉且不报错 —— 重新以管理员身份启动")
+    if elevate_self():
+        _log("已以管理员身份重新启动，本进程退出")
+        return True
+    _log("!! 提权重开没成功（UAC 被拒？）—— 点不动游戏的话请手动以管理员身份运行")
+    return False
 
 
 def main():
@@ -114,6 +159,9 @@ def main():
 
     if args.doctor:
         _doctor()
+        return
+
+    if _elevate_if_needed():
         return
 
     _log(f"--- 启动 (frozen={getattr(sys, 'frozen', False)}) ---")
@@ -140,6 +188,12 @@ def main():
         raise RuntimeError(f"服务没起来（{url}）")
     _log("服务已就绪，开始建窗口")
 
+    if webview is None:
+        _log("没装 pywebview，退回浏览器模式（pip install pywebview 可恢复桌面窗口）")
+        _open_browser(url)
+        t.join()
+        return
+
     ctl = WinCtl()
     try:
         # 无边框：去掉系统标题栏和外圈边。
@@ -153,7 +207,7 @@ def main():
             background_color="#0d1117",
             js_api=ctl,
         )
-        ctl.win = win
+        ctl._win = win
         _log("create_window 返回")
         _log("调用 webview.start()")
         webview.start()
@@ -161,12 +215,30 @@ def main():
         # 阻塞到窗口关闭 —— 那样进程会静默退出，用户看到双击后什么都没发生。
         # 这里显式报出来，别让它变成「点了没反应」。
         _log("!! webview.start() 立刻返回了，窗口没能开起来")
-        _log("   多半是 WebView2 运行时缺失或初始化失败")
+        _log("   多半是 WebView2 运行时缺失或初始化失败，改用浏览器打开")
+        _open_browser(url)
+        t.join()
     except Exception as e:
         _log(f"!! 开窗失败: {type(e).__name__}: {e}")
         _log(traceback.format_exc())
-        raise
+        _log("   改用浏览器打开")
+        _open_browser(url)
+        t.join()
 
 
 if __name__ == "__main__":
-    main()
+    # pythonw 启动时没有控制台，出错只能靠日志 + 消息框 —— 否则就是「双击没反应」
+    try:
+        main()
+    except Exception as e:
+        import ctypes as _ct
+        _log(f"!! 启动失败: {type(e).__name__}: {e}")
+        _log(traceback.format_exc())
+        try:
+            _ct.windll.user32.MessageBoxW(
+                None,
+                f"启动失败：{type(e).__name__}: {e}\n\n详情见 {LOG_PATH}",
+                "SJZ 抢购控制台", 0x10)
+        except Exception:
+            pass
+        raise

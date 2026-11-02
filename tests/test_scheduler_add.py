@@ -1,0 +1,67 @@
+"""加任务时把「本轮限量 / 预算上限」存进队列。
+
+这两个字段是钱的事：限量少了白抢、预算没存等于不封顶。之前队列里只有
+价格区间和成色，抢到一件就收工、花多少不封顶 —— 和竞品（Axon·skin）
+一比就看得出来差在这。
+
+这里只测「存得对」，不碰真机、不写真配置：Config 换成内存假对象。
+"""
+import os
+import sys
+import types
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core import scheduler as sch  # noqa: E402
+
+
+class _Cfg(dict):
+    """内存版配置：不落盘，模板路径给一个不存在的文件（跳过复制）。"""
+
+    def __init__(self):
+        super().__init__({
+            "queue": [],
+            "regions": {"list": {"x": 0, "y": 0, "w": 1, "h": 1},
+                        "buy": {"x": 0.7, "y": 0.8, "w": 0.2, "h": 0.1},
+                        "confirm": {"x": 0.4, "y": 0.4, "w": 0.2, "h": 0.1}},
+        })
+
+    def save(self):
+        pass
+
+    def template_path(self, name, tid=None):
+        return os.path.join("no-such-dir", f"{name}.png")
+
+
+def _scheduler(monkeypatch):
+    monkeypatch.setattr(sch, "Config", types.SimpleNamespace(load=lambda: _Cfg()))
+    return sch.Scheduler()
+
+
+def test_add_keeps_the_quota_and_the_budget(monkeypatch):
+    s = _scheduler(monkeypatch)
+    task, err = s.add("AKM 突击步枪·群星", mode="list",
+                      min_price=1000, max_price=3000, quota=3, budget=9000)
+    assert err is None, err
+    assert task["quota"] == 3, f"限量没存住：{task['quota']}"
+    assert task["budget"] == 9000.0, f"预算没存住：{task['budget']}"
+
+
+def test_quota_defaults_to_one_and_never_goes_below(monkeypatch):
+    """不填就是抢一件；填 0 / 负数也不许变成「无限抢」。"""
+    s = _scheduler(monkeypatch)
+    t1, _ = s.add("A", mode="list", max_price=3000)
+    assert t1["quota"] == 1
+    t2, _ = s.add("B", mode="list", max_price=3000, quota=0)
+    assert t2["quota"] == 1, f"quota=0 应该是 1 件，实际 {t2['quota']}"
+    t3, _ = s.add("C", mode="list", max_price=3000, quota=-5)
+    assert t3["quota"] == 1
+
+
+def test_budget_zero_means_no_cap(monkeypatch):
+    s = _scheduler(monkeypatch)
+    t, _ = s.add("A", mode="list", max_price=3000, budget=0)
+    assert t["budget"] == 0.0
+    t2, _ = s.add("B", mode="list", max_price=3000, budget=-100)
+    assert t2["budget"] == 0.0, "负预算要归零（= 不限），不能变成「一件都不许买」"
+

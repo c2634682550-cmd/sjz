@@ -1,0 +1,41 @@
+# 给游戏界面用的 OCR 产线配置（PaddleX）。
+#
+# 和 `paddlex --get_pipeline_config OCR` 导出的默认配置只差三处：
+#   1. use_doc_preprocessor: False —— 文档方向分类 + 去弯曲对游戏截图毫无意义，
+#      每个请求白跑两个模型（实测省 30~60ms）。
+#   2. use_textline_orientation: False —— 界面文字都是横的。
+#   3. det/rec 用 PP-OCRv6 small —— 42/42 字段全对，整屏比 v5 mobile 再快 ~20%
+#      （1380×630: 63ms vs 77ms；1920×1080: 98ms）。v6 是更新的版本，
+#      2026-11-01 补齐评测后确认它不输 v5，且更快。
+#
+# 跑法：
+#   .venv-vl\Scripts\paddlex.exe --serve --pipeline tools\OCR_game.yaml --port 8081 --device gpu:0
+#
+# 想换回更准（也更慢）的 v6 medium，把下面两个 model_name 换成
+# PP-OCRv6_medium_det / PP-OCRv6_medium_rec（整屏 130ms，精度同为 42/42）。
+
+pipeline_name: OCR
+
+text_type: general
+
+use_doc_preprocessor: False
+use_textline_orientation: False
+
+SubModules:
+  TextDetection:
+    module_name: text_detection
+    model_name: PP-OCRv6_small_det
+    model_dir: null
+    limit_side_len: 64
+    limit_type: min
+    max_side_limit: 4000
+    thresh: 0.3
+    # 小字要放宽框阈值：默认 0.6 会把「成色A」这种短行整条丢掉
+    box_thresh: 0.5
+    unclip_ratio: 1.6
+  TextRecognition:
+    module_name: text_recognition
+    model_name: PP-OCRv6_small_rec
+    model_dir: null
+    batch_size: 6
+    score_thresh: 0.0

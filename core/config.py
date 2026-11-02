@@ -24,10 +24,13 @@ DEFAULTS = {
         "name": None,       # 商品名称文字
         "price": None,      # 价格文字（可选）
         "clock": None,      # 游戏内倒计时（可选，只用于显示）
+        "bar": None,        # 详情弹窗上的价格条（公示期版式价签会飘时用它补读）
         "list": None,       # 交易行列表（列表模式用）
         "list_refresh": None,  # 列表刷新按钮（可选）
     },
     "trigger_mode": "vanish",
+    # 抢购路线：countdown（公示期倒计时归零就买）/ list（在售列表）/ detail（详情页按钮）
+    "workflow": "countdown",
     "threshold": 0.85,
     "click_hz": 50,
     "confirm_clicks": 20,
@@ -35,30 +38,87 @@ DEFAULTS = {
     "fire_timeout_s": 8.0,
     "arm_grace_s": 1.5,     # 到点还没见到占位按钮时，宽限多久后强行开点
     "failsafe": True,
+    # 输入通道：interception（默认，内核驱动注入）或 legacy
+    # （SetCursorPos+PostMessage 旧路子）。驱动不可用时引擎自动退到 legacy
+    # 并在日志里说明 —— 宁可慢，不要停。
+    "input_mode": "interception",
+    # 成交后留一张截图：抢到了什么、花了多少，事后能回看（约 300KB / 张）
+    "save_shots": True,
+    # 界面上填的抢购条件（价格区间 / 限量 / 预算）。存下来是为了
+    # 「关掉再打开接着干」：条件不存，重启就得重填一遍。
+    "console": {"min_price": 0, "max_price": 0, "quota": 1, "budget": 0},
     # 列表模式（盯交易行搜索结果，谁先符合条件就买谁）
     "list_scan_interval": 0.05,   # 列表没变时多久看一次
     "list_scan_timeout": 0,       # 扫多久放弃，0 = 一直扫
     "list_detail_timeout": 3.0,   # 点进详情页后等购买按钮多久
     "list_max_tries": 20,         # 最多试多少条挂单
-    "active_task": {},            # 当前任务的条件（引擎读它做过滤）
+    # 当前任务的条件（引擎读它做过滤）。默认值给全，界面上的
+    # 「做工 / 最大磨损 / 挑单顺序」三个开关直接写这里。
+    "active_task": {"craft": "", "max_wear": 0.0, "sort": "price"},
+    # ---------------- 开关表（core/switches.py）读的那些 ----------------
+    # 每一项都在 switches.SWITCHES 里有对应条目，界面上拨一下就是改这里。
+    "run_mode": "auto",           # auto / semi / dry
+    "dry_run": True,              # 演练：不点鼠标
+    "preflight_required": True,   # 开抢前必须过检查
+    "force_foreground": True,     # 开点前抢前台并等画面刷新
+    "record_enabled": True,       # 写 data/records.jsonl
+    "countdown_attempts": 3,      # 倒计时模式最多换几件
+    "stop_after_hit": False,      # 抢到就停整条队列
+    "stop_after_fails": 0,        # 连续失败几次停（0=不停）
+    # 关注（交易行详情面板顶部的星标，见 说明.txt 第十一节）
+    "follow_before_buy": True,
+    "follow_after_hit": False,
+    "follow_retry": 2,
+    "follow_wait_ms": 450,
+    "follow_skip_done": True,
+    # 开点节奏
+    "fire_delay_ms": 0,           # 解锁后再等多久开点
+    "fire_jitter_ms": 0,          # 额外随机抖动上限
+    "fire_adaptive": True,        # 按上一轮实测耗时自动调延迟
+    "fire_verify": True,          # 必须看到结算弹窗才算成交
+    # 休市截前（05:00-08:00 专用）
+    "premarket": {"enabled": False, "hotkey": "F10"},
     # 全局热键停止。鼠标甩左上角在游戏全屏时不一定灵，键盘更可靠。
-    "hotkey": {"enabled": True, "spec": "F8"},
+    # spec/enabled = 停止；start_spec/start_enabled = 开抢（热键跳过界面但不跳过检查）
+    "hotkey": {"enabled": True, "spec": "F8",
+               "start_enabled": True, "start_spec": "F7"},
     # 校时
     "time_sync": {
         "enabled": True,
         "servers": ["ntp.aliyun.com", "ntp.tencent.com", "cn.pool.ntp.org"],
         "samples": 4,
     },
-    # 测速
-    "latency": {
-        "targets": [
-            {"host": "df.qq.com", "port": 443, "label": "三角洲官网"},
-            {"host": "game.qq.com", "port": 443, "label": "腾讯游戏"},
-        ],
-        "rounds": 4,
-    },
     # 队列
     "queue": [],            # [{id, name, regions, templates_dir, fire_at, status, note}]
+
+    # OCR（见 core/ocr.py）。2026-11-01 起只剩 PP-OCRv6 一个后端：
+    # 真截图评测里它是唯一「准确率满分 + 延迟可接受」的，其它方案全删。
+    "ocr": {
+        "ppocr": {
+            "mode": "auto",                   # auto / http / off
+            "url": "http://127.0.0.1:8081",   # paddlex --serve --pipeline OCR
+            "timeout_s": 5.0,
+            "cache": 64,                      # 同图缓存条数
+            "max_side": 2560,                 # 超过就先缩图再发
+            "min_score": 0.35,                # 低于这个置信度的行丢掉
+            "model": "PP-OCRv6 small",        # 只用于自检显示，不影响请求
+            "cooldown_s": 30.0,
+            "fail_limit": 3,                  # 连续失败几次就长时间停用
+            "long_cooldown_s": 600.0,
+        },
+        # OCR 服务的进程管家（core/ocr_service.py）：定时/变慢/挂掉时自动重启，
+        # 蓝绿双实例，切换时调用方一次都不会失败。
+        "service": {
+            "enabled": True,
+            "restart_hours": 6.0,             # 0 = 不定时重启
+            "slow_ms": 800.0,                 # 最近中位耗时超它就算变慢，0 = 不管
+            "check_interval_s": 60.0,
+            "idle_wait_s": 600.0,             # 等引擎空闲最多等多久
+            "healthy_timeout_s": 150.0,       # 新实例验活超时（要加载模型）
+            "start_on_boot": True,            # 启动时没有服务就自己拉一个
+            "kill_adopted": True,             # 重启时把接管来的老实例也收掉
+        },
+    },
 }
 
 
@@ -74,8 +134,16 @@ class Config:
         for k, v in data.items():
             if k == "regions" and isinstance(v, dict):
                 self.data["regions"].update({n: b for n, b in v.items() if n in self.data["regions"]})
-            elif k in ("time_sync", "latency", "hotkey") and isinstance(v, dict):
+            elif k in ("time_sync", "hotkey") and isinstance(v, dict):
                 self.data[k].update(v)
+            elif k == "ocr" and isinstance(v, dict):
+                # ocr 是两层：backend / hot_backend + paddle_vl 子字典，
+                # 整体替换会把用户只改了一半的 paddle_vl 打回默认
+                for kk, vv in v.items():
+                    if isinstance(vv, dict) and isinstance(self.data["ocr"].get(kk), dict):
+                        self.data["ocr"][kk].update(vv)
+                    else:
+                        self.data["ocr"][kk] = vv
             elif k == "queue" and isinstance(v, list):
                 self.data["queue"] = v
             else:

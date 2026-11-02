@@ -26,13 +26,15 @@ import traceback
 import uuid
 from collections import deque
 
-from . import bricks, ocr, timesync
+from . import timesync
 from .config import Config
 from .engine import Engine
-from .screen import Screen
 
 PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
     "pending", "armed", "running", "done", "failed", "skipped")
+
+# 抢购路线的中文名（日志里给用户看的）
+WORKFLOW_CN = {"countdown": "公示期倒计时", "list": "在售列表", "detail": "商品页按钮"}
 
 ARM_LEAD = 20.0      # 提前 20 秒装载模板、进入布防
 POLL_IDLE = 0.25
@@ -47,6 +49,30 @@ class Scheduler:
         self._log = deque(maxlen=400)
         self._active_id = None
         self._cfg = Config.load()
+        self._recover_stale_tasks()
+
+    def _recover_stale_tasks(self):
+        """把上次没跑完的任务放回队列。
+
+        为什么必须做：任务状态是存在 config.json 里的，进程被强杀（任务
+        管理器结束、机器断电）时，状态会停在 `running`。调度器只挑
+        `pending`/`armed` 的任务跑 —— 卡在 `running` 的那条就**永远不再
+        跑**，队列看着在那儿、其实已经死了。
+
+        这直接影响「停掉再启动能不能接着干」：不恢复的话，重启后那条任务
+        悄悄消失，用户以为还在跑。
+        """
+        with self._lock:
+            stale = [t for t in self._cfg["queue"]
+                     if t.get("status") in (ARMED, RUNNING)]
+            if not stale:
+                return
+            for t in stale:
+                t["status"] = PENDING
+                t["note"] = (t.get("note") or "") + "（上次没跑完，已放回队列）"
+            self._cfg.save()
+        for t in stale:
+            self._say(f"{self._label(t)}：上次没跑完，已放回队列", "warn")
 
     # ---------------- 队列管理 ----------------
 
@@ -56,7 +82,8 @@ class Scheduler:
 
     def add(self, name, keywords=None, fire_at=0, note="", regions=None, template_from=None,
             mode="detail", min_price=0, max_price=0, max_wear=0,
-            craft="", wear="", season="", sort="price"):
+            craft="", wear="", season="", sort="price", quota=1, budget=0,
+            workflow=None, materials=None, colors=None, categories=None):
         """加一条任务。
 
         regions 不传就沿用当前框选；template_from 是另一个任务的 id，把它的
@@ -64,27 +91,41 @@ class Scheduler:
 
         mode=list 的任务不需要 buy 模板也能加（列表模式靠 OCR 找行，不靠
         模板匹配），但确认弹窗的模板还是要的。
+
+        workflow 决定走哪条抢购路线（countdown / list / detail），不传就用
+        全局配置的默认值。**任务说了算** —— 以前工作流由全局 trigger_mode
+        决定，界面上写的和实际跑的会对不上。
         """
-        if not name or not name.strip():
+        # 空名 = 不按名称过滤：抢所有皮肤（引擎 `_matches_name` 见空名全放行）。
+        # 控制台只维护这一条任务，顾客填价格条件就行，不用先认出皮肤叫什么。
+        if name is None:
             return None, "商品名不能为空"
         mode = mode if mode in ("detail", "list") else "detail"
+        workflow = workflow or Config.load().get("workflow") or "countdown"
+        if workflow not in ("countdown", "list", "detail"):
+            return None, f"不认识的抢购方式：{workflow}"
         with self._lock:
             cfg = Config.load()
             regions = regions or {k: v for k, v in cfg["regions"].items() if v}
-            need = ("confirm",) if mode == "list" else ("buy", "confirm")
+            # 「确认」模板只在**有确认弹窗**的界面才需要。这一版界面点价格
+            # 按钮直接成交（实测），没有弹窗可截 —— 硬要求会让任务永远加不上。
+            # 引擎那边没有确认区域时改走「点一次 + 看余额」的判定。
+            need = () if mode == "list" else ("buy",)
             if mode == "list":
                 # 列表模式必须知道盯哪块屏幕，以及点进去后确认按钮在哪
                 if not regions.get("list"):
                     return None, "列表模式要先框选交易行列表区域"
             missing = [k for k in need if not regions.get(k)]
             if missing:
-                return None, "先把购买和确认按钮框选好再添加任务"
+                return None, "先把购买按钮框选好再添加任务"
             tid = uuid.uuid4().hex[:8]
             task = {
                 "id": tid,
                 "name": name.strip(),
                 "keywords": [k for k in (keywords or []) if k],
                 "mode": mode,
+                # 走哪条抢购路线（countdown / list / detail）
+                "workflow": workflow,
                 "regions": regions,
                 "fire_at": float(fire_at or 0),
                 "status": PENDING,
@@ -99,11 +140,25 @@ class Scheduler:
                 "wear": (wear or "").strip().upper(),
                 "season": (season or "").strip().upper(),
                 "sort": (sort or "price").strip(),
+                # 游戏筛选面板里的三组勾选（列表工作流用得上）：
+                # 材质 / 颜色 / 更多分类
+                "materials": [str(m) for m in (materials or []) if str(m).strip()],
+                "colors": [str(c) for c in (colors or []) if str(c).strip()],
+                "categories": [str(c) for c in (categories or []) if str(c).strip()],
+                # 本轮限量：这一条任务抢够几件就停（默认 1）。
+                # 预算上限：这一条任务最多花多少金币，0 = 不限。
+                "quota": max(1, int(quota or 1)),
+                "budget": max(0.0, float(budget or 0)),
+                # 启用开关：停用的任务留在队列里但不跑（改条件时先停掉）
+                "enabled": True,
+                # 已抢几件 / 已花多少：抢购是累计的，列表要看得见进度
+                "bought": 0,
+                "spent": 0.0,
             }
             cfg["queue"].append(task)
             cfg.save()
             self._cfg = cfg
-            self._say(f"已加入队列：{task['name']}"
+            self._say(f"已加入队列：{task['name'] or '所有皮肤'}"
                       + (f"（{time.strftime('%H:%M:%S', time.localtime(fire_at))} 开卖）"
                          if fire_at else "（手动触发）"))
         if template_from:
@@ -125,42 +180,6 @@ class Scheduler:
             if os.path.isfile(src):
                 shutil.copyfile(src, cfg.template_path(name, tid))
 
-    def add_many(self, names, keywords=None, fire_at=0, interval_s=0, template_from=None,
-                 mode="detail", min_price=0, max_price=0, max_wear=0,
-                 craft="", wear="", season="", sort="price"):
-        """批量加任务。interval_s 是相邻两条的开卖间隔秒数。
-
-        同一批商品通常共用一套按钮模板，所以只快照一次，其余复制第一条的。
-        """
-        made, errors = [], []
-        first_id = template_from
-        for i, raw in enumerate(names):
-            name = (raw or "").strip()
-            if not name:
-                continue
-            task, err = self.add(
-                name,
-                keywords=keywords,
-                fire_at=(float(fire_at) + i * float(interval_s)) if fire_at else 0,
-                template_from=first_id,
-                mode=mode,
-                min_price=min_price, max_price=max_price, max_wear=max_wear,
-                craft=craft, wear=wear, season=season, sort=sort,
-            )
-            if err:
-                errors.append(f"{name}：{err}")
-                continue
-            made.append(task)
-            if not first_id:
-                first_id = task["id"]
-        return made, errors
-
-    def templates_missing(self, task_id=None, mode="detail"):
-        cfg = Config.load()
-        names = ("confirm",) if mode == "list" else ("buy", "confirm")
-        return [n for n in names
-                if not cfg.has_template(n, task_id) and not cfg.has_template(n)]
-
     def _copy_templates(self, src_id, dst_id):
         """把 src 任务的模板复制给 dst，缺模板时返回缺失的名字。"""
         if src_id == dst_id:
@@ -176,15 +195,18 @@ class Scheduler:
         return missing
 
     def remove(self, task_id):
+        """删掉一条任务。
+
+        条件改了就该把旧任务删掉：留着它，调度器会按老条件再跑一遍 ——
+        老条件可能是「不限价」，那就是真金白银的事故。
+        """
         with self._lock:
             cfg = Config.load()
             before = len(cfg["queue"])
-            cfg["queue"] = [t for t in cfg["queue"] if t["id"] != task_id]
-            if len(cfg["queue"]) == before:
-                return False, "没有这条任务"
+            cfg["queue"] = [t for t in cfg["queue"] if t.get("id") != task_id]
             cfg.save()
             self._cfg = cfg
-            return True, "已删除"
+            return before - len(cfg["queue"])
 
     def clear_finished(self):
         with self._lock:
@@ -194,15 +216,6 @@ class Scheduler:
             cfg.save()
             self._cfg = cfg
             return len(cfg["queue"])
-
-    def reset(self):
-        with self._lock:
-            cfg = Config.load()
-            for t in cfg["queue"]:
-                t["status"] = PENDING
-                t["result"] = None
-            cfg.save()
-            self._cfg = cfg
 
     def update(self, task_id, **fields):
         with self._lock:
@@ -215,40 +228,6 @@ class Scheduler:
                     return True
             return False
 
-    # ---------------- 游戏内读取 ----------------
-
-    def read_product(self):
-        """读当前界面上的商品名和价格。返回 {text, name, price, matched}"""
-        cfg = Config.load()
-        box = cfg.region("name")
-        if not box:
-            return {"ok": False, "error": "还没框选商品名称区域"}
-        s = Screen(cfg["monitor"])
-        try:
-            img = s.grab_norm(box)
-        finally:
-            s.close()
-        text = ocr.read_text(img)
-        price = None
-        pbox = cfg.region("price")
-        if pbox:
-            s2 = Screen(cfg["monitor"])
-            try:
-                pimg = s2.grab_norm(pbox)
-            finally:
-                s2.close()
-            price = ocr.parse_price(ocr.read_text(pimg))
-
-        candidates = [t["name"] for t in self.tasks()]
-        for t in self.tasks():
-            candidates.extend(t.get("keywords") or [])
-        candidates.extend(bricks.candidates())
-        name, score = ocr.best_match(text, candidates) if candidates else (None, 0.0)
-        return {"ok": True, "text": text, "price": price,
-                "name": name, "score": round(score, 3),
-                "brick": bricks.identify(text),
-                "candidates": len(candidates)}
-
     # ---------------- 运行 ----------------
 
     def start(self, dry_run=True):
@@ -259,8 +238,16 @@ class Scheduler:
             if not cfg["queue"]:
                 return False, "队列是空的"
             self._cfg = cfg
+        # 执行模式是全局开关：dry 一定不点，semi 走到购买键前停手，
+        # auto 才真点。界面上的「演练模式」也是这条。
+        from . import switches
+        mode = switches.get(cfg, "run.mode")
+        if mode == "dry":
+            dry_run = True
         self._stop.clear()
         self._engine = Engine()
+        # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器
+        self._engine.on_hit = self.stop
         self._thread = threading.Thread(target=self._run, args=(dry_run,), daemon=True)
         self._thread.start()
         return True, "调度器已启动"
@@ -291,8 +278,31 @@ class Scheduler:
             "clock": timesync.info(),
         }
 
+    def busy(self):
+        """现在是不是正在跑一轮抢购。
+
+        OCR 服务管家靠它决定「现在能不能重启」—— 蓝绿虽然不断流，但新实例
+        加载模型要占显存和带宽，正在抢的那一轮里没必要折腾。
+        """
+        try:
+            return bool(self._engine.status().get("running"))
+        except Exception:                        # noqa: BLE001
+            return False
+
+    def note(self, msg, level="info"):
+        """外部往日志里写一行（热键、启动前检查这些不是任务自己在说的话）。"""
+        self._say(msg, level)
+
+    @staticmethod
+    def _label(task):
+        """日志里任务怎么称呼。空名任务是「抢所有皮肤」那条。"""
+        return (task.get("name") or "").strip() or "所有皮肤"
+
     def _say(self, msg, level="info"):
-        self._log.append({"t": time.strftime("%H:%M:%S"), "level": level, "msg": msg})
+        # ts 是浮点时间戳：同一秒里的多行要按真实先后排，光看 "HH:MM:SS"
+        # 会把这一秒的顺序打乱（抢购时一秒内好几行很常见）。
+        self._log.append({"t": time.strftime("%H:%M:%S"), "ts": time.time(),
+                          "level": level, "msg": msg})
 
     def _set_status(self, task_id, status, result=None):
         with self._lock:
@@ -307,7 +317,8 @@ class Scheduler:
     def _run(self, dry_run):
         try:
             while not self._stop.is_set():
-                pending = [t for t in self.tasks() if t["status"] in (PENDING, ARMED)]
+                pending = [t for t in self.tasks()
+                           if t["status"] in (PENDING, ARMED) and t.get("enabled", True)]
                 if not pending:
                     self._say("队列跑完了")
                     break
@@ -322,12 +333,12 @@ class Scheduler:
                     if task["status"] != ARMED:
                         if now < fire_at - ARM_LEAD:
                             wait = min(fire_at - ARM_LEAD - now, 30.0)
-                            self._say(f"下一条：{task['name']}，"
+                            self._say(f"下一条：{self._label(task)}，"
                                       f"{fire_at - now:.0f}s 后进入布防")
                             self._stop.wait(wait)
                             continue
                         self._set_status(task["id"], ARMED)
-                        self._say(f"进入布防：{task['name']}，"
+                        self._say(f"进入布防：{self._label(task)}，"
                                   f"{fire_at - now:.1f}s 后开卖", "hit")
 
                 # 布防即开跑：引擎一启动就在盯按钮，先确认占位按钮在（布防），
@@ -344,21 +355,14 @@ class Scheduler:
             with self._lock:
                 self._active_id = None
 
-    def _run_task(self, task, dry_run):
-        tid = task["id"]
-        mode = task.get("mode") or "detail"
-        self._active_id = tid
-        self._set_status(tid, RUNNING)
-        self._say(f"开始执行：{task['name']}"
-                  f"{'（列表模式）' if mode == 'list' else ''}", "hit")
+    @staticmethod
+    def _engine_task(task):
+        """任务 → 引擎读的 active_task。
 
-        cfg = Config.load()
-        # 把任务的区域和模板套到配置上，引擎只认配置
-        for k, v in (task["regions"] or {}).items():
-            if k in cfg["regions"]:
-                cfg.set_region(k, v)
-        # 列表模式的筛选条件也交给引擎：引擎读 active_task 决定买哪一条
-        cfg["active_task"] = {
+        字段漏一个，界面上设的那一项就不生效（之前 quota/budget 就是这么丢的）。
+        加字段时这里、`Engine._execute_list` 和前端三处都要跟着改。
+        """
+        return {
             "name": task.get("name"),
             "keywords": task.get("keywords") or [],
             "min_price": task.get("min_price") or 0,
@@ -368,7 +372,29 @@ class Scheduler:
             "wear": task.get("wear") or "",
             "season": task.get("season") or "",
             "sort": task.get("sort") or "price",
+            "quota": task.get("quota") or 1,
+            "budget": task.get("budget") or 0,
+            "materials": task.get("materials") or [],
+            "colors": task.get("colors") or [],
+            "categories": task.get("categories") or [],
         }
+
+    def _run_task(self, task, dry_run):
+        tid = task["id"]
+        mode = task.get("mode") or "detail"
+        workflow = task.get("workflow") or "countdown"
+        self._active_id = tid
+        self._set_status(tid, RUNNING)
+        self._say(f"开始执行：{self._label(task)}"
+                  f"{'（' + WORKFLOW_CN.get(workflow, workflow) + '）'}", "hit")
+
+        cfg = Config.load()
+        # 把任务的区域和模板套到配置上，引擎只认配置
+        for k, v in (task["regions"] or {}).items():
+            if k in cfg["regions"]:
+                cfg.set_region(k, v)
+        # 列表模式的筛选条件也交给引擎：引擎读 active_task 决定买哪一条
+        cfg["active_task"] = self._engine_task(task)
         cfg.save()
 
         # 任务自己的模板复制到全局位置，引擎从那儿读。任务没模板就退回全局的
@@ -381,7 +407,7 @@ class Scheduler:
                 src = cfg.template_path(name)
             if not os.path.isfile(src):
                 self._set_status(tid, FAILED, f"缺少 {name} 模板")
-                self._say(f"{task['name']}：缺少 {name} 模板，重新截一次", "error")
+                self._say(f"{self._label(task)}：缺少 {name} 模板，重新截一次", "error")
                 return
             shutil.copyfile(src, cfg.template_path(name))
         if mode == "list":
@@ -393,10 +419,10 @@ class Scheduler:
                 shutil.copyfile(src, cfg.template_path("buy"))
 
         ok, msg = self._engine.start(dry_run=dry_run, deadline=task["fire_at"] or None,
-                                     mode=mode)
+                                     mode=mode, workflow=workflow)
         if not ok:
             self._set_status(tid, FAILED, msg)
-            self._say(f"{task['name']}：{msg}", "error")
+            self._say(f"{self._label(task)}：{msg}", "error")
             return
 
         t0 = time.time()
@@ -404,20 +430,32 @@ class Scheduler:
             st = self._engine.status()
             if st["state"] in ("done", "abort"):
                 break
+            if not st.get("running"):
+                # 引擎线程已经结束，状态却不是终态（引擎内部出错、或者状态
+                # 没落到 done/abort）。这时再等下去就是死等 —— 整条队列卡死，
+                # 后面的任务永远排不上。
+                break
             time.sleep(0.05)
 
         st = self._engine.status()
         self._engine.stop()
         elapsed = round(time.time() - t0, 2)
 
+        # 这一轮抢到几件、花了多少，累计回任务上 —— 列表的「已抢」就靠它
+        got = int(st["stats"].get("bought") or 0)
+        spent = float(st["stats"].get("spent") or 0)
+        if got or spent:
+            self.update(tid, bought=int(task.get("bought") or 0) + got,
+                        spent=round(float(task.get("spent") or 0) + spent, 1))
+
         if st["state"] == "done":
             res = f"完成，{st['stats']['clicks']} 次点击，{elapsed}s"
             self._set_status(tid, DONE, res)
-            self._say(f"{task['name']}：{res}", "hit")
+            self._say(f"{self._label(task)}：{res}", "hit")
         elif self._stop.is_set():
             self._set_status(tid, PENDING, "被停止")
-            self._say(f"{task['name']}：被停止", "warn")
+            self._say(f"{self._label(task)}：被停止", "warn")
         else:
             res = st.get("error") or "未抢到"
             self._set_status(tid, FAILED, res)
-            self._say(f"{task['name']}：{res}", "warn")
+            self._say(f"{self._label(task)}：{res}", "warn")

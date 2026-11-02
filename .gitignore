@@ -1,4 +1,6 @@
 .venv/
+# PaddleOCR-VL 的独立环境（2GB+ 依赖，见 说明.txt 第九节）
+.venv-vl/
 __pycache__/
 *.pyc
 
@@ -7,6 +9,8 @@ config.json
 /templates/
 /data/
 desktop.log
+# OCR 服务管家写的运行日志（每个端口一个）
+ocr_service_*.log
 
 # 打包产物（见 docs/build-desktop.md）
 /dist/
@@ -18,3 +22,40 @@ desktop.log
 /_*.py
 /_*.txt
 /_*.log
+
+# 竞品逆向分析（AxonSkin 等）：产物体积大且含第三方二进制，不入库
+/_re/
+/_reverse/
+/_probe/
+/tools/re_axon.py
+/tools/axon_dump.py
+/tools/axon_watch.py
+/tools/dump_axon.py
+/tools/dump_live_sections.py
+/tools/dump_regions.py
+/tools/observe_unpack.py
+/tools/probe_mem.py
+/tools/probe_module.py
+/tools/scan_regions.py
+/tools/scan_live.py
+/tools/trace_conn.py
+/tools/capture_auth.py
+# verify_axon_report.py 保留入库：它是分析结论的可复核断言集
+/tools/compare_mem_vs_file.py
+/tools/find_live_code.py
+/tools/extract_s0w.py
+/tools/map_dump_memory.py
+/tools/extract_dump_module.py
+/tools/parse_dump_functions.py
+/tools/catch_unpack_window.py
+/tools/survey_dump_modules.py
+/tools/extract_utf16_cn.py
+
+# 本机杂物（不属于项目）
+/idapro.hexlic
+/cu.json
+/apps.json
+/.omp/
+/_bmad/
+# 顶层 OCR.yaml 是 PaddleX 默认产线的拷贝；项目用的是 tools/OCR_game.yaml
+/OCR.yaml

@@ -7,15 +7,9 @@ dependencies = [
     "mss>=9.0,<11",
     "opencv-python>=4.8,<6",
     "numpy>=1.24,<3",
-    # 进程内 OCR（Windows.Media.Ocr）。装不上时 OCR 降级为空结果，
-    # 模板匹配抢购主路径不受影响（见 core/ocr.py 的 _load_winrt）。
-    "winrt-runtime>=3.2,<4",
-    "winrt-Windows.Media.Ocr>=3.2,<4",
-    "winrt-Windows.Graphics.Imaging>=3.2,<4",
-    "winrt-Windows.Storage.Streams>=3.2,<4",
-    "winrt-Windows.Globalization>=3.2,<4",
-    "winrt-Windows.Foundation>=3.2,<4",
-    "winrt-Windows.Foundation.Collections>=3.2,<4",
+    # OCR 不在这个环境里：core/ocr_ppocr.py 只用 urllib 连本机的 PaddleX
+    # 服务（见 说明.txt 第九节）。原来那套 winrt-* 依赖随 Windows OCR 后端
+    # 一起删了 —— 留着只会让 exe 多背几个用不到的 DLL。
     "pywebview>=6.2.1",
 ]
 

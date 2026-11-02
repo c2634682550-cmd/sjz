@@ -15,23 +15,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import market  # noqa: E402
 
-# 真实截图（列表 + 详情，1920x1080）。缺了就跳过依赖图片的用例。
-SHOT = (r"D:\backup-mirror\WX\xwechat_files\wxid_li981uy64bcc22_c299"
-        r"\temp\RWTemp\2026-10\69c47abfd01c41dd2978455fbd6e24a2"
-        r"\cdbf41309910276bb486f2c9aeac020f.png")
-RECT = (90, 229, 1399, 839)   # 列表 ROI：engine.py 里的 list_px
-
-# 截图里肉眼可见的六件商品，从上到下、从左到右
-REAL_PRICES = [15000, 15252, 13333, 32888, 10000, 8888]
-REAL_WEARS = ["A", "A", "S", "S", "B", "B"]
+# 真实截图走仓库里的 tests/fixtures（以前绑的是 D:ackup-mirror 下的一张
+# 微信临时图，本机早没了 —— 那 7 条用例天天 skip，等于没有）。
+# 整屏扫描/价格这类「要看图」的断言在 test_market_video.py 里用
+# _shots/drv_onsale.png（1920×1080 真机截图）覆盖，这里只留解析与挑选。
+SHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    "fixtures", "market", "list_unfiltered.png")
+RECT = (0, 0, 0, 0)      # 这张 fixture 本身就是列表 ROI，不用再裁
 
 
 def _roi():
     img = cv2.imread(SHOT)
     if img is None:
         pytest.skip("测试截图不存在")
-    x0, y0, x1, y1 = RECT
-    return img[y0:y1, x0:x1]
+    return img
 
 
 # ---------------------------------------------------------------- 价格解析
@@ -60,6 +57,22 @@ def test_wear_value_is_not_a_price():
     row = market.parse_row("成色 A( 0.583172 )")
     assert row["price"] is None
     assert row["wear_value"] == pytest.approx(0.583172)
+
+
+def test_dot_thousand_separator_is_a_price():
+    """千位分隔符被认成句点：`9,000` → `9.000`。
+
+    2026-11-01 换 PP-OCRv5 之后真机出现（Windows OCR 是丢逗号或认成汉字）。
+    不处理的话 `_to_number` 把它当小数，9000 变 9，pick() 立刻挑中它去买。
+    """
+    assert market.parse_row("9.000极品|成色B")["price"] == 9000
+
+
+def test_dot_separator_does_not_swallow_wear():
+    """但磨损值（0~5 的小数）不能被当成价格 —— 判据是整数部分 > 5。"""
+    row = market.parse_row("极品|成色B 2.500")
+    assert row["price"] is None
+    assert row["wear_value"] == pytest.approx(2.5)
 
 
 def test_price_absent_stays_none():
@@ -91,99 +104,78 @@ def test_wear_letter_does_not_eat_prices():
 
 
 # ---------------------------------------------------------------- 卡片切分
-
-@pytest.mark.skipif(not os.path.exists(SHOT), reason="测试截图不存在")
-def test_scan_splits_six_cards():
-    """一张截图 = 六张卡片，不是两行文字块。
-
-    本地回归：卡片是「名字行 + 属性行」的上下两段布局，卡内中心距 334px
-    反而大于跨卡距离 76px，任何按间隙聚类的方法都会把两行并成一张卡片、
-    把名字和价格拆到不同记录里。改用固定网格（206px 卡高 + 两列）。
-    """
-    rows = market.scan(_roi())
-    assert len(rows) == 6, [r["text"][:40] for r in rows]
-
-
-@pytest.mark.skipif(not os.path.exists(SHOT), reason="测试截图不存在")
-def test_scan_prices_and_wears_match_the_screenshot():
-    """每张卡片的字段要和肉眼所见一致，且同一条记录里既有名字又有价格。
-
-    名字和价格必须同记录：check() 在 price is None 时直接拒绝，
-    被拆开的卡片会让整个筛选失效。
-    """
-    rows = market.scan(_roi())
-    assert [int(r["price"]) for r in rows] == REAL_PRICES
-    assert [r["wear"] for r in rows] == REAL_WEARS
-    for r in rows:
-        assert "Vector" in r["text"] and "美杜莎" in r["text"]
-
-
-@pytest.mark.skipif(not os.path.exists(SHOT), reason="测试截图不存在")
-def test_scan_coordinates_land_inside_the_card():
-    """点击目标必须落在卡片矩形内 —— engine.py:363 用 cy 和 x0 定位。"""
-    rows = market.scan(_roi())
-    for r in rows:
-        cx, cy = r["x0"] + 40, r["cy"]
-        assert r["x0"] <= cx <= r["x1"]
-        assert r["y0"] <= cy <= r["y1"]
-
+#
+# 「一张截图切出六张卡、价格成色全对、坐标落在卡内」这三条原来挂在这张
+# 微信临时截图上，图没了就一直在 skip。同样的断言已经搬到
+# test_market_video.py，用仓库里的 1920×1080 真机截图（drv_onsale.png）
+# 跑，还多覆盖了「滚过一行之后仍然对」。这里不再重复。
 
 # ---------------------------------------------------------------- 筛选
 
-@pytest.mark.skipif(not os.path.exists(SHOT), reason="测试截图不存在")
+def _rows():
+    """六条合成挂单，价格/成色和以前那张截图一致，但不依赖图片。
+
+    以前这三条要从截图里扫出 rows 才能跑；图一没就全 skip。挑选逻辑
+    （market.pick）本来只吃 row 字典，没必要为它准备一张截图。
+    """
+    data = [(15000, "A"), (15252, "A"), (13333, "S"),
+            (32888, "S"), (10000, "B"), (8888, "B")]
+    return [{"text": f"Vector 冲锋枪-美杜莎 {p}", "price": p, "wear": w,
+             "wear_value": None, "craft": "极品", "x0": 10, "y0": 10 + i * 100,
+             "cy": 40 + i * 100}
+            for i, (p, w) in enumerate(data)]
+
+
 def test_pick_respects_the_price_cap():
     """价格上限内最便宜的一件被选中：六件里 <=13000 的只有 10000 和 8888。"""
-    rows = market.scan(_roi())
     task = {"name": "Vector 冲锋枪-美杜莎", "keywords": ["美杜莎"],
             "max_price": 13000, "sort": "price"}
-    row, why, diag = market.pick(rows, task)
+    row, why, diag = market.pick(_rows(), task)
     assert row is not None, why
     assert row["price"] == 8888
     assert sum(1 for d in diag if d["ok"]) == 2
 
 
-@pytest.mark.skipif(not os.path.exists(SHOT), reason="测试截图不存在")
 def test_pick_rejects_a_grade_above_the_cap():
     """要 S 成色、价格 <=13000：两件便宜的都不是 S，必须一件不选。"""
-    rows = market.scan(_roi())
     task = {"name": "Vector 冲锋枪-美杜莎", "keywords": ["美杜莎"],
             "max_price": 13000, "wear": "S"}
-    row, why, diag = market.pick(rows, task)
+    row, why, diag = market.pick(_rows(), task)
     assert row is None
     assert any("成色" in d["why"] for d in diag)
 
 
-@pytest.mark.skipif(not os.path.exists(SHOT), reason="测试截图不存在")
 def test_pick_never_selects_an_over_budget_item():
     """上限低于所有价格时一件都不能选 —— 选错就是买贵了。"""
-    rows = market.scan(_roi())
     task = {"name": "Vector 冲锋枪-美杜莎", "keywords": ["美杜莎"],
             "max_price": 5000}
-    row, why, _ = market.pick(rows, task)
+    row, why, _ = market.pick(_rows(), task)
     assert row is None
 
 
 # ---------------------------------------------------------------- OCR 后端自检
 
 def test_backend_name_reports_the_real_engine():
-    """backend_name() 是打包后排查 OCR 的唯一手段，必须真的建起引擎。
+    """backend_name() 是打包后排查 OCR 的唯一手段，必须说清是谁在干活。
 
-    打包成 exe 后最隐蔽的故障是惰性 winrt 没被打进去：模板匹配主路径照常
-    工作，只有 OCR 悄悄失败。所以这个自检不能只报「平台是 win32」。
+    2026-11-01 起只剩 PP-OCRv6 一个后端（走本机服务），所以这里钉两件事：
+    名字里必须写明是 PP-OCR，且不可用时必须**明说**不可用 —— 不许出现
+    「名字看着正常、其实一直读空」的情况。
     """
     from core import ocr
     name = ocr.backend_name()
     assert isinstance(name, str) and name
-    if sys.platform == "win32":
-        assert "WinRT" in name, f"OCR 后端没起来: {name}"
-        assert "zh-Hans" in name or "语言" in name, name
+    if "不可用" in name:
+        return          # 服务没起是合法状态，只要它老老实实报不可用
+    assert "PP-OCR" in name, name
+    assert "127.0.0.1" in name or "http" in name, name
 
 
 def test_backend_name_matches_a_real_recognition():
     """自检说可用，就必须真的能识别出东西 —— 否则自检在骗人。"""
     from core import ocr
-    if "WinRT" not in ocr.backend_name():
-        pytest.skip("本机没有可用的 WinRT OCR")
+    if "不可用" in ocr.backend_name():
+        pytest.skip(f"OCR 后端不可用：{ocr.backend_name()}")
     if not os.path.exists(SHOT):
         pytest.skip("测试截图不存在")
     # 截图右上角有商品名，随便一块有字的区域即可
