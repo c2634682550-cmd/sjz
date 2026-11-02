@@ -108,10 +108,11 @@ def test_pressing_while_running_stops(env):
 
 def test_blocked_by_preflight_does_not_start(env):
     sched, state = env
-    state["facts"] = _facts(page="recommend")
+    # 用 OCR 不可用当「检查没过」的样本（页面不对现在只是警告，不拦）
+    state["facts"] = _facts(ocr=False)
     server._hotkey_toggle()
     assert sched.started == [], "检查没过还是开抢了"
-    assert any("游戏页面" in m for _, m in sched.notes), "没说是哪一项没过"
+    assert any("OCR" in m for _, m in sched.notes), "没说是哪一项没过"
 
 
 def test_all_checks_green_starts_live(env):

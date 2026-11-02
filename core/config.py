@@ -177,7 +177,12 @@ class Config:
         self.data["regions"][name] = box
 
     def save(self):
-        """原子写：先写临时文件再 os.replace。
+        """原子写：先写临时文件再 os.replace。"""
+        with _save_lock:
+            self._save_locked()
+
+    def _save_locked(self):
+        """真正的写盘。调用方必须已经持有 _save_lock。
 
         为什么不能直接 open(CONFIG_PATH, "w")：
           · 它先截断再写。写到一半进程被杀（抢购中强退、蓝屏）→ 文件是半截
@@ -192,77 +197,69 @@ class Config:
           · 临时文件名要带线程号：共用同一个 `.tmp` 时，A 写一半、B 又把
             它截断，A 的 replace 就把 B 的半成品换上去 —— 读出来是空文件。
         """
-        with _save_lock:
-            tmp = f"{CONFIG_PATH}.{os.getpid()}.{threading.get_ident()}.tmp"
-            try:
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(self.data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                for attempt in range(6):
-                    try:
-                        os.replace(tmp, CONFIG_PATH)
-                        return
-                    except PermissionError:
-                        # 别人正开着这个文件读（杀软扫描、另一个线程 json.load）
-                        time.sleep(0.02 * (attempt + 1))
-                os.replace(tmp, CONFIG_PATH)          # 最后一次，失败就抛
-            except OSError:
-                # 实在写不了（目录只读之类）才退回直写 —— 至少别把保存整个搞挂
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except OSError:
-                    pass
-                with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                    json.dump(self.data, f, ensure_ascii=False, indent=2)
-
-    @classmethod
-    def load(cls):
-        if os.path.isfile(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, encoding="utf-8") as f:
-                    return cls(json.load(f))
-            except (OSError, ValueError) as e:
-                # 文件坏了（手改漏个逗号最常见）。**先留个备份再重置** ——
-                # 以前这里直接 pass，接着 save() 用默认值把原文件覆盖掉，
-                # 用户所有设置（价格区间、队列、框选区域）当场没了，
-                # 连「我改坏了什么」都看不出来。
-                cls._quarantine(e)
-        # 第一次运行把默认值落盘，用户能看见、能备份、能手改
-        cfg = cls()
-        cfg.save()
-        return cfg
-
-    @staticmethod
-    def _quarantine(err):
-        """把坏掉的 config.json 改名留档，返回备份路径（失败返回 None）。"""
-        stamp = time.strftime("%Y%m%d_%H%M%S")
-        backup = f"{CONFIG_PATH}.broken-{stamp}"
+        tmp = f"{CONFIG_PATH}.{os.getpid()}.{threading.get_ident()}.tmp"
         try:
-            os.replace(CONFIG_PATH, backup)
-            print(f"[config] config.json 读不出来（{err}），已备份为 "
-                  f"{os.path.basename(backup)}，本次用默认值启动")
-            return backup
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            for attempt in range(6):
+                try:
+                    os.replace(tmp, CONFIG_PATH)
+                    return
+                except PermissionError:
+                    # 别人正开着这个文件读（杀软扫描、另一个线程 json.load）
+                    time.sleep(0.02 * (attempt + 1))
+            os.replace(tmp, CONFIG_PATH)          # 最后一次，失败就抛
         except OSError:
-            return None
+            # 实在写不了（目录只读之类）才退回直写 —— 至少别把保存整个搞挂
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
 
     @classmethod
     def load(cls):
-        if os.path.isfile(CONFIG_PATH):
+        """读配置。整个过程持有 _save_lock，和 save 串行化。
+
+        不串行的话：save 正在 os.replace，这边正好 open 同一个路径，
+        Windows 会抛 PermissionError（共享冲突）。
+        """
+        with _save_lock:
+            return cls._load_locked()
+
+    @classmethod
+    def _load_locked(cls):
+        """真正的读。调用方必须已经持有 _save_lock（所以不能调 save()）。"""
+        if not os.path.isfile(CONFIG_PATH):
+            cfg = cls()
+            cfg._save_locked()                     # 第一次运行：把默认值落盘
+            return cfg
+
+        for attempt in range(9):
             try:
                 with open(CONFIG_PATH, encoding="utf-8") as f:
                     return cls(json.load(f))
-            except (OSError, ValueError) as e:
-                # 文件坏了（手改漏个逗号最常见）。**先留个备份再重置** ——
-                # 以前这里直接 pass，接着 save() 用默认值把原文件覆盖掉，
-                # 用户所有设置（价格区间、队列、框选区域）当场没了，
-                # 连「我改坏了什么」都看不出来。
+            except ValueError as e:
+                # **只有 JSON 坏了才留档重置**（手改漏个逗号最常见）。
+                # 以前这里连 OSError 一起吞，把「文件被占用」也当成「文件坏了」，
+                # 会把好好的配置备份走再重置 —— 那是数据丢失。
                 cls._quarantine(e)
-        # 第一次运行把默认值落盘，用户能看见、能备份、能手改
-        cfg = cls()
-        cfg.save()
-        return cfg
+                cfg = cls()
+                cfg._save_locked()
+                return cfg
+            except OSError:
+                # 读不了（被占用/权限）≠ 文件坏了：重试，最后兜底用默认值
+                # 但**不落盘**，下次启动再试。
+                if attempt < 8:
+                    time.sleep(0.02)
+                    continue
+                print(f"[config] config.json 暂时读不了（被占用？），"
+                      f"本次用默认值，不覆盖原文件：{CONFIG_PATH}")
+                return cls()
 
     @staticmethod
     def _quarantine(err):

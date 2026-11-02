@@ -595,6 +595,36 @@ class Handler(BaseHTTPRequestHandler):
                            "status": self._hotkey_status()})
 
 
+def _sync_on_boot():
+    """启动时自动校时。
+
+    配置里 `time_sync.enabled` 默认是 True，但以前**没有任何代码读它** ——
+    于是每次开程序都是「未校准」，启动前检查拦下「时间校准」，用户必须
+    手动点一次「时间校准」才能开始。更糟的是关掉再开又回到未校准。
+    现在按配置在后台校一次；失败只记日志，不挡启动（用户还能手点）。
+    """
+    try:
+        cfg = Config.load()
+        ts = cfg.get("time_sync") or {}
+        if not ts.get("enabled", True):
+            return
+        if not _sync_lock.acquire(blocking=False):
+            return
+        try:
+            res = timesync.sync(servers=ts.get("servers"),
+                                samples=int(ts.get("samples") or 4))
+            if res.get("ok"):
+                _scheduler.note(f"启动校时完成：{res.get('server')} "
+                                f"{res.get('offset', 0) * 1000:+.0f}ms", "info")
+            else:
+                _scheduler.note(f"启动校时失败：{res.get('error') or '原因未知'}"
+                                "（可以在设置页手动点「时间校准」）", "warn")
+        finally:
+            _sync_lock.release()
+    except Exception as e:                       # noqa: BLE001
+        _scheduler.note(f"启动校时出错：{type(e).__name__}: {e}", "warn")
+
+
 def _preflight_gate(mode="list"):
     """开抢前的检查闸门。返回 (ok, 说明)。
 
@@ -756,6 +786,9 @@ def serve(host="127.0.0.1", port=8777):
     # OCR 服务的管家：定时/变慢/挂掉时自动蓝绿重启。没有 .venv-vl 就只是
     # 接管监控（用户自己起的服务照样管）。
     svc = _start_ocr_service()
+    # 校时放后台：NTP 要采几个样本，几百毫秒到几秒，别挡着窗口出来
+    threading.Thread(target=_sync_on_boot, name="boot-timesync",
+                     daemon=True).start()
     # 启动时就把热键注册上：以前只在用户改设置时才注册，重启后热键是死的
     for label, (ok, msg) in _start_hotkeys().items():
         print(f"  热键 {label}：{msg}")

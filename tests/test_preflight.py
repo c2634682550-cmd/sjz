@@ -136,12 +136,21 @@ def test_detail_mode_needs_both_buttons():
     assert not c["ok"] and "购买" in c["detail"]
 
 
-def test_standing_on_the_recommend_page_blocks_list_mode():
-    """真机踩过：推荐页顶部也有「在售/推荐」，判据松了就把它当在售页。"""
+def test_standing_on_another_market_page_warns_but_does_not_block():
+    """停在推荐页/市场首页 → 提示，但**不拦**启动。
+
+    为什么改了：引擎的 `_navigate` 会自己走 go_to_onsale()（F4 → 典藏外观
+    → 选皮肤 → 购买 → 在售页），`recover()` 还专门处理「用户点开始时停在
+    任意位置」。在预检里拦死，等于让人先手动切页再点开始，白点一次。
+
+    真机踩过的教训（推荐页顶部也有「在售/推荐」）保留在别处：页面**识别**
+    要准，认不出（unknown）照样拦 —— 见下面那条。
+    """
     checks = preflight.evaluate(_facts(page="recommend"), "list")
     c = _by_id(checks, "page")
-    assert not c["ok"] and "推荐页" in c["detail"]
-    assert c["fix"]["hint"], "要告诉人切到在售页"
+    assert c["ok"] and c.get("warn"), c
+    assert "推荐页" in c["detail"]
+    assert c["fix"]["hint"], "要告诉人可以先切到在售页"
 
 
 def test_unknown_page_blocks_the_start():

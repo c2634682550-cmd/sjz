@@ -127,17 +127,25 @@ def _elevate_if_needed():
     把话说清楚、决定要不要退出本进程。
     """
     try:
-        from core.input import elevate_self, foreground_integrity, process_integrity
+        from core.input import elevate_self, needs_elevation
     except Exception:
         return False
+    # 用 needs_elevation（扫所有可见窗口里权限最高的那个），**不能用
+    # foreground_integrity** —— 启动那一刻前台窗口通常是终端或资源管理器，
+    # 权限和我们一样，于是判断成「不需要提权」，等切到游戏时已经晚了：
+    # UIPI 会把点击全吞掉，症状是「点了没反应」。
     try:
-        ours, game = process_integrity(), foreground_integrity()
+        if not needs_elevation():
+            return False
     except Exception:
-        ours = game = None
-    if ours is None or game is None or game <= ours:
         return False
 
-    _log(f"!! 游戏是管理员权限（{hex(game)}），本程序是 {hex(ours)}")
+    try:
+        from core.input import process_integrity
+        ours = process_integrity()
+    except Exception:
+        ours = None
+    _log(f"!! 有窗口的权限比本程序高（本程序 {hex(ours) if ours is not None else '?'}）")
     _log("   UIPI 会把我们发的鼠标键盘消息全部拦掉且不报错 —— 重新以管理员身份启动")
     if elevate_self():
         _log("已以管理员身份重新启动，本进程退出")

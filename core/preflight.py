@@ -149,9 +149,15 @@ def evaluate(facts, mode="list"):
         out.append(_ck("page", "游戏页面", False, "认不出当前页面",
                        {"hint": "把游戏切到交易行，停在「在售」页"}))
     elif is_list and page != "onsale":
-        out.append(_ck("page", "游戏页面", False,
-                       f"{PAGE_CN.get(page, page)}（列表模式要在在售页）",
-                       {"hint": "切到交易行的「在售」页"}))
+        # **不再拦死。** 引擎的 _navigate 会自己走
+        # 「F4 → 典藏外观 → 选皮肤 → 购买 → 在售页」（go_to_onsale），
+        # 停在市场首页时它能自己过去 —— 在这里拦下等于让用户白点一次。
+        # 只有「认不出页面」才是真的不能开工（可能被别的窗口盖着、或者在
+        # 对局里），那个分支上面已经 FAIL 了。
+        out.append(_ck("page", "游戏页面", True,
+                       f"{PAGE_CN.get(page, page)} · 开抢时会自动导航到在售页",
+                       {"hint": "想省掉这一步就先手动切到「在售」页"},
+                       warn=True))
     else:
         out.append(_ck("page", "游戏页面", True, PAGE_CN.get(page, page)))
 
