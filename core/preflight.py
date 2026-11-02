@@ -15,7 +15,13 @@
 # 坐标全是 1920×1080 实测值，尺寸不对就一切都不对
 WANT_SIZE = (1920, 1080)
 # 时钟偏差超过这个就当没过：倒计时抢购 200ms 已经够错过一批货
-CLOCK_TOLERANCE_S = 0.2
+# 校时偏差的上限。为什么是 2 秒而不是 200ms：
+#   `timesync.true_now()` = time.time() + offset，偏差是**被补偿掉**的
+#   （引擎取开卖时刻、调度器排任务都用 true_now）。所以 400ms 的本机偏差
+#   校准后只剩 ±10ms（NTP 往返误差），不影响掐点。
+#   真正该拦的是「大得离谱」——偏差几秒通常意味着系统时间错得离谱，或者
+#   NTP 那次测量本身有问题，这时候不该信它。
+CLOCK_TOLERANCE_S = 2.0
 
 # 完整性级别（RID）→ 中文。UIPI：低权限进程不能给高权限窗口发输入消息。
 _INTEGRITY_CN = {0x1000: "低", 0x2000: "普通", 0x3000: "管理员", 0x4000: "系统"}
@@ -72,11 +78,13 @@ def evaluate(facts, mode="list"):
                        {"tab": "run", "hint": "点「重新校时」"}))
     elif abs(off) > CLOCK_TOLERANCE_S:
         out.append(_ck("clock", "时间校准", False,
-                       f"{off * 1000:+.0f} ms（超过 {CLOCK_TOLERANCE_S * 1000:.0f} ms）",
+                       f"{off * 1000:+.0f} ms（超过 {CLOCK_TOLERANCE_S:.0f} 秒，"
+                       "先把系统时间对一下再校时）",
                        {"tab": "run", "hint": "重新校时"}))
     else:
         out.append(_ck("clock", "时间校准", True,
-                       f"{(clock.get('server') or 'NTP')} {off * 1000:+.0f} ms"))
+                       f"{(clock.get('server') or 'NTP')} {off * 1000:+.0f} ms"
+                       "（已补偿）"))
 
     # ④ 按钮模板：靠它判断「购买按钮出现了」「确认弹窗出来了」
     tpl = facts.get("templates") or {}

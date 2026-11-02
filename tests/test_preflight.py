@@ -89,13 +89,26 @@ def test_clock_not_synced_yet_blocks_the_start_even_at_zero_offset():
     assert not c["ok"] and "没校" in c["detail"]
 
 
-def test_clock_drift_beyond_tolerance_blocks_the_start():
-    """200ms 偏差在倒计时抢购里已经够错过一批货。"""
+def test_clock_drift_is_compensated_not_blocked():
+    """本机偏差是被**补偿**掉的，不该拦。
+
+    引擎取开卖时刻、调度器排任务都用 `timesync.true_now()`
+    （= time.time() + offset）。所以本机钟差 350ms 校准后只剩 ±10ms 的
+    NTP 往返误差，不影响掐点。
+
+    以前这条按「偏差 > 200ms 就拦」写，结果这台机器钟差 396ms，
+    启动前检查永远红 —— 用户看到的是「明明校过时了还说不行」。
+    """
     checks = preflight.evaluate(_facts(clock={"offset": 0.35, "at": 1700000000.0}), "list")
+    c = _by_id(checks, "clock")
+    assert c["ok"], c["detail"]
+    assert "已补偿" in c["detail"], "要说清楚偏差是被补偿掉的，不是被忽略"
+
+
+def test_absurd_clock_drift_blocks_the_start():
+    """偏差大到几秒就别信这次测量了 —— 多半系统时间本身错得离谱。"""
+    checks = preflight.evaluate(_facts(clock={"offset": 3.5, "at": 1700000000.0}), "list")
     assert not _by_id(checks, "clock")["ok"]
-    # 刚好在容差内要放行，别把正常抖动当故障
-    ok = preflight.evaluate(_facts(clock={"offset": 0.19, "at": 1700000000.0}), "list")
-    assert _by_id(ok, "clock")["ok"]
 
 
 def test_missing_confirm_template_does_not_block_the_start():

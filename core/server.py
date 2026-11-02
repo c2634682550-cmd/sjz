@@ -486,7 +486,9 @@ class Handler(BaseHTTPRequestHandler):
         # 跑起来是「点了没反应」，最后还可能被记成「没抢到」。
         try:
             from .input import needs_elevation
-            if needs_elevation():
+            # 演练模式不点鼠标，权限低也能跑 —— 拦它没有意义，反而让人
+            # 以为「连试一下都不行」。只有真点的时候才必须提权。
+            if needs_elevation() and not data.get("dry_run", True):
                 return self._json({"ok": False,
                                    "msg": "控制台权限比游戏低，点不动它 —— "
                                           "请以管理员身份重新运行 start.bat"})
