@@ -63,6 +63,23 @@ def _url_port(url):
     return (u.hostname or "127.0.0.1"), (u.port or 80)
 
 
+def _is_ocr_exe(path):
+    """这个映像像不像我们的 OCR 服务。
+
+    `paddlex.exe` 是启动器，它 re-exec 出来的真正服务是 `python.exe` ——
+    两个都认。`pythonw.exe` 不算：那是控制台自己（窗口版解释器），
+    真在 8081 上看到它说明端口配错了，不该动手。
+
+    为什么要这道判断：`_kill_port` 是「按端口找 PID → taskkill」，端口被
+    无关程序占着时会把人家杀掉。今天实测就撞到一次 —— 8081 上响应的根本
+    不是我们的服务。
+    """
+    name = (path or "").replace("/", "\\").rsplit("\\", 1)[-1].lower()
+    if name.startswith("pythonw"):
+        return False
+    return name.startswith(("paddlex", "python"))
+
+
 class Supervisor:
     """管一个 PaddleX OCR 服务进程。不启动也不影响程序 —— 只是没人管它。"""
 
@@ -194,6 +211,14 @@ class Supervisor:
             # 又要走一遍「备用端口接管」的兜底。
             if not _tcp_ok(host, old_port):
                 new_port = old_port
+                # 冷启动还有个坑：另一个端口上可能蹲着上次蓝绿切完没回收干净
+                # 的实例（进程被强杀、或者切换中途断电）。它不影响这次启动，
+                # 但会一直占着显存 —— 每留一个，新实例加载就慢一截。这里
+                # 顺手收掉，和「杀接管来的老实例」是同一个理由。
+                other = 8082 if new_port != 8082 else 8081
+                if _tcp_ok(host, other) and self.cfg.get("kill_adopted", True):
+                    self._log(f"备用端口 :{other} 上还留着上次的实例，先收掉")
+                    self._kill_port(other)
             else:
                 new_port = 8082 if old_port != 8082 else 8081
             if _tcp_ok(host, new_port):
@@ -209,7 +234,7 @@ class Supervisor:
                 self._log(self._last_error)
                 return False
 
-            if not self._wait_healthy(host, new_port):
+            if not self._wait_healthy(host, new_port, proc):
                 self._last_error = "新实例没验活成功，保持原实例"
                 self._log(self._last_error)
                 self._kill(proc)
@@ -260,14 +285,22 @@ class Supervisor:
         except Exception:                        # noqa: BLE001
             pass
 
-    def _wait_healthy(self, host, port):
+    def _wait_healthy(self, host, port, proc=None):
         """等新实例真的能认字。
 
         只探 TCP 不够：端口通了但模型还没加载完，请求会 500 或者卡住。
         所以最后要跑一次真推理（一张纯色小图，几十毫秒）。
+
+        **还要盯着自己起的那个进程**：端口探测只能证明「有人在听」，
+        证明不了「听的是我起的这个」。实测踩过这一条 —— 手动起的实例占着
+        8081，管家起的新实例绑不上端口、加载完就退了，而探针探到了别人那个
+        实例，于是判「验活成功」：客户端被切过去，`_proc` 里记的却是一个
+        已经死掉的句柄，后面「杀老实例」全靠端口猜。
         """
         deadline = time.monotonic() + float(self.cfg.get("healthy_timeout_s") or 150)
         while time.monotonic() < deadline and not self._stop.is_set():
+            if proc is not None and proc.poll() is not None:
+                return False        # 自己那个已经退了，别人应声不算数
             if _tcp_ok(host, port) and self._probe(f"http://{host}:{port}"):
                 return True
             time.sleep(0.5)
@@ -369,11 +402,38 @@ class Supervisor:
 
     def _kill_port_real(self, port):
         for pid in self._pids_on_port(port):
+            exe = self._pid_exe(pid)
+            if not _is_ocr_exe(exe):
+                # 端口被无关程序占着（代理、别的服务）—— 按端口盲杀太粗暴，
+                # 今天就被这种东西绕过一次：8081 上根本不是我们的服务。
+                self._log(f":{port} 上监听的是 {exe or '未知程序'}，不是 OCR 服务，不动它")
+                continue
             try:
                 subprocess.run(["taskkill", "/PID", pid, "/T", "/F"],
                                capture_output=True, timeout=10)
             except Exception:                    # noqa: BLE001
                 pass
+
+    @staticmethod
+    def _pid_exe(pid):
+        """进程的映像路径。拿不到（权限不够 / 进程已退）返回 None。"""
+        import ctypes
+        from ctypes import wintypes
+        try:
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            h = k32.OpenProcess(0x1000, False, int(pid))   # QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                buf = ctypes.create_unicode_buffer(1024)
+                size = wintypes.DWORD(len(buf))
+                if not k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                    return None
+                return buf.value
+            finally:
+                k32.CloseHandle(h)
+        except Exception:                        # noqa: BLE001
+            return None
 
     def _kill_real(self, proc):
         if proc is None:

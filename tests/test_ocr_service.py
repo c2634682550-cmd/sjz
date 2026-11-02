@@ -125,6 +125,75 @@ def test_new_instance_that_never_gets_healthy_leaves_the_old_one_alone(env):
     assert "没验活" in (svc.status()["last_error"] or "")
 
 
+def test_port_answering_from_another_instance_is_not_success(env):
+    """端口通了、但应声的不是我起的那个进程 —— 不许当成功。
+
+    真机踩过：手动起的实例占着 8081，管家起的新实例绑不上端口、加载完就退，
+    探针却探到了别人那个实例，于是判「验活成功」：客户端切过去，`_proc` 里
+    记的是一个已经死掉的句柄，后面「杀老实例」只能靠端口去猜。
+    """
+    state, make = env
+    svc = make()
+    svc._port = 8081
+    svc._proc = FakeProc(8081)
+
+    dead = FakeProc(8082)
+    dead.killed = True                  # 起来就退了（端口被别人抢走）
+
+    def spawn(port):
+        state["spawned"].append(port)
+        state["up"].add(port)           # 端口有人应 —— 但不是它
+        return dead
+
+    svc._spawn = spawn
+    assert svc.restart("测试") is False
+    assert ocr.current_url() == "http://127.0.0.1:8081", \
+        "不该切到一个不是自己起的实例上"
+    assert 8081 in state["up"], "老实例必须留着继续服务"
+    assert "没验活" in (svc.status()["last_error"] or "")
+
+
+def test_cold_start_reclaims_an_orphan_on_the_spare_port(env):
+    """冷启动时备用端口上留着的旧实例要收掉。
+
+    场景：上次蓝绿切到 8082 之后进程被强杀，下次启动配置里的 8081 是空的、
+    8082 上还蹲着一个。不去管它的话，新实例要跟它抢显存，加载慢一截，
+    而且这一份永远不会再被切回来 —— 跑一天能堆出好几个。
+    """
+    state, make = env
+    state["up"] = {8082}                 # 配置端口 8081 空着，8082 上有孤儿
+    svc = make()
+
+    assert svc.restart("冷启动") is True
+    assert 8082 in state["killed"], "备用端口上的孤儿没被收掉"
+    assert state["spawned"] == [8081], "冷启动要起在配置的端口上"
+    assert ocr.current_url() == "http://127.0.0.1:8081"
+
+
+def test_orphan_is_left_alone_when_kill_adopted_is_off(env):
+    """kill_adopted 关掉时不许动别人的进程 —— 这是用户自己起的。"""
+    state, make = env
+    state["up"] = {8082}
+    svc = make(kill_adopted=False)
+
+    assert svc.restart("冷启动") is True
+    assert 8082 not in state["killed"]
+    assert 8082 in state["up"]
+
+
+def test_kill_port_only_touches_our_own_processes():
+    """按端口找 PID 再杀之前，先认映像名。
+
+    实测撞到过：8081 上响应的根本不是我们的服务（被别的东西占着）。要是
+    管家照旧 taskkill，就是把别人的进程杀了。宁可漏收一个孤儿，也不能误杀。
+    """
+    assert ocr_service._is_ocr_exe(r"C:\x\.venv-vl\Scripts\paddlex.exe")
+    assert ocr_service._is_ocr_exe(r"C:\Python311\python.exe")
+    assert not ocr_service._is_ocr_exe(r"C:\Python311\pythonw.exe"), "那是控制台自己"
+    assert not ocr_service._is_ocr_exe(r"C:\Other\proxy.exe")
+    assert not ocr_service._is_ocr_exe(None), "认不出来就别动手"
+
+
 def test_refuses_when_the_spare_port_is_taken(env):
     """备用端口被别人占着就放弃 —— 别去踩一个不认识的进程。"""
     state, make = env

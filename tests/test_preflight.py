@@ -162,6 +162,19 @@ def test_unknown_page_blocks_the_start():
     assert not _by_id(checks2, "page")["ok"], "详情模式把「认不出」当通过，等于没检查"
 
 
+def test_resolution_ok_but_no_game_window_is_called_out():
+    """分辨率对得上 ≠ 游戏开着 —— 桌面本来就是 1920×1080。
+
+    以前这里报绿「游戏窗口 1920×1080」，用户以为环境没问题，点开始白跑一轮。
+    不拦死（窗口类名万一对不上，拦了就是误拦），但必须把「没找到」说出来。
+    """
+    checks = preflight.evaluate(_facts(game_hwnd=False), "list")
+    c = _by_id(checks, "window")
+    assert c["ok"] and c.get("warn"), c
+    assert "没找到游戏窗口" in c["detail"]
+    assert preflight.all_ok(checks), "窗口找不到是警告，拦启动的活由 page 那项干"
+
+
 def test_game_window_missing_blocks():
     checks = preflight.evaluate(_facts(page="unknown", game_hwnd=False,
                                        game_fore=False), "list")

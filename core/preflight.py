@@ -47,6 +47,14 @@ def evaluate(facts, mode="list"):
         out.append(_ck("window", "游戏窗口", False,
                        f"{size[0]}×{size[1]}（坐标按 1920×1080 标的）",
                        {"hint": "把游戏改成窗口化 1920×1080"}))
+    elif facts.get("game_hwnd") is False:
+        # 分辨率对得上不代表游戏开着 —— 桌面本来就是 1920×1080。以前这里
+        # 报绿「游戏窗口 1920×1080」，用户以为环境没问题，点开始白跑一轮。
+        # 不拦死（窗口类名万一对不上，拦了就是误拦），但必须说清楚。
+        out.append(_ck("window", "游戏窗口", True,
+                       f"{size[0]}×{size[1]} · 没找到游戏窗口（UnrealWindow）",
+                       {"hint": "先启动游戏；在启动器/登录界面时也会找不到"},
+                       warn=True))
     else:
         out.append(_ck("window", "游戏窗口", True, f"{size[0]}×{size[1]}"))
 
