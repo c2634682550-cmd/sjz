@@ -344,7 +344,20 @@ class Scheduler:
                 # 布防即开跑：引擎一启动就在盯按钮，先确认占位按钮在（布防），
                 # 再等它变化。不能等开卖那一刻才启动——那时按钮已经变了，
                 # 引擎永远看不到"变化"这个事件。
-                self._run_task(task, dry_run)
+                #
+                # 一条任务炸了不能带走整条队列：以前异常会一路冒到 _run 的
+                # except，线程直接结束，剩下的任务永远停在「等待」，界面上
+                # 只看到调度器停了、日志里一段 traceback。现在这条标失败，
+                # 接着跑下一条。
+                try:
+                    self._run_task(task, dry_run)
+                except Exception as e:               # noqa: BLE001
+                    self._set_status(task["id"], FAILED,
+                                     f"{type(e).__name__}: {e}")
+                    self._say(f"{self._label(task)}：执行出错 "
+                              f"{type(e).__name__}: {e}，跳过它继续", "error")
+                    for line in traceback.format_exc().splitlines()[-4:]:
+                        self._say(line, "error")
                 if self._stop.is_set():
                     break
         except Exception as e:

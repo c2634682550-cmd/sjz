@@ -7,7 +7,6 @@
 两者共用 core.server 的全部端点。
 """
 import argparse
-import ctypes
 import os
 import socket
 import sys

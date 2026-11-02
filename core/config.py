@@ -1,5 +1,7 @@
 """配置。坐标存 0-1 归一化比例，换分辨率不用重配。"""
 import json
+import threading
+import time
 import os
 import sys
 
@@ -126,6 +128,9 @@ DEFAULTS = {
 }
 
 
+_save_lock = threading.Lock()
+
+
 class Config:
     def __init__(self, data=None):
         self.data = json.loads(json.dumps(DEFAULTS))
@@ -169,8 +174,45 @@ class Config:
         self.data["regions"][name] = box
 
     def save(self):
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=2)
+        """原子写：先写临时文件再 os.replace。
+
+        为什么不能直接 open(CONFIG_PATH, "w")：
+          · 它先截断再写。写到一半进程被杀（抢购中强退、蓝屏）→ 文件是半截
+            JSON，下次启动读不出来。
+          · 服务端线程（保存开关）和调度器线程（每个任务状态变化都 save）
+            会并发写同一个文件。两边同时截断/写，最后落盘的是两份内容交错
+            的垃圾。
+
+        两个 Windows 细节（都是压测压出来的）：
+          · `os.replace` 在目标文件正被别的线程**打开着读**时会抛
+            PermissionError（共享冲突）。所以重试几次，而不是一失败就退回直写。
+          · 临时文件名要带线程号：共用同一个 `.tmp` 时，A 写一半、B 又把
+            它截断，A 的 replace 就把 B 的半成品换上去 —— 读出来是空文件。
+        """
+        with _save_lock:
+            tmp = f"{CONFIG_PATH}.{os.getpid()}.{threading.get_ident()}.tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                for attempt in range(6):
+                    try:
+                        os.replace(tmp, CONFIG_PATH)
+                        return
+                    except PermissionError:
+                        # 别人正开着这个文件读（杀软扫描、另一个线程 json.load）
+                        time.sleep(0.02 * (attempt + 1))
+                os.replace(tmp, CONFIG_PATH)          # 最后一次，失败就抛
+            except OSError:
+                # 实在写不了（目录只读之类）才退回直写 —— 至少别把保存整个搞挂
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except OSError:
+                    pass
+                with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
 
     @classmethod
     def load(cls):
@@ -178,12 +220,59 @@ class Config:
             try:
                 with open(CONFIG_PATH, encoding="utf-8") as f:
                     return cls(json.load(f))
-            except (OSError, ValueError):
-                pass
+            except (OSError, ValueError) as e:
+                # 文件坏了（手改漏个逗号最常见）。**先留个备份再重置** ——
+                # 以前这里直接 pass，接着 save() 用默认值把原文件覆盖掉，
+                # 用户所有设置（价格区间、队列、框选区域）当场没了，
+                # 连「我改坏了什么」都看不出来。
+                cls._quarantine(e)
         # 第一次运行把默认值落盘，用户能看见、能备份、能手改
         cfg = cls()
         cfg.save()
         return cfg
+
+    @staticmethod
+    def _quarantine(err):
+        """把坏掉的 config.json 改名留档，返回备份路径（失败返回 None）。"""
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        backup = f"{CONFIG_PATH}.broken-{stamp}"
+        try:
+            os.replace(CONFIG_PATH, backup)
+            print(f"[config] config.json 读不出来（{err}），已备份为 "
+                  f"{os.path.basename(backup)}，本次用默认值启动")
+            return backup
+        except OSError:
+            return None
+
+    @classmethod
+    def load(cls):
+        if os.path.isfile(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, encoding="utf-8") as f:
+                    return cls(json.load(f))
+            except (OSError, ValueError) as e:
+                # 文件坏了（手改漏个逗号最常见）。**先留个备份再重置** ——
+                # 以前这里直接 pass，接着 save() 用默认值把原文件覆盖掉，
+                # 用户所有设置（价格区间、队列、框选区域）当场没了，
+                # 连「我改坏了什么」都看不出来。
+                cls._quarantine(e)
+        # 第一次运行把默认值落盘，用户能看见、能备份、能手改
+        cfg = cls()
+        cfg.save()
+        return cfg
+
+    @staticmethod
+    def _quarantine(err):
+        """把坏掉的 config.json 改名留档，返回备份路径（失败返回 None）。"""
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        backup = f"{CONFIG_PATH}.broken-{stamp}"
+        try:
+            os.replace(CONFIG_PATH, backup)
+            print(f"[config] config.json 读不出来（{err}），已备份为 "
+                  f"{os.path.basename(backup)}，本次用默认值启动")
+            return backup
+        except OSError:
+            return None
 
     def public(self):
         out = json.loads(json.dumps(self.data))

@@ -29,8 +29,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import preflight, timesync
 from .config import Config, DATA_DIR
 from . import records
-import io
-
 from . import switches
 from .hotkey import Hotkey
 from .pagewatch import PageWatcher
@@ -106,6 +104,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         path, query = u.path, parse_qs(u.query)
+        return self._guard(lambda: self._get(path, query), path)
+
+    def _get(self, path, query):
         if path in ("/", "/index.html"):
             return self._static("index.html", "text/html; charset=utf-8")
         if path == "/api/config":
@@ -121,7 +122,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/hotkey":
             return self._json(self._hotkey_status())
         if path == "/api/records":
-            rows = records.load(limit=int(query.get("limit", ["200"])[0] or 200))
+            raw = (query.get("limit", ["200"])[0] or "200")
+            try:
+                limit = max(1, min(5000, int(raw)))
+            except (TypeError, ValueError):
+                return self._json({"ok": False,
+                                   "msg": f"limit 要是整数，收到 {raw!r}"}, 400)
+            rows = records.load(limit=limit)
             return self._json({"ok": True, "rows": rows, "stats": records.stats()})
         if path == "/api/skins":
             return self._skins()
@@ -170,8 +177,30 @@ class Handler(BaseHTTPRequestHandler):
         }
         fn = routes.get(path)
         if fn:
-            return fn()
+            return self._guard(fn, path)
         return self._send(404, "not found", "text/plain; charset=utf-8")
+
+    def _guard(self, fn, path):
+        """跑一个接口处理函数，异常也要变成一条 JSON 响应。
+
+        以前没有这层：处理函数里任何一个没接住的异常（比如 /api/timesync
+        收到 samples="abc"，int() 直接 ValueError）都会让 BaseHTTPRequestHandler
+        把连接掐掉 —— 前端看到的是「网络错误」，日志里只有一段 traceback，
+        既不知道哪个接口、也不知道为什么。现在统一回 500 + 错误摘要。
+        """
+        try:
+            return fn()
+        except BrokenPipeError:
+            return None                       # 浏览器提前关了，不算错
+        except Exception as e:                # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            try:
+                return self._json({"ok": False,
+                                   "msg": f"{type(e).__name__}: {e}",
+                                   "path": path}, 500)
+            except Exception:                 # noqa: BLE001
+                return None
 
     # ---------- 静态文件 / 配置 ----------
 
@@ -246,8 +275,12 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- 队列 ----------
 
     def _task_add(self, data):
+        # name 传 null 和「不传」应当一样：都是「不按名字过滤」。
+        # 以前 null 会被 scheduler.add 判成「商品名不能为空」，
+        # 前端顺手写个 {name: null} 就加不进去，很莫名。
+        name = data.get("name")
         task, err = _scheduler.add(
-            data.get("name", ""),
+            "" if name is None else name,
             keywords=data.get("keywords") or [],
             fire_at=data.get("fire_at") or 0,
             note=data.get("note", ""),
@@ -518,9 +551,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "上一次校时还没完成"}, 429)
         try:
             cfg = Config.load()["time_sync"]
+            raw = data.get("samples")
+            try:
+                samples = int(raw) if raw not in (None, "") else int(cfg["samples"])
+            except (TypeError, ValueError):
+                return self._json({"ok": False,
+                                   "error": f"samples 要是整数，收到 {raw!r}"}, 400)
             res = timesync.sync(
                 servers=data.get("servers") or cfg["servers"],
-                samples=int(data.get("samples") or cfg["samples"]),
+                samples=max(1, min(20, samples)),
             )
             return self._json(res)
         finally:

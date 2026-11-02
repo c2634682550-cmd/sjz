@@ -1,4 +1,4 @@
-"""OCR 引擎横向评测：同一批真实裁切图，比准确率和延迟。
+r"""OCR 引擎横向评测：同一批真实裁切图，比准确率和延迟。
 
 为什么要单独一个脚本
 --------------------
@@ -108,10 +108,10 @@ def _winrt(img):
     writer.store_async().get()
     writer.flush_async().get()
     stream.seek(0)
-    bitmap = imaging.BitmapDecoder.create_async(stream).get()         .get_software_bitmap_async().get()
+    decoder = imaging.BitmapDecoder.create_async(stream).get()
+    bitmap = decoder.get_software_bitmap_async().get()
     res = eng.recognize_async(bitmap).get()
-    text = "
-".join(line.text for line in res.lines)
+    text = "\n".join(line.text for line in res.lines)
     return text, [line.text for line in res.lines]
 
 

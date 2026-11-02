@@ -68,7 +68,7 @@ def _edges(img):
     """灰度 + Sobel，返回 (行强度, 列强度)。"""
     if img is None or getattr(img, "size", 0) == 0:
         return None, None
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    gray = vision.to_gray(img).astype(np.float32)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
     sy = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)).sum(axis=1)
     sx = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)).sum(axis=0)
@@ -86,7 +86,7 @@ def _long_lines(img, axis, frac=0.25, need_frac=0.5, edges=None):
     """
     h, w = img.shape[:2]
     if edges is None:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = vision.to_gray(img)
         edges = cv2.Canny(gray, 30, 100)
     if axis == 1:
         k = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, int(h * frac))))
@@ -196,7 +196,7 @@ def locate_cards(img, min_w=220, min_h=110, max_cards=16):
     if img is None or getattr(img, "size", 0) == 0:
         return []
     h, w = img.shape[:2]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = vision.to_gray(img)
     edges = cv2.Canny(gray, 30, 100)      # 只算一次，横竖线共用
 
     # 竖线只跨一张卡片的高度（约 1/3 屏），门槛得比横线松
@@ -324,7 +324,7 @@ def card_bands(img, card, upscale=2, max_bands=4):
     if sub is None or sub.size == 0:
         return []
     h, w = sub.shape[:2]
-    gray = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
+    gray = vision.to_gray(sub)
     up = max(1, int(upscale or 1))
     # 0.30 而不是 0.22：卡片底部的「极品|成色B 14,000」常和卡片下边框连成
     # 一条 57px 的带子（卡高 220 的 26%），按 0.22 会被当成「图」丢掉 ——
@@ -376,7 +376,7 @@ def card_regions(img, card, upscale=2):
     if sub is None or sub.size == 0:
         return {"name": None, "bottom": None, "icon": None, "boxes": {}}
     h, w = sub.shape[:2]
-    gray = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
+    gray = vision.to_gray(sub)
     up = max(1, int(upscale or 1))
 
     bands = _text_bands(gray)
@@ -505,8 +505,8 @@ def changed_cards(prev, cur, cards, delta=CHANGE_DELTA):
         return list(range(len(cards)))
     if not cards:
         return []
-    a = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY).astype(np.float32)
-    b = cv2.cvtColor(cur, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    a = vision.to_gray(prev).astype(np.float32)
+    b = vision.to_gray(cur).astype(np.float32)
     out = set()
     for i, (x0, y0, x1, y1) in enumerate(cards):
         pa = a[y0:y1, x0:x1]

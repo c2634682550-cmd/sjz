@@ -20,7 +20,7 @@
 """
 import time
 
-from . import bricks, ocr, skinfilter
+from . import ocr, skinfilter
 
 # 一次滚几格。一格 = 一张卡，一屏 7 张 → 滚 6 格重叠 1 张，既不漏也最快。
 DEFAULT_STEP = 6

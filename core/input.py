@@ -90,9 +90,26 @@ class Mouse:
         return _user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
 
     def _abs(self, x, y):
-        """把本屏像素坐标换算成虚拟屏 0-65535 绝对坐标。"""
+        """把本屏像素坐标换算成虚拟屏 0-65535 绝对坐标。
+
+        **出界直接报错，不夹住硬点。** 以前没有这层检查：坐标算错（模板匹配
+        给了个离谱的位置、配置里的归一化比例被写成 1.3）时，换算结果超出
+        0-65535，驱动/系统会把它夹到屏幕边缘 —— 于是点击落在屏幕边角上。
+        而这个程序的急停判据正是「鼠标甩到左上角」，一个越界点击看起来就像
+        用户按了急停，或者干脆点到别的窗口上。
+        宁可这一轮报错停下，也不要静悄悄点错地方。
+
+        容 2px：`_vw` 是「宽 - 1」，右/下边界上取整时可能多出 1px。
+        """
         px = self._origin_left + x - self._vx
         py = self._origin_top + y - self._vy
+        if px < -2 or py < -2 or px > self._vw + 2 or py > self._vh + 2:
+            raise ValueError(
+                f"点击坐标越界：({x}, {y}) 换算后是虚拟屏 ({px}, {py})，"
+                f"有效范围 0~{self._vw} × 0~{self._vh} —— 坐标算错了，"
+                f"这一下不点（越界会被系统夹到屏幕边缘，点到别处去）")
+        px = min(max(px, 0), self._vw)
+        py = min(max(py, 0), self._vh)
         return (
             int(round(px * 65535 / self._vw)),
             int(round(py * 65535 / self._vh)),

@@ -48,7 +48,21 @@ def _ext(path):
 
 
 def to_gray(img):
-    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    """任意通道数 → 灰度。
+
+    以前只判 ndim==3，碰到 4 通道（BGRA，mss 在某些桌面合成模式下会吐）
+    会走 COLOR_BGR2GRAY 然后抛「Invalid number of channels」。截图工具、
+    测试夹具、cv2.imread(path, 0) 都可能给出非 3 通道的图。
+    """
+    if img is None:
+        return None
+    if img.ndim == 2:
+        return img
+    if img.shape[2] == 4:
+        return cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+    if img.shape[2] == 3:
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return img[:, :, 0]                      # 2 通道这种畸形输入，取第一通道
 
 
 def match(haystack_gray, needle_gray):

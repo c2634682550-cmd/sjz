@@ -29,7 +29,6 @@ PaddleX 服务连跑二十几个小时后会明显退化：实测单次识别从
 """
 import os
 import socket
-import statistics
 import subprocess
 import sys
 import threading
@@ -97,6 +96,10 @@ class Supervisor:
             return False
         if self._thread and self._thread.is_alive():
             return False
+        # **必须清掉停止标志**：stop() 里 set 过它，不清的话新线程一进
+        # _loop 就被 `while not self._stop.wait(...)` 直接判死 —— 表现为
+        # 「点了重启没反应」，日志里一个字都没有。
+        self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="ocr-svc",
                                         daemon=True)
         self._thread.start()
