@@ -134,12 +134,20 @@ SWITCHES = [
     {
         "key": "fire.confirm_clicks", "group": "抢购设置", "label": "确认连点",
         "kind": "int", "path": "confirm_clicks", "default": 20, "hint": "次",
-        "desc": "确认弹窗出现后点几下确认（多点几下防丢帧）",
+        "desc": "至少连点几下。弹窗没消失就继续点（直到「确认兜底时长」），"
+                "消失了立刻停 —— 不再盲点固定次数",
     },
     {
         "key": "fire.confirm_gap", "group": "抢购设置", "label": "确认间隔",
         "kind": "int", "path": "confirm_interval_ms", "default": 10, "hint": "毫秒",
         "desc": "两次确认之间隔多久",
+    },
+    {
+        "key": "fire.confirm_timeout", "group": "抢购设置", "label": "确认兜底时长",
+        "kind": "float", "path": "confirm_timeout_s", "default": 2.0,
+        "hint": "秒",
+        "desc": "弹窗还开着就一直点确认，最多点这么久。太短会在「按钮比"
+                "倒计时晚亮」时白点一场",
     },
     {
         "key": "fire.delay", "group": "抢购设置", "label": "购买延迟",

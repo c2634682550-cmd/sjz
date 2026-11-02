@@ -1108,20 +1108,25 @@ class Engine:
                 buy_tpl = self._load(cfg, "buy")
             got = False
             t_det = time.perf_counter()
+            # 区域换算提到循环外：点进详情页之后区域不会变，每轮重算
+            # norm_to_px/expand 只是白花时间。
+            buy_region = cfg.region("buy")
+            buy_px_det = screen.norm_to_px(expand(buy_region, 0.15)) if buy_region else None
             while time.perf_counter() - t_det < detail_timeout:
+                t_iter = time.perf_counter()
                 if self._stop.is_set():
                     raise Aborted("用户停止")
                 self._failsafe(failsafe)
-                buy_region = cfg.region("buy")
-                if not buy_region:
+                if buy_px_det is None:
                     break
-                last_score, _ = match(
-                    to_gray(screen.grab(screen.norm_to_px(expand(buy_region, 0.15)))),
-                    buy_tpl)
+                last_score, _ = match(to_gray(screen.grab(buy_px_det)), buy_tpl)
                 if last_score >= threshold:
                     got = True
                     break
-                time.sleep(0.01)
+                # 一次「截屏+匹配」约 2ms；以前固定睡 10ms，等于每 12ms 才
+                # 看一眼，按钮亮起到被发现平均晚 6ms。改成按 5ms 的采样
+                # 节奏补睡，粒度降到 ~5ms。
+                time.sleep(max(0.0, 0.005 - (time.perf_counter() - t_iter)))
 
             if not got:
                 self._say(f"详情页 {detail_timeout}s 没等到购买按钮"
@@ -1303,6 +1308,7 @@ class Engine:
                 raise Aborted("游戏窗口抢不到前台，没法开点")
             got_confirm = False
             while time.perf_counter() - t_fire < fire_timeout:
+                t_iter = time.perf_counter()
                 if self._stop.is_set():
                     raise Aborted("用户停止")
                 self._failsafe(failsafe)
@@ -1321,7 +1327,26 @@ class Engine:
                               f"点了 {clicks} 次 / {self._fire_lag:.2f}s", "hit")
                     got_confirm = True
                     break
-                time.sleep(interval)
+
+                # ---- 空档里继续采样，别睡死 ----
+                # 两次点击之间要等 interval（50Hz = 20ms）。以前这段是纯
+                # sleep：弹窗在这 20ms 里出现，也要等睡醒才看得见 —— 平均
+                # 白等 10ms、最坏 20ms。抢购里 20ms 就是几十个人的差距。
+                # 现在按 4ms 一个节拍采样（一次截屏+匹配约 2ms），把「弹窗
+                # 出现 → 被发现」压到 ~4ms，同时不改变点击频率。
+                next_click_at = t_iter + interval
+                while time.perf_counter() < next_click_at:
+                    left = next_click_at - time.perf_counter()
+                    time.sleep(min(0.004, max(0.0, left)))
+                    cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
+                    if cscore >= threshold:
+                        self._fire_lag = time.perf_counter() - t_fire
+                        self._say(f"确认弹窗出现（相关度 {cscore:.3f}），"
+                                  f"点了 {clicks} 次 / {self._fire_lag:.2f}s", "hit")
+                        got_confirm = True
+                        break
+                if got_confirm:
+                    break
 
         if not got_confirm:
             self._say(f"{fire_timeout}s 内没等到确认弹窗，中止", "warn")
@@ -1336,18 +1361,45 @@ class Engine:
         if not self._dry_run:
             self._wait_dialog_unlock(screen)
 
-        # ---- 点确认 ----
+        # ---- 点确认：闭环，弹窗一消失就停 ----
         self._set_state(CONFIRM)
         # 记一次余额：奖励弹窗读不到时，余额减少是第二判据
         before_balance = None if self._dry_run else self._balance(screen)
         if self._dry_run:
             self._say(f"[演练] 本该点确认 {confirm_clicks} 次 {confirm_click}", "warn")
         else:
-            for _ in range(confirm_clicks):
-                if self._stop.is_set():
-                    raise Aborted("用户停止")
+            # 以前是**盲点** confirm_clicks 下（默认 20 × 10ms = 200ms）：
+            # 第一下就成功的话，剩下 19 下全打在奖励弹窗上（那上面有
+            # 「跳过」，甚至可能点到别的东西），而且白等 190ms。
+            # 现在每点一下就看一眼确认弹窗还在不在：没了立刻收手。
+            # 还开着就继续点，最多点到 confirm_timeout_s —— 覆盖「按钮比
+            # 倒计时晚亮」的情况（这正是原来那个固定 sleep(0.6) 想解决的）。
+            confirm_timeout = max(0.2, float(cfg.get("confirm_timeout_s", 2.0)))
+            t_conf = time.perf_counter()
+            confirm_done = False
+            conf_clicks = 0
+            while not self._stop.is_set():
+                # 连点次数用完、兜底时间也过了，才真的收手
+                if conf_clicks >= confirm_clicks and                         time.perf_counter() - t_conf >= confirm_timeout:
+                    break
                 self._click(mouse, *confirm_click)
-                time.sleep(confirm_gap)
+                conf_clicks += 1
+                # 连点次数用完之后降速：还在说明按钮没亮（或认错了），
+                # 这时每 50ms 补一下足够，没必要 500Hz 猛砸 —— 真要是弹窗
+                # 已经换成别的东西，砸得越猛越容易点到不该点的。
+                gap = confirm_gap if conf_clicks < confirm_clicks else max(0.05, confirm_gap)
+                # 2ms 下限：confirm_gap 配成 0 时闭环会刷到几千 Hz，
+                # 把输入队列灌满反而丢事件。一次匹配本身就要 2ms。
+                time.sleep(max(0.002, gap))
+                cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
+                if cscore < threshold:
+                    confirm_done = True
+                    break
+            if self._stop.is_set():
+                raise Aborted("用户停止")
+            self._say(f"确认点了 {conf_clicks} 下"
+                      f"（{time.perf_counter() - t_conf:.2f}s）"
+                      + ("" if confirm_done else "，弹窗仍在"), "info")
 
         # ---- 查余额不足 ----
         # 点完确认的第一个可能结果是「钱不够」。这一步必须在报告"完成"之前，
@@ -1460,22 +1512,32 @@ class Engine:
         px = screen.norm_to_px(CLOCK_N)
         t0 = time.perf_counter()
         seen = False
+        # 轮询间隔按实测的读表成本自适应：读一次 240x65 的倒计时约 25ms
+        # （截屏 2ms + 放大 + 一次 OCR）。以前写死 250ms，等于「解锁了还要
+        # 再等最多 250ms 才发现」—— 抢购里 250ms 是能决定成败的量级。
+        poll = 0.025
         while time.perf_counter() - t0 < timeout:
             if self._stop.is_set():
                 raise Aborted("用户停止")
+            t_read = time.perf_counter()
             words = self._ocr_clock(screen, px)
             sec = countdown.parse_words(words)
             if sec is not None:
                 seen = True
                 if sec == 0:
-                    # 文本归零后再让 0.6s 给按钮真正亮起
-                    time.sleep(0.6)
+                    # **不再固定等 0.6s。** 以前这里无条件 sleep(0.6)，
+                    # 意思是「等按钮真正亮起来」；可弹窗倒计时归零后按钮
+                    # 通常几十毫秒内就能点，白等 600ms 纯粹送分。
+                    # 现在直接返回，由 _confirm_clicks 的闭环去试探：
+                    # 点不动就继续点，点得动弹窗立刻消失。
                     self._say("弹窗倒计时归零，开点", "hit")
                     return True
             elif seen or time.perf_counter() - t0 >= 2.0:
                 self._say("弹窗倒计时文本已消失，视为解锁", "hit")
                 return True
-            time.sleep(0.25)
+            # 睡「间隔 - 本次读表耗时」，保证轮询频率而不是被 IO 拖慢
+            cost = time.perf_counter() - t_read
+            time.sleep(max(0.005, poll - cost))
         self._say("等弹窗解锁超时，照着点一次试试", "warn")
         return False
 

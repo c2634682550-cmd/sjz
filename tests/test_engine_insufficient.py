@@ -185,22 +185,24 @@ def test_fire_stops_on_the_first_click_when_money_is_short(eng, monkeypatch):
 def test_fire_keeps_clicking_when_money_is_fine(eng, monkeypatch):
     """钱够的时候这道检查不能挡路：不弹窗、不中止，正常走完。"""
     monkeypatch.setattr(eng, "_insufficient_showing", lambda scr: False)
+    # match 永远返回「弹窗在」：确认阶段会一直点到兜底时长
     monkeypatch.setattr(engine_mod, "match", lambda a, b: (0.99, None))
-    # 这条测的是「钱够时检查不挡路」；成交校验另有用例，这里给个「看到了」。
-    # 收奖励弹窗也要一起替掉 —— 否则「看到弹窗」会让它真的去点「跳过」，
-    # 多出来的一下会把这个用例的点击数断言带偏。
-    monkeypatch.setattr(eng, "_bought_dialog", lambda screen: True)
-    monkeypatch.setattr(eng, "_close_reward", lambda *a, **k: None)
-    # 这条测的是「钱够时检查不挡路」；成交校验另有用例，这里给个「看到了」。
-    # 收奖励弹窗也要一起替掉 —— 否则「看到弹窗」会让它真的去点「跳过」，
-    # 多出来的一下会把这个用例的点击数断言带偏。
+    # 成交校验和收奖励弹窗都替掉 —— 这条测的是余额检查，不是那两件事
     monkeypatch.setattr(eng, "_bought_dialog", lambda screen: True)
     monkeypatch.setattr(eng, "_close_reward", lambda *a, **k: None)
     clicks = []
     monkeypatch.setattr(eng, "_click", lambda m, x, y: clicks.append((x, y)))
+
     assert eng._fire_and_confirm(FakeCfg(), RectScreen(_load("list_unfiltered.png")),
                                  FakeMouse(), _load("insufficient.png"),
                                  (100, 200), 0.0) is True
+
     # 只点了购买和确认，没有点「取消」（取消只在认出余额不足时才点）
-    assert (100, 200) in clicks
-    assert len(clicks) == 1 + int(FakeCfg()["confirm_clicks"])
+    assert (100, 200) in clicks, "没点购买按钮"
+    confirm = [c for c in clicks if c != (100, 200)]
+    assert confirm, "没点确认"
+    assert len(set(confirm)) == 1, f"确认应该点在同一处：{set(confirm)}"
+    # 确认阶段是闭环（弹窗不消失就一直点），所以断言「有界」而不是精确值：
+    # 精确值由 confirm_timeout_s / confirm_interval_ms 决定，属于配置。
+    assert len(confirm) <= 120, f"确认点了 {len(confirm)} 下，兜底时长没生效"
+

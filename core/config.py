@@ -37,6 +37,9 @@ DEFAULTS = {
     "click_hz": 50,
     "confirm_clicks": 20,
     "confirm_interval_ms": 10,
+    # 点确认的兜底时长：弹窗还开着就一直点，最多点这么久。
+    # 替代原来「倒计时归零后固定 sleep(0.6)」的等待。
+    "confirm_timeout_s": 2.0,
     "fire_timeout_s": 8.0,
     "arm_grace_s": 1.5,     # 到点还没见到占位按钮时，宽限多久后强行开点
     "failsafe": True,
