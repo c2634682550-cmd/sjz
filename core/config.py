@@ -52,9 +52,13 @@ DEFAULTS = {
     "list_scan_timeout": 0,       # 扫多久放弃，0 = 一直扫
     "list_detail_timeout": 3.0,   # 点进详情页后等购买按钮多久
     "list_max_tries": 20,         # 最多试多少条挂单
-    # 当前任务的条件（引擎读它做过滤）。默认值给全，界面上的
-    # 「做工 / 最大磨损 / 挑单顺序」三个开关直接写这里。
-    "active_task": {"craft": "", "max_wear": 0.0, "sort": "price"},
+    # 当前任务的条件（引擎读它做过滤）。**不要**往这里塞默认值：
+    # 每跑一个任务，scheduler 会把整个 active_task 换成那个任务的字段
+    # （_engine_task），塞进来的东西跑一次就没了。
+    "active_task": {},
+    # 三个「任务没写就用它」的全局默认值。界面上的「做工 / 最大磨损 /
+    # 挑单顺序」三个开关写这里，任务自己的字段优先。
+    "filter_defaults": {"craft": "", "max_wear": 0.0, "sort": "price"},
     # ---------------- 开关表（core/switches.py）读的那些 ----------------
     # 每一项都在 switches.SWITCHES 里有对应条目，界面上拨一下就是改这里。
     "run_mode": "auto",           # auto / semi / dry

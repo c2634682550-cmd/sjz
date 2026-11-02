@@ -96,19 +96,19 @@ SWITCHES = [
     },
     {
         "key": "filter.craft", "group": "价格与筛选", "label": "做工",
-        "kind": "select", "path": "active_task.craft", "default": "",
+        "kind": "select", "path": "filter_defaults.craft", "default": "",
         "options": [["", "不限"], ["极品", "只要极品"], ["优品", "只要优品"]],
         "desc": "只买指定做工的挂单，其余整行跳过",
     },
     {
         "key": "filter.wear_max", "group": "价格与筛选", "label": "最大磨损",
-        "kind": "float", "path": "active_task.max_wear", "default": 0.0,
+        "kind": "float", "path": "filter_defaults.max_wear", "default": 0.0,
         "hint": "0=不限，如 0.399",
         "desc": "磨损值高于它的不买（成色 S 一般 ≤0.399）",
     },
     {
         "key": "filter.sort", "group": "价格与筛选", "label": "挑单顺序",
-        "kind": "select", "path": "active_task.sort", "default": "price",
+        "kind": "select", "path": "filter_defaults.sort", "default": "price",
         "options": [["price", "价格从低到高"], ["wear", "磨损从低到高"],
                     ["screen", "屏幕顺序"]],
         "desc": "一屏里同时有多件符合条件时，先试哪一件",

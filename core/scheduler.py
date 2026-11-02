@@ -361,19 +361,40 @@ class Scheduler:
 
         字段漏一个，界面上设的那一项就不生效（之前 quota/budget 就是这么丢的）。
         加字段时这里、`Engine._execute_list` 和前端三处都要跟着改。
+
+        **任务没写的字段，退回全局开关的值。** 这一条很关键：
+        设置页上「最低价 / 最高价 / 每轮限量 / 总预算 / 做工 / 最大磨损 /
+        挑单顺序」七个开关写的是全局配置，而任务对象里通常没有这些字段。
+        不做回退的话，开关拨了、任务一跑就被这里的 `or 0` / `or ""` 盖掉 ——
+        界面上能拨，实际不生效，正是「假开关」。
         """
+        from . import switches
+
+        g = Config.load()
+        console = g.get("console") or {}
+
+        def num(task_val, global_val, zero_means_unset=True):
+            """任务给了就用任务的；没给（None/空/0）就用全局。"""
+            if task_val in (None, ""):
+                return global_val
+            if zero_means_unset and not task_val:
+                return global_val
+            return task_val
+
         return {
             "name": task.get("name"),
             "keywords": task.get("keywords") or [],
-            "min_price": task.get("min_price") or 0,
-            "max_price": task.get("max_price") or 0,
-            "max_wear": task.get("max_wear") or 0,
-            "craft": task.get("craft") or "",
+            "min_price": num(task.get("min_price"), console.get("min_price") or 0),
+            "max_price": num(task.get("max_price"), console.get("max_price") or 0),
+            "max_wear": num(task.get("max_wear"),
+                            switches.get(g, "filter.wear_max") or 0),
+            "craft": task.get("craft") or switches.get(g, "filter.craft") or "",
             "wear": task.get("wear") or "",
             "season": task.get("season") or "",
-            "sort": task.get("sort") or "price",
-            "quota": task.get("quota") or 1,
-            "budget": task.get("budget") or 0,
+            "sort": task.get("sort") or switches.get(g, "filter.sort") or "price",
+            "quota": num(task.get("quota"), console.get("quota") or 1,
+                         zero_means_unset=False) or 1,
+            "budget": num(task.get("budget"), console.get("budget") or 0),
             "materials": task.get("materials") or [],
             "colors": task.get("colors") or [],
             "categories": task.get("categories") or [],

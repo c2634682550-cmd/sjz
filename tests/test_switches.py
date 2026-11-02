@@ -281,3 +281,119 @@ def test_follow_before_buy_calls_the_navigator(monkeypatch):
     if not switches.get(_Cfg(follow_before_buy=False), "follow.before_buy"):
         pass
     assert called2 == []
+
+
+# ---------------------------------------------------------------- 任务 ↔ 全局开关
+
+def _fake_sched(monkeypatch, **globals_):
+    """把 scheduler 的 Config.load 换成一个受控的全局配置。"""
+    from core import scheduler as sched_mod
+
+    cfg = config.Config()
+    for k, v in globals_.items():
+        cfg[k] = v
+
+    class Cfg(dict):
+        @classmethod
+        def load(cls):
+            return cfg
+
+    monkeypatch.setattr(sched_mod, "Config", Cfg)
+    return sched_mod, cfg
+
+
+def test_task_falls_back_to_global_switches(monkeypatch):
+    """任务没写筛选条件时，用设置页上拨的全局值。
+
+    这是「开关是不是真的有用」的关键一环：任务对象里通常没有
+    craft/max_wear/sort/min_price，如果 _engine_task 直接 `or 0` / `or ""`，
+    开关拨了也会被盖掉 —— 界面上能拨、实际不生效。
+    """
+    sched_mod, cfg = _fake_sched(
+        monkeypatch,
+        console={"min_price": 2000, "max_price": 25000, "quota": 3, "budget": 80000},
+        filter_defaults={"craft": "极品", "max_wear": 0.4, "sort": "wear"})
+
+    t = sched_mod.Scheduler._engine_task({"name": "某件皮肤"})
+    assert t["min_price"] == 2000
+    assert t["max_price"] == 25000
+    assert t["quota"] == 3
+    assert t["budget"] == 80000
+    assert t["craft"] == "极品"
+    assert t["max_wear"] == 0.4
+    assert t["sort"] == "wear"
+
+
+def test_task_fields_win_over_global_switches(monkeypatch):
+    """任务自己写了条件就以任务为准 —— 清单里每条可以不一样。"""
+    sched_mod, _ = _fake_sched(
+        monkeypatch,
+        console={"min_price": 2000, "max_price": 25000, "quota": 3, "budget": 80000},
+        filter_defaults={"craft": "极品", "max_wear": 0.4, "sort": "wear"})
+
+    t = sched_mod.Scheduler._engine_task(
+        {"name": "另一件", "max_price": 999, "craft": "优品", "sort": "price",
+         "quota": 1, "min_price": 10})
+    assert t["max_price"] == 999
+    assert t["min_price"] == 10
+    assert t["craft"] == "优品"
+    assert t["sort"] == "price"
+    assert t["quota"] == 1
+
+
+# ---------------------------------------------------------------- 任务 ↔ 全局开关
+
+def _fake_sched(monkeypatch, **globals_):
+    """把 scheduler 的 Config.load 换成一个受控的全局配置。"""
+    from core import scheduler as sched_mod
+
+    cfg = config.Config()
+    for k, v in globals_.items():
+        cfg[k] = v
+
+    class Cfg(dict):
+        @classmethod
+        def load(cls):
+            return cfg
+
+    monkeypatch.setattr(sched_mod, "Config", Cfg)
+    return sched_mod, cfg
+
+
+def test_task_falls_back_to_global_switches(monkeypatch):
+    """任务没写筛选条件时，用设置页上拨的全局值。
+
+    这是「开关是不是真的有用」的关键一环：任务对象里通常没有
+    craft/max_wear/sort/min_price，如果 _engine_task 直接 `or 0` / `or ""`，
+    开关拨了也会被盖掉 —— 界面上能拨、实际不生效。
+    """
+    sched_mod, cfg = _fake_sched(
+        monkeypatch,
+        console={"min_price": 2000, "max_price": 25000, "quota": 3, "budget": 80000},
+        filter_defaults={"craft": "极品", "max_wear": 0.4, "sort": "wear"})
+
+    t = sched_mod.Scheduler._engine_task({"name": "某件皮肤"})
+    assert t["min_price"] == 2000
+    assert t["max_price"] == 25000
+    assert t["quota"] == 3
+    assert t["budget"] == 80000
+    assert t["craft"] == "极品"
+    assert t["max_wear"] == 0.4
+    assert t["sort"] == "wear"
+
+
+def test_task_fields_win_over_global_switches(monkeypatch):
+    """任务自己写了条件就以任务为准 —— 清单里每条可以不一样。"""
+    sched_mod, _ = _fake_sched(
+        monkeypatch,
+        console={"min_price": 2000, "max_price": 25000, "quota": 3, "budget": 80000},
+        filter_defaults={"craft": "极品", "max_wear": 0.4, "sort": "wear"})
+
+    t = sched_mod.Scheduler._engine_task(
+        {"name": "另一件", "max_price": 999, "craft": "优品", "sort": "price",
+         "quota": 1, "min_price": 10})
+    assert t["max_price"] == 999
+    assert t["min_price"] == 10
+    assert t["craft"] == "优品"
+    assert t["sort"] == "price"
+    assert t["quota"] == 1
