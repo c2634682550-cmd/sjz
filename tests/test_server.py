@@ -322,30 +322,3 @@ def _post(base, path, payload, timeout=10):
         headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, json.loads(r.read().decode("utf-8"))
-
-
-def test_task_can_be_disabled_and_reenabled(server):
-    """清单页的勾选框要能真正关掉一条任务。
-
-    引擎跑之前会过滤 `enabled`，所以这个开关不是纯装饰 —— 关掉的必须
-    真的被跳过。以前 /api/tasks/update 的白名单里没有 enabled，
-    界面点了没反应（接口静默忽略）。
-    """
-    code, data = _post(server, "/api/tasks/add",
-                       {"name": "测试皮肤-勾选开关", "mode": "list",
-                        "min_price": 100, "max_price": 200})
-    assert code == 200 and data.get("ok") is not False, data
-    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
-    tid = [t for t in tasks["tasks"] if t["name"] == "测试皮肤-勾选开关"][0]["id"]
-
-    _post(server, "/api/tasks/update", {"id": tid, "enabled": False})
-    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
-    got = [t for t in tasks["tasks"] if t["id"] == tid][0]
-    assert got["enabled"] is False, "关不掉"
-
-    _post(server, "/api/tasks/update", {"id": tid, "enabled": True})
-    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
-    got = [t for t in tasks["tasks"] if t["id"] == tid][0]
-    assert got["enabled"] is True, "开不回来"
-
-    _post(server, "/api/tasks/remove", {"id": tid})

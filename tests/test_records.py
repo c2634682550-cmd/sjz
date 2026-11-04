@@ -176,23 +176,3 @@ def test_confirm_clicks_without_reward_dialog_is_a_miss(eng, rec, monkeypatch):
     rows = rec.load()
     assert len(rows) == 1 and rows[0]["result"] == "miss"
     assert rows[0]["verified"] is True, "要能看出这次是校验过的"
-
-
-def test_confirm_clicks_without_reward_dialog_is_a_miss(eng, rec, monkeypatch):
-    """点完确认没看到结算弹窗 → 记 miss，不许记 hit。
-
-    这是 2026-11-02 修的那个洞：主路径点完确认就无条件记 hit，data/ 里
-    堆了 78 条「成交」，配的截图全是交易行列表 —— 一条真的都没有。
-    别人先买走、余额不足、弹窗没响应，都会表现为「点了但什么都没发生」。
-    """
-    monkeypatch.setattr(engine_mod, "match", lambda img, tpl, *a, **k: (0.99, (0, 0)))
-    monkeypatch.setattr(eng, "_bought_dialog", lambda screen: False)
-    monkeypatch.setattr(eng, "_balance", lambda screen, img=None: None)
-    ok = eng._fire_and_confirm(_Cfg(), FakeScreen(), FakeMouse(),
-                               np.zeros((10, 10), np.uint8), (500, 500),
-                               __import__("time").perf_counter(),
-                               item="AKM 群星", price=1888)
-    assert ok is False, "没看到结算弹窗却报了成交"
-    rows = rec.load()
-    assert len(rows) == 1 and rows[0]["result"] == "miss"
-    assert rows[0]["verified"] is True, "要能看出这次是校验过的"

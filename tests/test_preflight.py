@@ -73,6 +73,29 @@ def test_ocr_missing_blocks_the_start():
     assert not _by_id(checks, "ocr")["ok"]
 
 
+def test_ocr_booting_is_not_reported_as_broken():
+    """OCR 服务冷启动（Paddle 加载模型十几秒）时不能说「不可用」。
+
+    冷启动那一瞬间 ocr.available() 必然 False，但原因不是坏了 —— 报「不可用」
+    会让人去手敲启动命令，其实再等十几秒它自己就绪。文案要能分开。
+    """
+    facts = _facts(ocr=False, ocr_name="不可用（http://127.0.0.1:8081 连不上）",
+                   ocr_service={"enabled": True, "healthy": False,
+                                "starting": True, "last_error": None})
+    c = _by_id(preflight.evaluate(facts, "list"), "ocr")
+    assert not c["ok"], "启动窗口里也不该放行"
+    assert "启动" in c["detail"] and "不可用" not in c["detail"]
+
+
+def test_ocr_failure_detail_is_not_double_wrapped():
+    """backend_name() 自带「不可用（…）」，外面别再包一层。"""
+    facts = _facts(ocr=False, ocr_name="不可用（http://127.0.0.1:8081 连不上）",
+                   ocr_service={"enabled": True, "healthy": True,
+                                "starting": False, "last_error": None})
+    c = _by_id(preflight.evaluate(facts, "list"), "ocr")
+    assert c["detail"].count("不可用") == 1, c["detail"]
+
+
 def test_clock_never_synced_blocks_the_start():
     checks = preflight.evaluate(_facts(clock={"offset": None}), "list")
     c = _by_id(checks, "clock")

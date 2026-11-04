@@ -236,12 +236,17 @@ def test_unavailable_when_service_down(use_backend):
 
 
 def test_repeated_failures_disable_client_for_a_long_time(fake, use_backend):
-    """连续失败说明不是偶发抖动，停用它，别让每次调用都白等一个 timeout。"""
+    """连续失败说明不是偶发抖动，停用它，别让每次调用都白等一个 timeout。
+
+    每次之间要等短冷却过去：冷却期里识别会直接短路返回空（见下面那条
+    用例），不等的话三次里只有第一次是真尝试，永远到不了 fail_limit。
+    """
     fake.status = 500
     use_backend(url=fake.url, timeout_s=1, cooldown_s=0.01,
                 fail_limit=3, long_cooldown_s=600)
     for _ in range(3):
         ocr.read_text(_img(120, 32))
+        time.sleep(0.02)
     b = ocr._client()
     assert b.available() is False
     assert "长时间停用" in (b.last_error or "")
@@ -252,3 +257,41 @@ def test_backend_name_reports_measurement_after_calls(fake, use_backend):
     use_backend(url=fake.url, timeout_s=3)
     ocr.read_text(_img())
     assert "实测" in ocr.backend_name()
+
+
+def test_cooldown_lets_go_once_the_service_recovers(fake, use_backend):
+    """服务重启好了，客户端必须自己爬出冷却期。
+
+    以前 available() 先看 _fail_until 再探活：连续 3 次失败把冷却推到 600 秒，
+    服务明明已经恢复，界面还连续 10 分钟报「OCR 不可用」，用户只能重启控制台。
+    """
+    fake.status = 500
+    use_backend(url=fake.url, timeout_s=1, cooldown_s=0.01,
+                fail_limit=3, long_cooldown_s=600, cooldown_probe_s=0)
+    for _ in range(3):
+        ocr.read_text(_img(120, 32))
+    b = ocr._client()
+    assert b.available() is False, "服务还在 500，不能判成可用"
+
+    fake.status = 200                       # 服务重启好了
+    assert b.available() is True, "服务恢复了却还在冷却期里装死"
+    assert b.available() is True
+
+
+def test_cooldown_stops_sending_requests_entirely(fake, use_backend):
+    """进了冷却期就别再发请求了 —— 服务卡死时每次都要白等一个 timeout。
+
+    以前只在 available() 里拦，识别这条路照样一次次撞 5 秒超时：引擎一轮
+    扫十几张图就是一分多钟，用户看到的是「点了没反应」。
+    """
+    fake.status = 500
+    use_backend(url=fake.url, timeout_s=1, cooldown_s=0.01,
+                fail_limit=3, long_cooldown_s=600)
+    for _ in range(3):
+        ocr.read_text(_img(120, 32))
+    b = ocr._client()
+    assert b.available() is False
+    before = fake.hits
+    assert ocr.read_text(_img(120, 32)) == ""
+    assert ocr.read_words(_img(120, 32)) == []
+    assert fake.hits == before, "冷却期还在往服务发请求"

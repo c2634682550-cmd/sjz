@@ -318,3 +318,59 @@ def test_boot_adopts_the_spare_port_when_the_configured_one_is_dead(env):
     assert svc._adopt_or_spawn() is True
     assert ocr.current_url() == "http://127.0.0.1:8082"
     assert state["spawned"] == [], "不该再起一个"
+
+
+def test_status_does_not_block_while_restarting(env):
+    """重启期间 status() 必须立刻返回。
+
+    restart() 整段（起进程 → 等验活 → 预热）握着锁，冷启动十几秒、失败时
+    最长 150 秒。status() 要是跟着一起等，/api/preflight 就跟着卡住 ——
+    而前端 boot 是「先 preflight 再 poll」串行的，卡住的结果是状态栏一直
+    停在「未连接 / OCR —」，看着像整个后端没连上。
+    """
+    state, make = env
+    svc = make()
+    svc._port = 8081
+    svc._healthy = True
+    held = svc._lock.acquire(timeout=1)
+    assert held
+    try:
+        t0 = time.monotonic()
+        st = svc.status()
+        took = time.monotonic() - t0
+    finally:
+        svc._lock.release()
+    assert took < 0.2, f"status() 被锁拖住了 {took:.1f}s"
+    assert st["starting"] is True
+    assert st["port"] == 8081, "拿不到锁也要给出上次的快照"
+
+
+def test_cold_start_does_not_kill_the_instance_it_just_started(env):
+    """冷启动时 old_port == new_port，「回收老实例」那一步会把刚起来的自己杀掉。
+
+    症状：服务起得来、日志里能看到 uvicorn running，几秒后进程没了；下一轮
+    tick 再起、再被杀 —— 界面上绝大多数时间都是「OCR 不可用」，偶尔闪一下
+    「正常」。冷启动那一刻端口本来是空的，没有任何老实例需要回收。
+    """
+    state, make = env
+    state["up"] = set()                    # 冷启动：8081 上没有服务
+    svc = make()
+    assert svc.restart("启动时拉起") is True
+    assert state["killed"] == [], f"把自己杀了：{state['killed']}"
+    assert 8081 in state["up"], "刚起的实例被收掉了"
+
+
+def test_boot_does_not_adopt_a_foreign_service_on_the_configured_port(env):
+    """8081 上有人监听、但认不出字 —— 不能当成我们的 OCR 服务接管。
+
+    接管下来之后 tick() 同样只看 TCP，会永远判「健康」：我们自己的服务再也
+    不会被拉起，界面一直「OCR 不可用」，重启多少次都一样。这种情况现实里
+    见过（端口被代理/别的工具占着）。
+    """
+    state, make = env
+    state["up"] = {8081}                    # 8081 上确实有人在听
+    svc = make()
+    svc._probe = lambda url: ":8082" in url  # 但只有我们起的那个能认字
+    assert svc._adopt_or_spawn() is True
+    assert state["spawned"] == [8082], "不该接管别人的端口"
+    assert ocr.current_url() == "http://127.0.0.1:8082"

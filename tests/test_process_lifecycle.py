@@ -377,3 +377,52 @@ def test_serve_until_interrupt_returns_when_server_thread_ends():
     t0 = time.time()
     desktop._serve_until_interrupt(t)          # 不该永久阻塞
     assert time.time() - t0 < 5, "服务线程结束后还卡着没返回"
+
+
+def test_idle_watchdog_never_kills_after_the_server_thread_is_gone(monkeypatch):
+    """看门狗盯的线程已经结束，就绝不能再 os._exit。
+
+    整跑 pytest 时踩过这条：跑到 81% 进程无声退出、exit code 还是 0
+    （os._exit 绕过 atexit，junit 都没生成）。触发条件是「进程已经跑了
+    180 秒以上」—— idle_seconds 早就超了，看门狗第一轮醒来就把整个进程
+    干掉，哪怕它盯的线程 0.05 秒前就结束了。
+    """
+    import desktop
+    from core import server as srv
+
+    monkeypatch.setattr(srv, "idle_seconds", lambda: 10_000)   # 早就算「没人连」
+    monkeypatch.setattr(srv, "busy", lambda: False)
+    killed = []
+    monkeypatch.setattr(desktop.os, "_exit", lambda code: killed.append(code))
+
+    t = threading.Thread(target=lambda: time.sleep(0.02))
+    t.start()
+    t.join()                                  # 线程已经结束
+    desktop._serve_until_interrupt(t, idle_exit_s=1, tick_s=0.02)
+    time.sleep(0.2)                           # 给看门狗留一轮
+    assert killed == [], "服务线程都结束了，看门狗还去杀进程"
+
+
+def test_idle_watchdog_still_exits_when_the_page_is_really_gone(monkeypatch):
+    """线程还活着 + 一直没人连页面 → 必须退出，否则标签关了进程永远挂着。"""
+    import desktop
+    from core import server as srv
+
+    monkeypatch.setattr(srv, "idle_seconds", lambda: 10_000)
+    monkeypatch.setattr(srv, "busy", lambda: False)
+    killed = []
+    monkeypatch.setattr(desktop.os, "_exit", lambda code: killed.append(code))
+
+    stop = threading.Event()
+    t = threading.Thread(target=stop.wait)     # 模拟「服务线程还活着」
+    t.start()
+    threading.Thread(target=desktop._serve_until_interrupt, args=(t,),
+                     kwargs={"idle_exit_s": 1, "tick_s": 0.02},
+                     daemon=True).start()
+    deadline = time.time() + 5
+    while time.time() < deadline and not killed:
+        time.sleep(0.05)
+    stop.set()
+    assert killed, "页面早关了却不退出，进程会一直挂着占端口"
+    assert killed[0] == 0
+
