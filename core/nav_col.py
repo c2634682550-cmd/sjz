@@ -6,6 +6,7 @@
 本模块只提供方法（纯 mixin，不定义 __init__），由 core/nav.py 的
 `Navigator` 组合成可用的对象。
 """
+import inspect
 import re
 import time
 
@@ -16,6 +17,18 @@ from .nav_coords import (COL_BUY, COL_CONFIRM, COL_FILTER, COL_GUN_X, COL_GUN_X2
                          COL_SEASON_MAX_SCROLL, COL_SEASON_WHEEL_ANCHOR,
                          COL_TRADE_TAB, NavError,
                          SKIN_CARD_X, SKIN_CARD_Y)
+
+
+def _words(host, img, strict=False):
+    """读词表。测试替身常把 _ocr_words 重写成单参数版本，按签名降级。"""
+    fn = host._ocr_words
+    try:
+        ps = inspect.signature(fn).parameters
+        takes = ("strict" in ps
+                 or any(p.kind == p.VAR_KEYWORD for p in ps.values()))
+    except (TypeError, ValueError):
+        takes = False
+    return fn(img, strict=strict) if takes else fn(img)
 
 
 class NavColPanel:
@@ -97,6 +110,9 @@ class NavColPanel:
     # 这是比「探针区有没有字」可靠得多的判据 —— 探针区固定在 y355-400，
     # 浮层滚到第 3 屏时首项在 y=395，字正好卡在探针区边缘被切掉，于是
     # 浮层明明开着也报 False（实测「造物纪元」就这么被判「没展开」）。
+    # 面板标题「筛选」的 ROI（基准坐标）。裁剪前必须过 crop_box，
+    # 1080p 的数字直接切 1440p 会切到另一行（review V02）。
+    _PANEL_TITLE_BOX = (400, 228, 100, 57)
     _DROPDOWN_BORDER_X = 566
     _DROPDOWN_BORDER_Y = (340, 660)
 
@@ -138,6 +154,8 @@ class NavColPanel:
         x = self._DROPDOWN_BORDER_X
         y0, y1 = self._DROPDOWN_BORDER_Y
         h, w = img.shape[:2]
+        x = int(self.pt((x, 0))[0])
+        y0, y1 = int(self.pt((0, y0))[1]), int(self.pt((0, y1))[1])
         if y1 <= h and x < w:
             col = img[y0:y1, x].max(axis=1)
             if int((col > 70).sum()) >= (y1 - y0) * 0.8:
@@ -167,7 +185,9 @@ class NavColPanel:
         """
         if img is None or getattr(img, "size", 0) == 0:
             return False
-        crop = img[228:285, 400:500]
+        crop = self.crop_box(img, self._PANEL_TITLE_BOX)
+        if getattr(crop, "size", 0) == 0:
+            return False
         # 放大 2 倍再 OCR：30px 的字在 100x57 的小裁剪里，WinRT 常常读不出来
         # （全屏 OCR 时上下文多才读得出「筛选」）。放大后稳定。
         words = self._ocr_words(vision.upscale(crop, 2))
@@ -257,7 +277,11 @@ class NavColPanel:
         截图离线重读 6/6 全中，真机上却只读到 5 项 —— 是瞬时漏读）。
         读 3 次把结果并起来，哪一项漏了别的次数会补上。
         """
-        x0, y0 = 540, 280
+        # 裁剪范围同样是基准坐标 → 实际分辨率。以前是 540..830 / 280..820
+        # 直接切图，非 1080p 下切到的是别的列（review V02）。
+        x0, y0 = self.pt((540, 280))
+        x1, y1 = self.pt((830, 820))
+        x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
         by = self.pt(COL_SEASON)[1]
         merged = {}
         prev = 0
@@ -265,7 +289,7 @@ class NavColPanel:
             if img is not None and attempt:
                 break                     # 调用方给了固定画面，没得重读
             img = self._snap() if img is None else img
-            crop = img[y0:820, x0:830]
+            crop = img[y0:int(y1), x0:int(x1)]
             words = self._ocr_words(vision.upscale(crop, 2))
             for name, ys in self._series_spans(words, y0, by).items():
                 cy = int(ys[len(ys) // 2])
@@ -306,7 +330,9 @@ class NavColPanel:
         img = self._snap()
         if not self._dropdown_open_img(img):
             return []
-        crop = img[340:700, 555:765]
+        x0, y0 = self.pt((555, 340))
+        x1, y1 = self.pt((765, 700))
+        crop = img[int(y0):int(y1), int(x0):int(x1)]
         words = self._ocr_words(vision.upscale(crop, 2))
         ph = ocr.phrases(words, gap=24)      # 坐标放大 2x，横向间距阈值也 ×2
         out = []
@@ -316,7 +342,7 @@ class NavColPanel:
                 continue
             if t in self._PANEL_WORDS:
                 continue
-            out.append((t, p["y0"] // 2 + 340))
+            out.append((t, p["y0"] // 2 + int(y0)))
         out.sort(key=lambda it: it[1])
         return out
 
@@ -385,7 +411,8 @@ class NavColPanel:
         if not opened:
             raise NavError("点了赛季下拉但没展开（读不到首项文字）")
 
-        ax, ay = COL_SEASON_WHEEL_ANCHOR
+        ax, ay = self.pt(COL_SEASON_WHEEL_ANCHOR)
+        ax, ay = int(ax), int(ay)
 
         # 滚到顶：浮层默认在中间位置，不滚上去就看不到「全部赛季」「群星」。
         # 滚到「全部赛季」出现就停，别固定滚 20 次 —— 每次 1.1s，白等 20 秒。
@@ -412,8 +439,7 @@ class NavColPanel:
                     if self._dropdown_open():
                         reopened = True
                         break
-                    self.mouse.click(COL_SEASON[0], COL_SEASON[1],
-                                     verify=False)
+                    self.mouse.click(*self.pt(COL_SEASON), verify=False)
                     time.sleep(0.9)
                 time.sleep(0.5)
                 items = self._season_items_anywhere()
@@ -442,8 +468,7 @@ class NavColPanel:
                 for _ in range(4):
                     if self._dropdown_open():
                         break
-                    self.mouse.click(COL_SEASON[0], COL_SEASON[1],
-                                     verify=False)
+                    self.mouse.click(*self.pt(COL_SEASON), verify=False)
                     time.sleep(0.9)
                 time.sleep(0.4)
                 continue
@@ -522,13 +547,14 @@ class NavColPanel:
         """
         if self.keyboard is None:
             raise NavError("没有 Keyboard，重开不了下拉")
-        ax, ay = COL_SEASON_WHEEL_ANCHOR
+        ax, ay = self.pt(COL_SEASON_WHEEL_ANCHOR)
+        ax, ay = int(ax), int(ay)
 
         for off in self._SEASON_PICK_OFFSETS:
             # --- 1. 确保浮层展开 ---
             if self._dropdown_open():
                 # 先收起，回到确定状态
-                self.mouse.click(COL_SEASON[0], COL_SEASON[1], verify=False)
+                self.mouse.click(*self.pt(COL_SEASON), verify=False)
                 time.sleep(0.8)
             if not self._panel_open():
                 self.say(f"  偏移 {off}：筛选面板已关闭，重开", "warn")
@@ -537,11 +563,11 @@ class NavColPanel:
                 if not self._panel_open():
                     return False
             if not self._dropdown_open():
-                self.mouse.click(COL_SEASON[0], COL_SEASON[1], verify=False)
+                self.mouse.click(*self.pt(COL_SEASON), verify=False)
                 time.sleep(1.2)
             if not self._dropdown_open():
                 # 点一次没开就再点一次（真机上偶尔会漏掉第一下）
-                self.mouse.click(COL_SEASON[0], COL_SEASON[1], verify=False)
+                self.mouse.click(*self.pt(COL_SEASON), verify=False)
                 time.sleep(1.2)
             if not self._dropdown_open():
                 self.say(f"  偏移 {off}：下拉展不开，跳过", "warn")
@@ -575,7 +601,10 @@ class NavColPanel:
                 continue
             _t, ty = hit[0]
             ty = ty + off
-            self.mouse.click(COL_SEASON_ITEM_X, ty, verify=False)
+            # 浮层选项的 y 是 OCR 读到的**真实像素**，x 还是基准坐标：
+            # 拆开换算，别把 x 再乘一遍缩放（review V02）。
+            px = int(self.pt((COL_SEASON_ITEM_X, 0))[0])
+            self.mouse.click(px, ty, verify=False)
             time.sleep(1.0)
 
             # --- 4. 校验 ---
@@ -588,7 +617,7 @@ class NavColPanel:
                 self.say(f"点「{text}」y={ty}（偏移 {off}）选中了", "info")
                 if self._dropdown_open():
                     # 浮层还开着 → 点一下下拉框把它收掉
-                    self.mouse.click(COL_SEASON[0], COL_SEASON[1], verify=False)
+                    self.mouse.click(*self.pt(COL_SEASON), verify=False)
                     time.sleep(0.6)
                 return True
             if not self._dropdown_open():
@@ -630,7 +659,7 @@ class NavColPanel:
         # 常常整串读不出来（实测「造物纪元」在 y300-370/x540-800 的 1x
         # 裁剪里返回空，2x 才有字）。这和 _season_items 是同一个坑。
         for attempt in range(4):
-            crop = img[300:370, 540:800]
+            crop = self.crop_box(img, (540, 300, 260, 70))
             words = self._ocr_words(vision.upscale(crop, 2))
             combo = "".join(w.get("text", "") for w in sorted(words,
                                                              key=lambda w: w["x"]))
@@ -902,8 +931,9 @@ class NavColPanel:
         在列表顶部滚了 12 屏全在原地（实测每屏都是同样 6 件）。
         """
         x = self._SKIN_LIST_X[0] + 120
+        x, y = self.pt((x, 600))
         for _ in range(abs(int(notches))):
-            self.keyboard.wheel(x, 600, -1 if notches > 0 else 1)
+            self.keyboard.wheel(int(x), int(y), -1 if notches > 0 else 1)
             time.sleep(0.18)
         time.sleep(0.6)
 
@@ -915,15 +945,22 @@ class NavColPanel:
         这里）。改成边滚边看：每 6 格读一眼列表，第一项不再变化就说明到底了。
         """
         x = self._SKIN_LIST_X[0] + 120
+        x, y = self.pt((x, 600))
         prev = None
         done = 0
         while done < max_notches:
             for _ in range(min(6, max_notches - done)):
-                self.keyboard.wheel(x, 600, 1)       # 正数向上
+                self.keyboard.wheel(int(x), int(y), 1)       # 正数向上
                 time.sleep(0.12)
                 done += 1
             time.sleep(0.35)
-            items = self.skin_items()
+            try:
+                items = self.skin_items()
+            except NavError as e:
+                # 这里的读列表只用来判「到底了没有」，OCR 服务不可用不该让
+                # 整条路径崩掉：继续滚满，滚到顶的结果是一样的（review V08）。
+                self.say(f"滚到顶时读不到列表（{e}）", "warn")
+                items = []
             first = items[0][0] if items else None
             if first is not None and first == prev:
                 break                                 # 滚不动了 = 到顶
@@ -954,7 +991,7 @@ class NavColPanel:
         if getattr(crop, "size", 0) == 0:
             return ""
         big = vision.upscale(crop, 2)
-        rows = ocr.rows(ocr.read_words(big))
+        rows = ocr.rows(_words(self, big, strict=True))
         if not rows:
             return ""
         # 框里偶尔会多出一行（上边框的装饰字、残留的标签）。皮肤名一定
@@ -968,6 +1005,21 @@ class NavColPanel:
             if any(w in r["text"] for w in self._SKIN_NAME_WORDS):
                 return r["text"].strip()
         return ""
+
+    def _wait_title_change(self, before, timeout=1.2, gap=0.2):
+        """等右侧标题从 before 变成别的，最多等 timeout 秒，返回最后读到的标题。
+
+        点开卡片有过渡动画，立刻读读到的是上一张的标题 —— 拿它去比对，
+        正确的卡片会被判成「不是它」而被跳过（review I5）。
+        """
+        t0 = time.time()
+        title = ""
+        while time.time() - t0 < timeout:
+            title = self.skin_title()
+            if title and title != before:
+                return title
+            time.sleep(gap)
+        return title
 
     def close_filter_panel(self):
         """把开着的筛选面板关掉（「确认」按钮的位置两种布局都一样）。
@@ -1009,13 +1061,20 @@ class NavColPanel:
         """
         self.close_filter_panel()
         page, _ = self.where()
-        if page in ("onsale", "detail"):
+        # 退一级要循环：详情页 → 在售页 → 市场是**两层**，只按一次 ESC 停在
+        # 在售页，接着 F4 又无效（在售页 F4 不回典藏外观），最后 tab 切不动
+        # 直接 NavError（review V18）。
+        for _ in range(3):
+            if page not in ("onsale", "detail", "filter_onsale", "unknown"):
+                break
             if self.dry_run:
                 self.say(f"[演练] 按 Esc 从「{page}」返回上一级", "warn")
-            elif self.keyboard is not None:
-                self.say(f"当前在「{page}」，按 Esc 返回上一级", "info")
-                self.keyboard.tap("ESC")
-                time.sleep(0.9)
+                break
+            if self.keyboard is None:
+                break
+            self.say(f"当前在「{page}」，按 Esc 返回上一级", "info")
+            self.keyboard.tap("ESC")
+            time.sleep(0.9)
             page, _ = self.where()
         if page not in ("market", "filter_collection"):
             self.say(f"当前在「{page}」，按 F4 进市场", "info")
@@ -1105,9 +1164,14 @@ class NavColPanel:
             # 不够：同一档里常有七张同名不同枪种的卡（「…-夜穹」七连），
             # 跳过其它候选就会一路滚到底都找不到。
             for short, y, _score in self.rank_skin_cards(name, items=items):
-                self.click((150, y), label="皮肤卡片", expect_change=False)
-                time.sleep(0.4)
-                title = self.skin_title()
+                prev_title = self.skin_title()
+                # 卡片 y 是 OCR 读到的**真实像素**，x 按基准坐标换算（V02）
+                x_px = int(self.pt((SKIN_CARD_X, 0))[0])
+                self.click((x_px, y), label="皮肤卡片", raw=True,
+                           expect_change=False)
+                # 点开卡片有过渡动画，立刻读会读到**上一张**的标题 —— 先等
+                # 标题真的换掉再比对（review I5）。
+                title = self._wait_title_change(prev_title, timeout=1.2)
                 if not title:
                     continue
                 score = ocr.similarity(title, name)
@@ -1140,8 +1204,12 @@ class NavColPanel:
         out = []
         for text, y in items:
             score = ocr.similarity(text, name)
-            if token and token not in text and score < floor:
-                continue
+            # 型号号段命中是最强的先验（「AS Val」和「M16A4」名字后半段一样），
+            # 但以前这只是个「粗筛开关」，排序仍纯看整名相似度：型号对了、
+            # 后缀被认错一字的真货，会排在型号都不对的候选后面（review V20）。
+            # 命中时加 0.15，封顶 1.0（全名相同仍是 1.0）。
+            if token and token in text:
+                score = min(1.0, score + 0.15)
             if score >= floor:
                 out.append((text, y, score))
         out.sort(key=lambda it: -it[2])
@@ -1156,8 +1224,8 @@ class NavColPanel:
         hits = self.rank_skin_cards(name, items=items, floor=floor)
         return hits[0] if hits else None
 
-    def skin_items(self):
-        """读左侧列表里当前可见的皮肤名，返回 [(文字, 点击y)]，按 y 排序。
+    def skin_items(self, strict=True):
+        """读左侧列表里当前可见的皮肤名，返回 [(文字, 点击y)], 按 y 排序。
 
         只认含枪种关键词的行 —— 列表里还有「典藏」标签、价格、滚动条
         之类的噪声。
@@ -1165,24 +1233,36 @@ class NavColPanel:
         点击 y 取「文字中心 + 40」而不是文字本身：卡片是一整块（皮肤名在
         上、「典藏」标签在下，两者相距约 78px），文字那一行正好压在卡片
         上边框附近，实测点文字 y=259 完全没响应；点卡片中部才选中。
+
+        返回的 y 是**真实屏幕像素**，调用方要用 click(..., raw=True)。
+
+        strict=True：OCR 服务不可用时抛 NavError，而不是返回 []。返回空列表
+        只表示「这一屏确实读不到卡名」，上层据此报「列表是空的」不会被
+        「服务挂了」污染（review V08）。
         """
         img = self._snap()
-        x0, x1 = self._SKIN_LIST_X
-        y0, y1 = self._SKIN_LIST_Y
+        x0, y0 = self._SKIN_LIST_X[0], self._SKIN_LIST_Y[0]
+        x1, y1 = self._SKIN_LIST_X[1], self._SKIN_LIST_Y[1]
+        # 列表 ROI 是 1080p 基准坐标，必须按实际分辨率等比换算（review V02）
+        x0, y0 = self.pt((x0, y0))
+        x1, y1 = self.pt((x1, y1))
+        x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
         # 放大 2 倍再认：皮肤名是 14px 的小字，1 倍认出来「·」全是「一」、
         # 名字还会被截断（「M4A1突击步枪·纯白涂装」→「步枪一纯白涂《」）。
         scale = 2
         big = vision.upscale(img[y0:y1, x0:x1], scale)
-        words = self._ocr_words(big)
+        words = _words(self, big, strict=strict)
         # 词组间距要跟着放大倍数走：还是 14 的话（放大后相当于 7px），
         # 「AK-12突击步枪·水墨」会被拆成「AK-12突击步枪」和「水墨」两段。
         ph = ocr.phrases(words, gap=14 * scale)
+        # 点击偏移 40 也是基准坐标里的量，换成实际像素
+        dy = self.pt((0, self._SKIN_CLICK_DY))[1]
         out = []
         for p in ph:
             t = p["text"]
             if not any(w in t for w in self._SKIN_NAME_WORDS):
                 continue
-            out.append((t, p["cy"] / scale + y0 + self._SKIN_CLICK_DY))
+            out.append((t, p["cy"] / scale + y0 + dy))
         out.sort(key=lambda it: it[1])
         return out
 
@@ -1192,10 +1272,10 @@ class NavColPanel:
         真机实测位置：购买 (1664,876)-(1701,895)，售出 (1664,951)。
         只读这一小块，几十毫秒。
         """
-        crop = self._snap()[850:915, 1600:1780]
+        crop = self.crop_box(self._snap(), (1600, 850, 180, 65))
         if getattr(crop, "size", 0) == 0:
             return False
-        words = self._ocr_words(vision.upscale(crop, 2))
+        words = _words(self, vision.upscale(crop, 2), strict=True)
         return "购买" in "".join(w.get("text", "") for w in words)
 
     def pick_skin(self, y=None, index=0, name=None):
@@ -1222,10 +1302,13 @@ class NavColPanel:
         """
         for attempt in range(3):
             ty = y
+            ty_px = ty is not None        # 调用方给的 y 是真实屏幕像素
             if name or ty is None:
                 items = self.skin_items()
                 if not items:
-                    # 读不到列表：退回固定表（只在没指定 name 时可行）
+                    # 读不到列表：**按名字找的时候必须失败**，不能退回固定表
+                    # 盲点 —— 筛选后卡片位置全变了，固定表点中的是另一件
+                    # （review V01）。没有名字时（纯按序号）才允许用表。
                     if name:
                         self.say(f"第 {attempt + 1} 轮读不到列表", "warn")
                         time.sleep(0.8)
@@ -1234,6 +1317,7 @@ class NavColPanel:
                         raise NavError(f"卡片序号 {index} 超出范围（共 "
                                        f"{len(SKIN_CARD_Y)} 张）")
                     ty = SKIN_CARD_Y[index]
+                    ty_px = False
                     self.say(f"读不到列表，退回固定表 y={ty}", "warn")
                 elif name:
                     hit = [(t, yy) for t, yy in items if name in t]
@@ -1241,6 +1325,7 @@ class NavColPanel:
                         raise NavError(f"左侧列表里找不到「{name}」"
                                        f"（看到的：{[t for t, _ in items]}）")
                     t, ty = hit[0]
+                    ty_px = True
                     self.say(f"列表命中「{t}」y={ty}", "info")
                     if len(items) == 1:
                         self.say("列表只有这一张，已处于选中状态，无需点击",
@@ -1251,14 +1336,29 @@ class NavColPanel:
                         raise NavError(f"卡片序号 {index} 超出范围"
                                        f"（当前可见 {len(items)} 张）")
                     t, ty = items[index]
+                    ty_px = True
                     self.say(f"列表第 {index + 1} 张「{t}」y={ty}", "info")
                     if len(items) == 1:
                         self.say("列表只有这一张，已处于选中状态，无需点击",
                                  "info")
                         return True
 
-            d = self.click((SKIN_CARD_X, ty), f"皮肤卡片 y={ty}", timeout=3.0)
+            if ty_px:
+                # OCR 读到的 y 是真实像素，x 还是基准坐标 —— 拆开换算，
+                # 不能整点过 pt() 再乘一次缩放（review V02）。
+                point = (int(self.pt((SKIN_CARD_X, 0))[0]), int(ty))
+                d = self.click(point, f"皮肤卡片 y={ty}", timeout=3.0, raw=True)
+            else:
+                d = self.click((SKIN_CARD_X, ty), f"皮肤卡片 y={ty}", timeout=3.0)
             if d > 0.05:
+                # 点开了就**读回标题核对**：名字对不上说明点到了相邻的卡，
+                # 再点下一轮，别把「点中了别的皮肤」当成功（review V01）。
+                if name:
+                    title = self._wait_title_change("", timeout=1.2)
+                    if title and ocr.similarity(title, name) < 0.6:
+                        self.say(f"卡片 y={ty} 点开是「{title}」，不是「{name}」",
+                                 "warn")
+                        continue
                 return True
             # 点的是**已经选中**的那张卡：画面当然不变。此时右侧已经显示
             # 「购买」，再点三轮也不会有任何变化，只会把一次正常的启动判成
@@ -1275,6 +1375,8 @@ class NavColPanel:
                      "warn")
             time.sleep(0.6)
 
+        if name:
+            raise NavError(f"连试 3 轮都没读到列表，无法定位「{name}」")
         self.say("连试 3 轮都没点中卡片", "warn")
         return False
 

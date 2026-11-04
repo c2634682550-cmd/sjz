@@ -175,12 +175,24 @@ def test_price_never_comes_from_the_name_band(monkeypatch):
     assert got["grade"] == "成色 A"
 
 
-def test_price_sitting_in_the_grade_band_is_picked_up(monkeypatch):
-    """成色和价格挤在同一条带里（「成色 S  05」）也要拿到价格。"""
+def test_price_in_the_grade_band_must_look_like_a_price(monkeypatch):
+    """成色带里的**残数字**（「05」）不能当价格；带里的真价格可以。
+
+    回归（录屏实测）：卡片含「成色 S 05」时整条带被当价格 → price=5 →
+    pick() 以为这条最便宜，点进去买的反而是贵的。05 是成色带里的残数字
+    （真·两个三角币的挂单价格会单独成一条带，走 _price_from_block）。
+    """
     read = _fake_bands(monkeypatch, {"a": "成色 S 05", "b": "M4A1 突击步枪 · 雪地迷彩"})
     got = cards.read_card(np.zeros((4, 4, 3), np.uint8), (0, 0, 4, 4), read_text=read)
-    assert "05" in got["price"]
-    assert market._price_from_block(got["price"]) == 5
+    assert got["price"] == "", f"把成色带里的残数字当价格了：{got['price']!r}"
+    assert market._price_from_block(got["price"]) is None
+
+    read2 = _fake_bands(monkeypatch, {"a": "极品 | 成色 S 14,000",
+                                      "b": "M4A1 突击步枪 · 雪地迷彩"})
+    got2 = cards.read_card(np.zeros((4, 4, 3), np.uint8), (0, 0, 4, 4),
+                           read_text=read2)
+    assert got2["price"] == "14,000"
+    assert market._price_from_block(got2["price"]) == 14000
 
 
 def test_short_prices_are_real_prices():

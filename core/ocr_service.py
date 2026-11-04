@@ -46,6 +46,7 @@ DEFAULTS = {
     "start_on_boot": True,     # 启动时没有服务就自己拉一个
     "kill_adopted": True,      # 重启时把「接管」来的老实例也收掉（否则会越堆越多）
     "device": "gpu:0",
+    "alt_port": 0,             # 蓝绿用的备用端口，0 = 沿用 8082/8081 的老规矩
 }
 
 
@@ -104,6 +105,7 @@ class Supervisor:
         self._last_error = None
         self._restarts = 0
         self._healthy = False
+        self._log_fh = None     # 服务进程的 stdout 句柄，换实例时先关掉旧的
 
     # ---------------- 生命周期 ----------------
 
@@ -127,19 +129,42 @@ class Supervisor:
         t = self._thread
         if t and t.is_alive():
             t.join(timeout=3.0)
+        self._close_log()
 
     def status(self):
-        with self._lock:
-            return {
-                "enabled": bool(self.cfg.get("enabled", True)),
-                "port": self._port,
-                "managed": self._proc is not None,
-                "healthy": self._healthy,
-                "uptime_s": round(time.monotonic() - self._started_at, 1)
-                if self._started_at else 0,
-                "restarts": self._restarts,
-                "last_error": self._last_error,
-            }
+        """给自检/日志看的快照。**必须不阻塞。**
+
+        为什么：restart() 整段（起进程 → 等验活 → 预热）都握着这把锁，
+        冷启动要十几秒，失败时最长 healthy_timeout_s（150 秒）。以前这里
+        直接 `with self._lock`，于是 /api/preflight 跟着一起卡住 —— 而前端
+        boot 是 `await loadPreflight(); await poll();` 串行的，卡住的结果就是
+        状态栏一直停在 HTML 里的初始值「未连接 / OCR — / 校准 —」，
+        看着像整个后端没连上，其实是 OCR 服务在加载模型。
+        拿不到锁 = 正在重启，返回上一次的快照 + starting 标记。
+        """
+        snap = {
+            "enabled": bool(self.cfg.get("enabled", True)),
+            "port": self._port,
+            "managed": self._proc is not None,
+            "healthy": self._healthy,
+            "uptime_s": round(time.monotonic() - self._started_at, 1)
+            if self._started_at else 0,
+            "restarts": self._restarts,
+            "last_error": self._last_error,
+            "starting": False,
+        }
+        if not self._lock.acquire(blocking=False):
+            snap["starting"] = True
+            return snap
+        try:
+            snap["port"] = self._port
+            snap["managed"] = self._proc is not None
+            snap["healthy"] = self._healthy
+            snap["last_error"] = self._last_error
+            snap["restarts"] = self._restarts
+            return snap
+        finally:
+            self._lock.release()
 
     # ---------------- 主循环 ----------------
 
@@ -155,7 +180,9 @@ class Supervisor:
     def tick(self):
         """一次检查。返回做了什么（测试用）。"""
         host, port = self._endpoint()
-        alive = _tcp_ok(host, port)
+        # 只看 TCP 会把「端口上蹲着别的程序／模型还没加载完」判成健康，
+        # 于是我们的服务再也不会被拉起（review V09）。这里跑一次真推理。
+        alive = _tcp_ok(host, port) and self._probe(f"http://{host}:{port}")
         self._healthy = alive
         if not alive:
             self._log(f"OCR 服务没响应（:{port}），重启")
@@ -166,6 +193,11 @@ class Supervisor:
             return None
         # 变慢/到点：等空闲再动手，别在抢购那一轮里折腾
         if not self._wait_idle(float(self.cfg.get("idle_wait_s") or 0)):
+            if self._stop.is_set():
+                # 管家正在停止：这时候再起进程就是在关机路上凭空造一个
+                self._last_error = "管家已停止，取消本次重启"
+                self._log(self._last_error)
+                return None
             self._log(f"{reason}：等空闲超时，照做")
         return self.restart(reason)
 
@@ -189,7 +221,7 @@ class Supervisor:
             return 0.0
 
     def _wait_idle(self, limit):
-        """等引擎空闲。返回 False 表示等到超时。"""
+        """等引擎空闲。返回 False 表示「没等到」（超时或管家已停止）。"""
         if limit <= 0:
             return True
         t0 = time.monotonic()
@@ -197,7 +229,9 @@ class Supervisor:
             if not self._busy():
                 return True
             if self._stop.wait(1.0):
-                return True
+                # 停止不是「等到了空闲」，以前在这里 return True 会让
+                # tick() 继续往下走、在关机过程中重启服务（review V11）
+                return False
         return False
 
     # ---------------- 蓝绿重启 ----------------
@@ -215,12 +249,12 @@ class Supervisor:
                 # 的实例（进程被强杀、或者切换中途断电）。它不影响这次启动，
                 # 但会一直占着显存 —— 每留一个，新实例加载就慢一截。这里
                 # 顺手收掉，和「杀接管来的老实例」是同一个理由。
-                other = 8082 if new_port != 8082 else 8081
+                other = self._alt_port(new_port)
                 if _tcp_ok(host, other) and self.cfg.get("kill_adopted", True):
                     self._log(f"备用端口 :{other} 上还留着上次的实例，先收掉")
                     self._kill_port(other)
             else:
-                new_port = 8082 if old_port != 8082 else 8081
+                new_port = self._alt_port(old_port)
             if _tcp_ok(host, new_port):
                 # 备用端口被别的进程占着，别去踩它
                 self._last_error = f"端口 {new_port} 已被占用"
@@ -256,10 +290,16 @@ class Supervisor:
             self._healthy = True
             if old is not None:
                 self._kill(old)
-            elif self.cfg.get("kill_adopted", True):
+            elif self.cfg.get("kill_adopted", True) and old_port != new_port:
                 # 老实例是「接管」来的（用户自己起的），我们手里没有进程句柄，
                 # 但它还占着显存 —— 按端口找出来收掉，否则每重启一次就多
                 # 一个常驻实例，跑一天能堆出五六个。
+                #
+                # **old_port == new_port 时绝对不能走这里**：那是冷启动，
+                # 端口上现在监听的就是我们刚起的这个（spawn → 验活 → 预热
+                # 一路下来它已经绑上了 8081）。按端口收「老实例」= 把自己
+                # taskkill 掉，于是「起 → 被杀 → 60 秒后再起 → 再被杀」无限
+                # 循环，界面上绝大多数时间都是「OCR 不可用」，偶尔闪一下正常。
                 self._kill_port(old_port)
             self._log(f"已切到 :{new_port}")
             return True
@@ -285,7 +325,7 @@ class Supervisor:
         except Exception:                        # noqa: BLE001
             pass
 
-    def _wait_healthy(self, host, port, proc=None):
+    def _wait_healthy(self, host, port, proc=None, timeout_s=None):
         """等新实例真的能认字。
 
         只探 TCP 不够：端口通了但模型还没加载完，请求会 500 或者卡住。
@@ -297,7 +337,9 @@ class Supervisor:
         实例，于是判「验活成功」：客户端被切过去，`_proc` 里记的却是一个
         已经死掉的句柄，后面「杀老实例」全靠端口猜。
         """
-        deadline = time.monotonic() + float(self.cfg.get("healthy_timeout_s") or 150)
+        deadline = time.monotonic() + float(
+            timeout_s if timeout_s is not None
+            else (self.cfg.get("healthy_timeout_s") or 150))
         while time.monotonic() < deadline and not self._stop.is_set():
             if proc is not None and proc.poll() is not None:
                 return False        # 自己那个已经退了，别人应声不算数
@@ -310,19 +352,32 @@ class Supervisor:
         """启动时：端口上已经有人就接管监控，否则自己拉一个。
 
         三种情况：
-          1. 配置的端口活着 → 接管（用户自己起的，或上次留下的）
+          1. 配置的端口活着**且真能认字** → 接管（用户自己起的，或上次留下的）
           2. 配置的端口死了，但**备用端口**活着 → 那是上次重启后留下的实例，
              直接把客户端指过去，别再起一个新的（否则会顶掉端口、白等一次
              模型加载）
           3. 都死 → 起一个新的
+
+        为什么「活着」还要加「真能认字」：8081 上监听的可能根本不是我们的
+        服务（代理、别的工具、上次没退干净的半死实例）。只看 TCP 就接管，
+        tick() 同样只看 TCP，于是它永远判「健康」—— 我们自己的 OCR 服务
+        再也不会被拉起，界面一直「OCR 不可用」，重启多少次都一样。
         """
         host, port = self._endpoint()
-        alt = 8082 if port != 8082 else 8081
+        alt = self._alt_port(port)
         if _tcp_ok(host, port):
-            self._started_at = time.monotonic()
-            self._healthy = True
-            self._log(f"接管已有服务 :{port}")
-            return True
+            url = f"http://{host}:{port}"
+            # 先直接探一次；不成就给一点时间（上次留下的实例可能还在加载
+            # 模型，十几秒），还不成就认定「不是我们的服务」，改用备用端口。
+            budget = min(float(self.cfg.get("healthy_timeout_s") or 150), 20.0)
+            if self._probe(url) or self._wait_healthy(host, port, None, budget):
+                self._started_at = time.monotonic()
+                self._healthy = True
+                self._log(f"接管已有服务 :{port}")
+                return True
+            self._log(f":{port} 上有人监听但认不出字（不是 OCR 服务？），"
+                      f"改用备用端口 :{alt}")
+            return self.restart("端口上的不是 OCR 服务")
         if _tcp_ok(host, alt) and self._probe(f"http://{host}:{alt}"):
             ocr.set_url(f"http://{host}:{alt}")
             self._port = alt
@@ -333,6 +388,30 @@ class Supervisor:
         return self.restart("启动时拉起")
 
     # ---------------- 默认实现 ----------------
+
+    def _alt_port(self, port):
+        """蓝绿要用的另一个端口。
+
+        以前写死成「不是 8082 就是 8081」，用户把服务配在别的端口（或 8082
+        本身被占）时就会踩到别人的端口。现在 `ocr.service.alt_port` 可以指定，
+        没配才退回老规矩（review V22）。
+        """
+        try:
+            want = int(self.cfg.get("alt_port") or 0)
+        except (TypeError, ValueError):
+            want = 0
+        if want and want != port:
+            return want
+        return 8082 if port != 8082 else 8081
+
+    def _close_log(self):
+        fh = self._log_fh
+        self._log_fh = None
+        if fh is not None:
+            try:
+                fh.close()
+            except OSError:
+                pass
 
     def _endpoint(self):
         """当前客户端指向哪里 —— 以 ocr 的配置为准，别自己另记一份。"""
@@ -359,7 +438,11 @@ class Supervisor:
         env = dict(os.environ)
         env.setdefault("PADDLE_PDX_MODEL_SOURCE", "modelscope")
         log_path = os.path.join(root, f"ocr_service_{port}.log")
+        # 每次重启都开一个句柄且从不关闭：跑一天几十次切端口就是几十个
+        # 泄漏的文件句柄，日志文件还一直被锁着（review V10）
+        self._close_log()
         f = open(log_path, "ab")
+        self._log_fh = f
         kw = {}
         if sys.platform == "win32":
             # 别弹黑框；进程归我们管，退出时一起收掉

@@ -122,7 +122,11 @@ class SkinFinder:
                                "面板已变成居中浮层，请手动把筛选复位后再试"}
 
             t_scan = time.time()
-            hit = self._scan(name, assume_top=True)
+            # **不再 assume_top。** 筛完之后列表不一定回到顶部：筛选没变化时
+            # col_apply 一个都不点、列表也不重载，就还是停在翻到一半的位置；
+            # 这时省掉的那次「滚到顶」会让顶部几张卡永远扫不到。多花 1.5 秒
+            # 换「不漏卡」，值。
+            hit = self._scan(name)
             if hit:
                 hit.update(ok=True, plan=plan["label"],
                            elapsed_s=round(time.time() - t0, 1),
@@ -234,9 +238,9 @@ class SkinFinder:
     def _scan(self, name, assume_top=False):
         """从列表顶部往下翻，边翻边认。找到返回结果，翻完没有返回 None。
 
-        `assume_top=True`：调用方刚改完筛选，游戏会把列表重置到顶部 ——
-        这时候再滚一次「到顶」纯属白花 1.5 秒（实测筛完到点中卡片要 8 秒，
-        其中一大截耗在这）。
+        `assume_top=True` 现在没人用了：筛完之后列表不保证回到顶部
+        （筛选没变化时根本不重载），照旧滚一次到顶才可靠。参数留着给
+        测试和将来的调用方。
         """
         nav = self.nav
         if not assume_top:
@@ -278,18 +282,23 @@ class SkinFinder:
     def _open_and_verify(self, text, y, name):
         """点开一张卡，读标题确认。对上了返回结果，没对上返回 None。"""
         nav = self.nav
+        # **点之前先读一次标题。** 右侧面板里还留着上一张卡的标题，点开
+        # 后立刻读到的往往就是它 —— 以前读到「非空」就拿来比对，把上一张
+        # 的结论（多半是「不是它」）钉在这一张上，于是对的卡也被跳过。
+        before = nav.skin_title()
         nav.click((150, y), label="皮肤卡片", expect_change=False)
-        # 点开后右侧详情面板要渲染一会儿。**轮询**读标题，读到「像皮肤名」
-        # 的文字就走，最多等 0.9 秒。
-        # 以前是固定 sleep(0.35) 读一次：面板还没换过来，读到的是上一张卡
-        # 的残留标题（或者「默认」这种无关文字），于是把对的卡片判成
-        # 「不是它」，接着去点下一张 —— 这就是「频繁选错 + 慢」的来源。
+        # 点开后右侧详情面板要渲染一会儿。**等标题真的换掉**再比对，
+        # 最多等 1.2 秒。
         title, t0 = "", time.perf_counter()
-        while time.perf_counter() - t0 < 0.9:
-            title = nav.skin_title()
-            if title:
+        while time.perf_counter() - t0 < 1.2:
+            t = nav.skin_title()
+            if t and t != before:
+                title = t
                 break
             time.sleep(0.1)
+        if not title:
+            # 标题一直没变：可能点的是已经选中的同一张，再读一次做最后判定
+            title = nav.skin_title()
         if not title:
             self._say(f"「{text}」点开后读不到标题，跳过这张", "warn")
             return None

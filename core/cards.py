@@ -32,6 +32,59 @@ PRICE_BOX = (0.54, 0.70, 0.99, 0.98)
 # 3 以下基本都是游戏自己的光照闪烁和粒子特效，不是换货。
 CHANGE_DELTA = 6.0
 
+# 价格候选：带千位逗号或小数点的数串
+_PRICE_TOKEN = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# 整条带只有「一个数」（价格单独成带时的样子）
+_PURE_NUMBER = re.compile(r"[¥￥]?\s*(\d[\d,]*(?:\.\d+)?)\s*")
+# 型号 token（QBZ951 / M250）：整段摘掉，免得型号里的数字被当价格
+_MODEL_LIKE = re.compile(r"[A-Za-z][A-Za-z0-9.\-]*\d[A-Za-z0-9.\-]*")
+# 价格下限：和 market._MIN_PRICE 一个口径（两位数是残数字，不是价格）
+_MIN_PRICE = 100
+
+
+def _price_token_in(text):
+    """从一段混合文字里切出「像价格」的那个数，切不出来返回 ""。
+
+    只认三种写法（其余一律不算价格）：
+      · 三位以上整数：`017000`（前导 0 是金币图标被认成 0）
+      · 带千位分隔符：`2,500` / `12,000`
+      · 千位被认成句点：`9.000`（整数部分 > 5、小数正好三位）
+
+    不认：`05`（成色带里的残数字）、`0.120` / `0.1209`（磨损值）。
+    回归来源：`成色 S 05` 被整条当价格 → price=5 → pick() 以为最便宜。
+    """
+    if not text:
+        return ""
+    # 价格单独成带时（`05` / `9.000`）整条带就是价格 —— 真机上确实有两个
+    # 三角币的挂单，这种两位数字必须认。判据是「整条带只有一个数」且不是
+    # `0.x`（0.x 是磨损）。混在成色带里的 `05` 走下面的严格规则，不会被认。
+    pure = _PURE_NUMBER.fullmatch(text.strip())
+    if pure:
+        tok = pure.group(1)
+        ip = tok.replace(",", "").split(".")[0]
+        if ip.isdigit() and int(ip) >= 1:
+            return tok
+    rest = _MODEL_LIKE.sub(" ", text)
+    best_tok, best_val = "", None
+    for tok in _PRICE_TOKEN.findall(rest):
+        plain = tok.replace(",", "")
+        ip, _, fp = plain.partition(".")
+        if not ip.isdigit():
+            continue
+        if not fp:
+            if len(ip) < 3:          # 05 / 2 这种残数字
+                continue
+            val = int(ip)
+        elif len(fp) == 3 and 1 <= len(ip) <= 3 and int(ip) > 5:
+            val = int(ip + fp)       # 9.000 → 9000
+        else:
+            continue                 # 0.120 / 0.1209 是磨损，不是价格
+        if val < _MIN_PRICE:
+            continue
+        if best_val is None or val > best_val:
+            best_tok, best_val = tok, val
+    return best_tok
+
 
 def _peaks(profile, ratio=0.35, min_gap=40):
     """在一维边缘强度里找「边框线」的位置。
@@ -307,7 +360,7 @@ def _text_bands(gray, min_frac=0.012, min_h=5, thr=110):
     return bands
 
 
-def card_bands(img, card, upscale=2, max_bands=4):
+def card_bands(img, card, upscale=2, max_bands=6):
     """把卡片切成「一条条有字的横带」，不管哪条在上面。
 
     真机上同一张卡会有两种版式：
@@ -343,6 +396,9 @@ def card_bands(img, card, upscale=2, max_bands=4):
     if cur:
         bands.append(cur)
     if len(bands) > max_bands:
+        # 上限放宽到 6：真机上常见「名称 / 成色 / 价格 / 数量 / 锁图标」五条，
+        # 按 4 条按高度截断时，最薄的那条（价格）最先被丢掉 —— 整张卡就读
+        # 不出价，check() 会把这条挂单跳过。宁可多认一条带。
         bands.sort(key=lambda b: b[1] - b[0], reverse=True)
         bands = sorted(bands[:max_bands])
 
@@ -428,6 +484,10 @@ def card_regions(img, card, upscale=2):
 def read_card(img, card, upscale=2, read_text=None):
     """认一张卡片：每条有字的带都认一遍，再按内容分到 名称/成色/价格。
 
+    价格**只认「像价格」的数**：成色带里常混着价格（`极品 | 成色 S 14,000`），
+    也常混着残数字（`成色 S 05`）和磨损小数（`成色 S 0.1209`）。后两者
+    一律不能当价格 —— 05 会让 pick() 以为这条最便宜，点进去买的反而是贵的。
+
     read_text: 可注入（测试用假 OCR），默认 core.ocr.read_text。
     """
     if read_text is None:
@@ -451,16 +511,17 @@ def read_card(img, card, upscale=2, read_text=None):
     for t, _box in texts:
         if "成色" in t:
             grade = grade or t
-            # 成色和价格常常挤在同一条带里（「成色 S  05」），
-            # 带里还有数字就一起当价格用，别再去别的带里找。
-            if re.search(r"\d", t):
-                price = t
+            # 成色和价格常常挤在同一条带里（「极品 | 成色 S 14,000」），
+            # 这里只切出「像价格」的那个数，整条带原样当价格是不行的。
+            price = _price_token_in(t)
+            if price:
                 break
     if not price:
         for t, _box in texts:
-            if t != name and t != grade and re.search(r"\d", t) and len(t) <= 24:
-                price = t
-                break
+            if t != name and t != grade and len(t) <= 24:
+                price = _price_token_in(t)
+                if price:
+                    break
 
     return {
         "card": card,
@@ -496,12 +557,17 @@ def _pad_aspect(piece, min_ratio=10):
     return np.vstack(parts)
 
 
-def changed_cards(prev, cur, cards, delta=CHANGE_DELTA):
+def changed_cards(prev, cur, cards, delta=CHANGE_DELTA, prev_cards=None):
     """逐卡比较两帧，返回变了的卡片下标集合。
 
     卡片数不一致（列表翻页/刷新）时全部算变 —— 宁可贵一点，也不漏新货。
+    只要调用方知道上一帧的卡片列表（prev_cards），就必须传进来：两帧的
+    卡片**数量**变了但图片尺寸没变（翻页换了一批、高度一样的卡）时，下标
+    按位置比较会拿旧卡的缓存当新卡用 —— 价格和名字全是上一批的。
     """
     if prev is None or cur is None or prev.shape != cur.shape:
+        return list(range(len(cards)))
+    if prev_cards is not None and len(prev_cards) != len(cards):
         return list(range(len(cards)))
     if not cards:
         return []

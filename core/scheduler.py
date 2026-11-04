@@ -28,7 +28,8 @@ import uuid
 from collections import deque
 
 from . import timesync
-from .config import Config, drop_task_dir
+from .config import (Config, ConfigLoadError, drop_task_dir, mode_for_workflow,
+                     normalize_workflow, task_workflow)
 from .engine import Engine
 
 PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
@@ -47,6 +48,14 @@ def _same_file(a, b):
         return os.path.samefile(a, b)
     except OSError:
         return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _fire_at(task):
+    """任务的 fire_at 当数字用；缺失/脏数据一律当 0（= 手动触发）。"""
+    try:
+        return float((task or {}).get("fire_at") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def sync_template(cfg, name, tid):
@@ -80,6 +89,8 @@ class Scheduler:
     def __init__(self):
         self._lock = threading.RLock()
         self._stop = threading.Event()
+        self._stop_guard = threading.RLock()
+        self._stopping = False
         self._thread = None
         self._engine = Engine()
         self._log = deque(maxlen=400)
@@ -104,11 +115,16 @@ class Scheduler:
         if not stale:
             return
         ids = {t.get("id") for t in stale}
-        with self._lock, Config.transaction() as cfg:
-            for t in cfg["queue"]:
-                if t.get("id") in ids:
-                    t["status"] = PENDING
-                    t["note"] = (t.get("note") or "") + "（上次没跑完，已放回队列）"
+        try:
+            with self._lock, Config.transaction() as cfg:
+                for t in cfg["queue"]:
+                    if t.get("id") in ids:
+                        t["status"] = PENDING
+                        t["note"] = (t.get("note") or "") + "（上次没跑完，已放回队列）"
+        except ConfigLoadError as e:
+            # 配置这会儿读不出来：宁可不恢复，也不能拿默认值整份覆盖（审查 S1）
+            self._say(f"队列恢复跳过：{e}", "warn")
+            return
         for t in stale:
             self._say(f"{self._label(t)}：上次没跑完，已放回队列", "warn")
 
@@ -153,22 +169,31 @@ class Scheduler:
         # 控制台只维护这一条任务，顾客填价格条件就行，不用先认出皮肤叫什么。
         if name is None:
             return None, "商品名不能为空"
-        mode = mode if mode in ("detail", "list") else "detail"
-        workflow = workflow or Config.load().get("workflow") or "countdown"
-        if workflow not in ("countdown", "list", "detail"):
-            return None, f"不认识的抢购方式：{workflow}"
+        # **workflow 是唯一真源，mode 由它派生**（审查 S7）。以前两个字段
+        # 各自为政：add 里按 mode 判区域、引擎按 workflow 跑，同一个任务
+        # 检查的地方和实际跑的地方不是一回事。
+        if workflow not in (None, ""):
+            wf = normalize_workflow(workflow, "")
+            if not wf:
+                return None, f"不认识的抢购方式：{workflow}"
+        else:
+            # 调用方没指定时：全局默认；再退一步才看旧 mode 参数
+            wf = normalize_workflow(Config.load().get("workflow"),
+                                    "list" if mode == "list" else "countdown")
+        mode = mode_for_workflow(wf)
         with self._lock:
             cfg = Config.load()
             regions = regions or {k: v for k, v in cfg["regions"].items() if v}
-            # 「确认」模板只在**有确认弹窗**的界面才需要。这一版界面点价格
-            # 按钮直接成交（实测），没有弹窗可截 —— 硬要求会让任务永远加不上。
-            # 引擎那边没有确认区域时改走「点一次 + 看余额」的判定。
-            need = () if mode == "list" else ("buy",)
             if mode == "list":
                 # 列表模式必须知道盯哪块屏幕，以及点进去后确认按钮在哪
                 if not regions.get("list"):
                     return None, "列表模式要先框选交易行列表区域"
-            missing = [k for k in need if not regions.get(k)]
+            # 「确认」模板只在**有确认弹窗**的界面才需要。这一版界面点价格
+            # 按钮直接成交（实测），没有弹窗可截 —— 硬要求会让任务永远加不上。
+            # 引擎那边没有确认区域时改走「点一次 + 看余额」的判定。
+            # 入队只拦「区域」，模板与倒计时区域留给 start()/引擎去判：
+            # 入队允许先占位，启动时才真正校验（口径见 start）。
+            missing = [k for k in ("buy",) if not regions.get(k)]
             if missing:
                 return None, "先把购买按钮框选好再添加任务"
             tid = uuid.uuid4().hex[:8]
@@ -177,8 +202,8 @@ class Scheduler:
                 "name": name.strip(),
                 "keywords": [k for k in (keywords or []) if k],
                 "mode": mode,
-                # 走哪条抢购路线（countdown / list / detail）
-                "workflow": workflow,
+                # 走哪条抢购路线（countdown / list / detail）；mode 是它的派生
+                "workflow": wf,
                 "regions": regions,
                 "fire_at": float(fire_at or 0),
                 "status": PENDING,
@@ -284,10 +309,23 @@ class Scheduler:
         return left
 
     def update(self, task_id, **fields):
+        """改一条任务的字段。
+
+        正在跑的那条（active_task）必须同步写进 `cfg["active_task"]`：引擎每轮
+        reload 都从那儿读条件，只改 `queue` 的话「跑着改价」永远不生效（审查 S4）。
+        之前 `_refresh_task` 读到的是旧快照，用户以为勾了、实际按老条件抢。
+        """
+        if "workflow" in fields:
+            wf = normalize_workflow(fields.get("workflow"), "")
+            if wf:
+                fields["workflow"] = wf
+                fields["mode"] = mode_for_workflow(wf)
         with self._lock, Config.transaction() as cfg:
             for t in cfg["queue"]:
                 if t["id"] == task_id:
                     t.update(fields)
+                    if task_id == self._active_id:
+                        cfg["active_task"] = self._engine_task(t)
                     return True
             return False
 
@@ -295,7 +333,14 @@ class Scheduler:
 
     def start(self, dry_run=True):
         if self._thread and self._thread.is_alive():
-            return False, "调度器已在运行"
+            if not self._stop.is_set():
+                return False, "调度器已在运行"
+            # 上一轮 stop() 的 join 超时了，旧线程可能还在点鼠标。共享一个
+            # 鼠标，绝不能让两轮并行 —— 先再收一次，收不干净就拒绝（审查 S14）。
+            # 以前这里直接放行新一轮，旧线程还在点，点击就叠在一起了。
+            self.stop()
+            if self._thread and self._thread.is_alive():
+                return False, "上一轮还在收尾，稍等两秒再开始"
         with self._lock:
             cfg = Config.load()
             if not cfg["queue"]:
@@ -321,8 +366,14 @@ class Scheduler:
                          and t.get("enabled", True)]
             if first:
                 task = first[0]
-                need = ("confirm",) if (task.get("mode") or "detail") == "list" \
-                    else ("buy", "confirm")
+                # 模板要求按 **workflow** 判，和引擎 preflight 完全一致（审查 P0-4）：
+                #   list      → 只要 buy 模板（无弹窗版式，不要求确认）
+                #   countdown → 只要 confirm 模板（归零直接点购买，不认按钮长相）
+                #   detail    → buy + confirm 都要
+                wf = task_workflow(task, cfg.get("workflow") or "countdown")
+                need = {"list": ("buy",),
+                        "countdown": ("confirm",),
+                        "detail": ("buy", "confirm")}[wf]
                 missing = [n for n in need
                            if not (os.path.isfile(cfg.template_path(n, task.get("id")))
                                    or os.path.isfile(cfg.template_path(n)))]
@@ -337,22 +388,60 @@ class Scheduler:
             dry_run = True
         self._stop.clear()
         self._engine = Engine()
-        # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器
-        self._engine.on_hit = self.stop
+        # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器。
+        # 必须投递到新线程：回调发生在引擎线程里，直接 join 自己会炸（审查 S11）。
+        self._engine.on_hit = self._hit_stop
         self._thread = threading.Thread(target=self._run, args=(dry_run,), daemon=True)
         self._thread.start()
         return True, "调度器已启动"
 
     def stop(self):
-        self._stop.set()
-        self._engine.stop()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3.0)
-        with self._lock, Config.transaction() as cfg:
-            for t in cfg["queue"]:
-                if t["status"] in (ARMED, RUNNING):
-                    t["status"] = PENDING
-        return True, "已停止"
+        """停下调度器。**幂等**：连按两下停止不会把状态搞成半截（审查 S26）。
+
+        以前这里没有任何保护：
+          · 第二下进来又 join 一次，与第一下抢同一把文件锁；
+          · `self._engine.stop()` 在引擎线程里调（on_hit 回调）时会 join 自己，
+            RuntimeError 一抛，后面的状态复位整段跳过（审查 S11）。
+        """
+        with self._stop_guard:
+            if self._stopping:
+                return True, "正在停止"
+            self._stopping = True
+        try:
+            self._stop.set()
+            try:
+                self._engine.stop()
+            except Exception:                # noqa: BLE001
+                traceback.print_exc()
+            t = self._thread
+            if t and t.is_alive() and t is not threading.current_thread():
+                try:
+                    t.join(timeout=3.0)
+                except RuntimeError:
+                    pass
+            if t and t.is_alive():
+                # join 没等到：线程可能还在点鼠标。这时候**不能**把状态改回
+                # PENDING，否则下一轮 start() 会以为队列空闲、和旧线程并行
+                # 抢同一个鼠标（审查 S14）。
+                self._say("停止请求已发出，上一轮还在收尾", "warn")
+                return True, "正在停止（上一轮还在收尾）"
+            with self._lock, Config.transaction() as cfg:
+                for t in cfg["queue"]:
+                    if t["status"] in (ARMED, RUNNING):
+                        t["status"] = PENDING
+            return True, "已停止"
+        finally:
+            with self._stop_guard:
+                self._stopping = False
+
+    def _hit_stop(self):
+        """引擎「抢到就停」回调。
+
+        on_hit 是在**引擎线程**的 finally 里调用的，直接 self.stop() 会让
+        引擎 join 自己（RuntimeError），异常一抛，调度器那半段状态复位就
+        永远不执行。投递到新线程，两边的 join 都不会撞上自己（审查 S11）。
+        """
+        threading.Thread(target=self.stop, daemon=True).start()
 
     def status(self):
         with self._lock:
@@ -406,56 +495,68 @@ class Scheduler:
     def _run(self, dry_run):
         try:
             while not self._stop.is_set():
-                pending = [t for t in self.tasks()
-                           if t["status"] in (PENDING, ARMED) and t.get("enabled", True)]
-                if not pending:
-                    self._say("队列跑完了")
-                    break
-                # 手动触发的（fire_at=0）就是"现在要抢"，排在所有定时任务前面；
-                # 否则排一条一小时后开卖的任务，手动那条会白等一小时。
-                pending.sort(key=lambda t: (1, t["fire_at"]) if t["fire_at"] else (0, 0))
-                task = pending[0]
-                fire_at = task["fire_at"]
-
-                if fire_at:
-                    now = timesync.true_now()
-                    if task["status"] != ARMED:
-                        if now < fire_at - ARM_LEAD:
-                            wait = min(fire_at - ARM_LEAD - now, 30.0)
-                            self._say(f"下一条：{self._label(task)}，"
-                                      f"{fire_at - now:.0f}s 后进入布防")
-                            self._stop.wait(wait)
-                            continue
-                        self._set_status(task["id"], ARMED)
-                        self._say(f"进入布防：{self._label(task)}，"
-                                  f"{fire_at - now:.1f}s 后开卖", "hit")
-
-                # 布防即开跑：引擎一启动就在盯按钮，先确认占位按钮在（布防），
-                # 再等它变化。不能等开卖那一刻才启动——那时按钮已经变了，
-                # 引擎永远看不到"变化"这个事件。
-                #
-                # 一条任务炸了不能带走整条队列：以前异常会一路冒到 _run 的
-                # except，线程直接结束，剩下的任务永远停在「等待」，界面上
-                # 只看到调度器停了、日志里一段 traceback。现在这条标失败，
-                # 接着跑下一条。
                 try:
-                    self._run_task(task, dry_run)
+                    if not self._run_step(dry_run):
+                        break
                 except Exception as e:               # noqa: BLE001
-                    self._set_status(task["id"], FAILED,
-                                     f"{type(e).__name__}: {e}")
-                    self._say(f"{self._label(task)}：执行出错 "
-                              f"{type(e).__name__}: {e}，跳过它继续", "error")
+                    # 调度器**自身**的异常（配置读失败、排序、校时）以前会一路
+                    # 冒出 while、线程直接结束，剩下的任务永远停在「等待」。
+                    # 现在记一笔、歇 0.5s 继续（审查 S25）。
+                    self._say(f"调度器异常：{type(e).__name__}: {e}", "error")
                     for line in traceback.format_exc().splitlines()[-4:]:
                         self._say(line, "error")
-                if self._stop.is_set():
-                    break
-        except Exception as e:
-            self._say(f"调度器异常：{type(e).__name__}: {e}", "error")
-            for line in traceback.format_exc().splitlines()[-6:]:
-                self._say(line, "error")
+                    if self._stop.wait(0.5):
+                        break
         finally:
             with self._lock:
                 self._active_id = None
+
+    def _run_step(self, dry_run):
+        """挑一条任务、布防、执行。返回 False = 队列空了，可以收工。"""
+        pending = [t for t in self.tasks()
+                   if t.get("status") in (PENDING, ARMED) and t.get("enabled", True)]
+        if not pending:
+            self._say("队列跑完了")
+            return False
+        # 手动触发的（fire_at=0）就是"现在要抢"，排在所有定时任务前面；
+        # 否则排一条一小时后开卖的任务，手动那条会白等一小时。
+        # 排序用 `_fire_at()`：老任务可能根本没有 fire_at 字段，以前直接
+        # `t["fire_at"]` 是 KeyError，一条脏数据就把调度线程打死（审查 S25）。
+        pending.sort(key=lambda t: (1, _fire_at(t)) if _fire_at(t) else (0, 0))
+        task = pending[0]
+        fire_at = _fire_at(task)
+
+        if fire_at:
+            now = timesync.true_now()
+            if task.get("status") != ARMED:
+                if now < fire_at - ARM_LEAD:
+                    wait = min(fire_at - ARM_LEAD - now, 30.0)
+                    self._say(f"下一条：{self._label(task)}，"
+                              f"{fire_at - now:.0f}s 后进入布防")
+                    self._stop.wait(wait)
+                    return True
+                self._set_status(task["id"], ARMED)
+                self._say(f"进入布防：{self._label(task)}，"
+                          f"{fire_at - now:.1f}s 后开卖", "hit")
+
+        # 布防即开跑：引擎一启动就在盯按钮，先确认占位按钮在（布防），
+        # 再等它变化。不能等开卖那一刻才启动——那时按钮已经变了，
+        # 引擎永远看不到"变化"这个事件。
+        #
+        # 一条任务炸了不能带走整条队列：以前异常会一路冒到 _run 的
+        # except，线程直接结束，剩下的任务永远停在「等待」，界面上
+        # 只看到调度器停了、日志里一段 traceback。现在这条标失败，
+        # 接着跑下一条。
+        try:
+            self._run_task(task, dry_run)
+        except Exception as e:                   # noqa: BLE001
+            self._set_status(task["id"], FAILED,
+                             f"{type(e).__name__}: {e}")
+            self._say(f"{self._label(task)}：执行出错 "
+                      f"{type(e).__name__}: {e}，跳过它继续", "error")
+            for line in traceback.format_exc().splitlines()[-4:]:
+                self._say(line, "error")
+        return True
 
     @staticmethod
     def _engine_reason(st):
@@ -517,8 +618,9 @@ class Scheduler:
 
     def _run_task(self, task, dry_run):
         tid = task["id"]
-        mode = task.get("mode") or "detail"
-        workflow = task.get("workflow") or "countdown"
+        # workflow 是真源，mode 由它派生（审查 S7）：老任务只有 mode 时按它迁移
+        workflow = task_workflow(task, "countdown")
+        mode = mode_for_workflow(workflow)
         self._active_id = tid
         self._set_status(tid, RUNNING)
         self._say(f"开始执行：{self._label(task)}"
@@ -569,18 +671,23 @@ class Scheduler:
         cfg = Config.load()
 
         # 任务自己的模板同步到全局位置，引擎从那儿读。
-        # 列表模式只强依赖确认模板；购买模板只在点进详情页后用到，缺了也能扫。
-        need = ("confirm",) if mode == "list" else ("buy", "confirm")
+        # 口径与引擎 `_validate` / preflight 一致（审查 P0-4）：
+        #   list      → 只要 buy（无弹窗版式，不要求确认）
+        #   countdown → 只要 confirm（归零直接点购买中心，不认按钮长相）
+        #   detail    → buy + confirm
+        need = {"list": ("buy",),
+                "countdown": ("confirm",),
+                "detail": ("buy", "confirm")}.get(workflow, ("buy", "confirm"))
         for name in need:
             if not sync_template(cfg, name, tid):
                 self._set_status(tid, FAILED, f"缺少 {name} 模板")
                 self._say(f"{self._label(task)}：缺少 {name} 模板，重新截一次", "error")
                 return
-        if mode == "list":
-            # 有就带上，没有也不拦 —— 引擎在点进详情页时才读它
+        if workflow == "list":
+            # 列表模式点进详情页后才用购买模板：有就带上，没有也不拦
             sync_template(cfg, "buy", tid)
 
-        ok, msg = self._engine.start(dry_run=dry_run, deadline=task["fire_at"] or None,
+        ok, msg = self._engine.start(dry_run=dry_run, deadline=_fire_at(task) or None,
                                      mode=mode, workflow=workflow)
         if not ok:
             self._set_status(tid, FAILED, msg)
@@ -589,8 +696,8 @@ class Scheduler:
 
         t0 = time.time()
         while not self._stop.is_set():
-            st = self._engine.status()
-            if st["state"] in ("done", "abort"):
+            st = self._engine.status() or {}
+            if st.get("state") in ("done", "abort"):
                 break
             if not st.get("running"):
                 # 引擎线程已经结束，状态却不是终态（引擎内部出错、或者状态
@@ -599,19 +706,20 @@ class Scheduler:
                 break
             time.sleep(0.05)
 
-        st = self._engine.status()
+        st = self._engine.status() or {}
         self._engine.stop()
         elapsed = round(time.time() - t0, 2)
 
         # 这一轮抢到几件、花了多少，累计回任务上 —— 列表的「已抢」就靠它
-        got = int(st["stats"].get("bought") or 0)
-        spent = float(st["stats"].get("spent") or 0)
+        stats = st.get("stats") or {}
+        got = int(stats.get("bought") or 0)
+        spent = float(stats.get("spent") or 0)
         if got or spent:
             self.update(tid, bought=int(task.get("bought") or 0) + got,
                         spent=round(float(task.get("spent") or 0) + spent, 1))
 
-        if st["state"] == "done":
-            res = f"完成，{st['stats']['clicks']} 次点击，{elapsed}s"
+        if st.get("state") == "done":
+            res = f"完成，{int(stats.get('clicks') or 0)} 次点击，{elapsed}s"
             self._set_status(tid, DONE, res)
             self._say(f"{self._label(task)}：{res}", "hit")
         elif self._stop.is_set():

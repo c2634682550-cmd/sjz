@@ -324,12 +324,33 @@ def skins_of(season=None, tier=None, series=None):
     return out
 
 
+_NAME_SEPS = ("·", "・", "－", "-", "_")
+
+
+def _name_part(s):
+    """取「皮肤名」那一段：最后一个分隔符之后的部分，没有分隔符就整串。
+
+    `M4A1突击步枪-纯白涂装` → `纯白涂装`；`QBZ95-1突击步枪·王牌之剑` →
+    `王牌之剑`；只给型号 `M4A1突击步枪` → 整串（= 没指定皮肤）。
+    """
+    for sep in _NAME_SEPS:
+        if sep in s:
+            return s.rsplit(sep, 1)[-1]
+    return s
+
+
 def find_skin(name, tier=None, season=None, floor=0.72):
     """按名字找皮肤（模糊匹配），返回目录里最像的那条。
 
     为什么要模糊：游戏用的是花体字，OCR 认不准的字很多
     （「彩」→「采/未/米」、「白」→「自」、「QBZ95-1」→「OBZ．1」）。
     归一化后比相似度，比字符串相等稳得多。
+
+    **只给型号时必须返回 None。** `AS Val突击步枪` 和目录里每一条同型号
+    皮肤的相似度都在 0.8 上下（差的那一截正好是皮肤名），以前取第一个最高
+    分就直接拿去筛了 —— 用户要「夜穹」，脚本把「蝴蝶」摆到第一个格子买走。
+    所以命中后还要比对「皮肤名那一段」：对不上就当没解析出来，让调用方
+    报「没指定皮肤名」，别猜。
     """
     if not name:
         return None
@@ -343,6 +364,14 @@ def find_skin(name, tier=None, season=None, floor=0.72):
         if score > best_score:
             best, best_score = row, score
     if best is None or best_score < floor:
+        return None
+    # 只给了型号：和目录里那一行的「型号」几乎一模一样 → 没指定皮肤。
+    # 这种情况不能猜（同型号有四五款皮肤，猜错就是买错东西）。
+    if ocr.similarity(name, best.get("model", "")) >= 0.98:
+        return None
+    # 给了皮肤名：分隔符后面那截也要对得上，否则宁可当没解析出来
+    if any(sep in name for sep in _NAME_SEPS) and \
+            ocr.similarity(_name_part(name), _name_part(best["name"])) < 0.45:
         return None
     out = dict(best)
     out["score"] = round(best_score, 3)

@@ -43,8 +43,17 @@ from . import ocr_ppocr
 _lock = threading.Lock()
 _settings = None
 _backend = None
+_broken = False          # 客户端建不起来后短路，不再每次调用都重试构造
 _last_err = ""
 _stats = {"calls": 0, "empty": 0}
+
+
+class OCRError(RuntimeError):
+    """OCR 调用本身失败（服务不在、超时、HTTP 500、冷却期）。
+
+    与「图上真的没字」严格区分：调用方拿到 OCRError 应该重试/中止，
+    拿到空列表才可以说「没有这一项」（review V08）。
+    """
 
 
 # ---------------- 配置 ----------------
@@ -77,23 +86,28 @@ def _cfg():
 
 def reload():
     """配置改完（或服务刚起来）后重建客户端。"""
-    global _settings, _backend, _last_err
+    global _settings, _backend, _broken, _last_err
     with _lock:
         _settings = _load_settings()
         _backend = None
+        _broken = False
         _last_err = ""
 
 
 def _client():
-    """PP-OCR 客户端（懒建，建失败一次就不再建）。"""
-    global _backend, _last_err
+    """PP-OCR 客户端（懒建；建失败一次就不再建，直到 reload/set_url）。"""
+    global _backend, _broken, _last_err
     if _backend is not None:
         return _backend
+    if _broken:
+        return None
     try:
         _backend = ocr_ppocr.make(_cfg().get("ppocr") or {})
+        _last_err = ""
     except Exception as e:                       # noqa: BLE001
         _last_err = f"{type(e).__name__}: {e}"
         _backend = None
+        _broken = True
     return _backend
 
 
@@ -143,7 +157,7 @@ def set_url(url):
     只改地址、不动别的配置；下一次调用时按新地址重建客户端。
     调用方不用感知 —— 老实例在新实例验活之前一直还在服务。
     """
-    global _settings, _backend
+    global _settings, _backend, _broken
     with _lock:
         s = dict(_settings or _load_settings())
         pp = dict(s.get("ppocr") or {})
@@ -151,6 +165,7 @@ def set_url(url):
         s["ppocr"] = pp
         _settings = s
         _backend = None
+        _broken = False
 
 
 def current_url():
@@ -179,20 +194,27 @@ def metrics():
 
 # ---------------- 对外 ----------------
 
-def read_text(img, timeout=6.0):
-    """img: BGR ndarray。返回 OCR 出来的文本（已清理空格），失败返回 ""。
+def read_text(img, timeout=None, raise_on_error=False):
+    """img: BGR ndarray。返回 OCR 出来的文本（已清理空格）。
 
-    timeout 保留是为了兼容旧调用点（超时在 ocr.ppocr.timeout_s 里配）。
+    raise_on_error=True 时，OCR 服务不可用/调用失败抛 OCRError，而不是
+    返回 "" —— 否则调用方分不清「这一块没字」和「眼睛瞎了」（review V08）。
+    timeout=None 表示用配置里的 ocr.ppocr.timeout_s；给了显式值就用它，
+    以前形参被忽略、调用方以为能延长等待（V16）。
     """
     if img is None or getattr(img, "size", 0) == 0:
         return ""
     b = _client()
     if b is None:
+        if raise_on_error:
+            raise OCRError(f"OCR 客户端不可用：{_last_err or '未配置'}")
         return ""
     try:
-        raw = b.read_text(img) or ""
-    except Exception:                            # noqa: BLE001 - 失败不抛给调用方
+        raw = b.read_text(img, timeout=timeout) or ""
+    except Exception as e:                       # noqa: BLE001
         _stats["empty"] += 1
+        if raise_on_error:
+            raise OCRError(f"{type(e).__name__}: {e}") from e
         return ""
     if not raw.strip():
         _stats["empty"] += 1
@@ -201,21 +223,28 @@ def read_text(img, timeout=6.0):
     return clean(raw)
 
 
-def read_words(img, timeout=10.0):
+def read_words(img, timeout=None, raise_on_error=False):
     """OCR 出每一行文字和它的包围盒。
 
-    返回 [{"x","y","w","h","text"}]，坐标是相对传入图片左上角的像素。
-    列表模式必须知道每行在哪，才能把行聚起来、算出点哪儿。
+    返回 [{"x","y","w","h","text","score"}]，坐标是相对传入图片左上角的
+    真实像素。列表模式必须知道每行在哪，才能把行聚起来、算出点哪儿。
+
+    raise_on_error=True 时，服务不可用/调用失败抛 OCRError；空列表只表示
+    「图上确实没读出字」（review V08）。timeout=None 用配置值，显式值透传（V16）。
     """
     if img is None or getattr(img, "size", 0) == 0:
         return []
     b = _client()
     if b is None:
+        if raise_on_error:
+            raise OCRError(f"OCR 客户端不可用：{_last_err or '未配置'}")
         return []
     try:
-        words = b.read_words(img) or []
-    except Exception:                            # noqa: BLE001
+        words = b.read_words(img, timeout=timeout) or []
+    except Exception as e:                       # noqa: BLE001
         _stats["empty"] += 1
+        if raise_on_error:
+            raise OCRError(f"{type(e).__name__}: {e}") from e
         return []
     if not words:
         _stats["empty"] += 1
@@ -249,14 +278,24 @@ def normalize(s):
 
 
 def similarity(a, b):
-    """0-1 相似度。字符级 LCS 比例，避免引入额外依赖。"""
+    """0-1 相似度。字符级 LCS 比例，避免引入额外依赖。
+
+    「包含」关系不再给 0.5 的加成底：标题区域小，OCR 常只读出一两个字，
+    `similarity("攻势","棱镜攻势")` 原来有 0.750，直接过了 0.72 的判定
+    阈值 —— 读到半个名字就敢点开并买（review V14）。短串（<4 字）只给
+    长度覆盖比，要求几乎完全包含才算像。
+    """
     na, nb = normalize(a), normalize(b)
     if not na or not nb:
         return 0.0
     if na == nb:
         return 1.0
     if na in nb or nb in na:
-        return min(len(na), len(nb)) / max(len(na), len(nb)) * 0.5 + 0.5
+        small, big = (na, nb) if len(na) <= len(nb) else (nb, na)
+        ratio = len(small) / max(len(big), 1)
+        if len(small) < 4:
+            return ratio
+        return ratio * 0.5 + 0.5
     # LCS 长度
     prev = [0] * (len(nb) + 1)
     for ca in na:
@@ -376,7 +415,12 @@ def phrases(words, gap=12):
     ws = sorted(words, key=lambda w: (w["y"], w["x"]))
 
     def join_ok(w, g):
-        last = g["words"][-1]
+        # 间隙要比「这一组最右边的词」，不是「最后 append 进来的词」：
+        # 同行内两个词的 y 差 1~3px 时排序会变，拿最后 append 的词去比，
+        # 间隙算成负数 → 隔着 90px 的两个词也被拼成一句（review V15）。
+        last = max(g["words"], key=lambda x: x["x"])
+        if w["x"] < last["x"]:
+            return False
         return w["x"] - (last["x"] + last["w"]) <= gap
 
     groups = _group_by_y(ws, lambda w, g: max(6.0, w["h"] * 0.6), join_ok)

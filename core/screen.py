@@ -57,37 +57,49 @@ class Screen:
         self.bounds = self.monitors[self.index]
 
     def _pick_monitor(self, want):
-        """挑要抓的那块屏。
+        """挑要抓的那块屏。**传进来的屏号必须被尊重**。
 
-        **优先主显示器**（用 GetSystemMetrics 问系统要它的尺寸），
-        而不是死按下标取。
+        want=0 是虚拟屏（拼上所有显示器）。want=None 时才去猜「主显示器」
+        （用 GetSystemMetrics 问系统要它的尺寸）—— 以前是**无条件**先按
+        主屏尺寸匹配，配置里写 monitor=2 也会被抓回 1 号屏，用户以为在抓
+        第二块屏，实际一直抓第一块（review V05）。
 
-        为什么不能按下标取：拔过显示器、改过分辨率之后，mss 的显示器
-        列表里会残留一块「幽灵屏」—— 设备已经不在了，但系统还没把它的
-        条目清掉。按下标取就可能抓到它，而它**不再刷新**：抓回来的是
-        一张冻结的旧画面，每一帧都一样。
-
-        真机实测（2026-10-23）：抓到一块 1345×960 的幽灵屏，截图内容和
-        9 个小时前一模一样（md5 相同）。引擎据此把画面里的「跳过」当成
-        成交弹窗，凭空记了一笔「成交」—— 记录里那些没有商品名、耗时
-        上万秒的假成交就是这么来的。
+        want 明确但不存在（拔过显示器、改过分辨率后列表残留幽灵屏）就抛
+        ValueError，让上层拿到明确失败；不再悄悄回落到别的屏。
         """
         if want == 0:
             return 0                      # 虚拟屏：拼上所有显示器
+        if want is None or want == 1:
+            # 1 是配置默认值，历史上当作「自动/主屏」。主屏用
+            # GetSystemMetrics 问系统要尺寸再匹配：拔过显示器、改过分辨率
+            # 后 mss 列表里会残留一块不再刷新的「幽灵屏」，按下标取可能
+            # 抓到它（真机实测 1345x960 的冻结画面，引擎据此记了假成交）。
+            try:
+                primary = (ctypes.windll.user32.GetSystemMetrics(0),
+                           ctypes.windll.user32.GetSystemMetrics(1))
+            except Exception:
+                primary = None
+            if primary:
+                for i, m in enumerate(self.monitors):
+                    if i == 0:
+                        continue
+                    if (m["width"], m["height"]) == primary:
+                        return i
+            return 1 if len(self.monitors) > 1 else 0
+
+        # 明确指定 2 号及以上的屏，就**用这块屏**：以前不管 want 写几，
+        # 都先按主屏尺寸匹配，配置 monitor=2 也被抓回 1 号屏（review V05）。
         try:
-            primary = (ctypes.windll.user32.GetSystemMetrics(0),
-                       ctypes.windll.user32.GetSystemMetrics(1))
-        except Exception:
-            primary = None
-        if primary:
-            for i, m in enumerate(self.monitors):
-                if i == 0:
-                    continue
-                if (m["width"], m["height"]) == primary:
-                    return i
-        if 0 <= want < len(self.monitors):
-            return want
-        return 1 if len(self.monitors) > 1 else 0
+            want = int(want)
+        except (TypeError, ValueError):
+            raise ValueError(f"显示器编号必须是整数：{want!r}") from None
+        if not (0 <= want < len(self.monitors)):
+            raise ValueError(
+                f"指定的显示器 {want} 不存在（本机可用 0..{len(self.monitors) - 1}）")
+        m = self.monitors[want]
+        if m.get("width", 0) <= 0 or m.get("height", 0) <= 0:
+            raise ValueError(f"显示器 {want} 尺寸无效：{m}")
+        return want
 
     @property
     def size(self):

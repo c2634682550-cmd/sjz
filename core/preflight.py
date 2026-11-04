@@ -32,10 +32,22 @@ def _ck(cid, label, ok, detail, fix=None, warn=False):
             "detail": detail, "fix": fix, "warn": bool(warn)}
 
 
-def evaluate(facts, mode="list"):
-    """facts → 检查项列表。mode: "list" 在售列表 / "detail" 详情页按钮。"""
+def evaluate(facts, mode="list", workflow=None):
+    """facts → 检查项列表。
+
+    mode: "list" 在售列表 / "detail" 详情页按钮（兼容旧调用）。
+    workflow: countdown / list / detail —— **有它就按它判**，和引擎
+    `_validate` 一模一样；没有才退回 mode 推导（审查 S7/P0-4）。
+
+    三路口径（与 `Engine._validate` 对齐）：
+      list      → 列表区域 + 购买区域 + 购买模板；确认可有可无（无弹窗版式）
+      countdown → 倒计时区域 + 购买区域 + 确认区域 + 确认模板；不看购买模板
+      detail    → 购买/确认 两个区域 + 两个模板
+    """
     out = []
-    is_list = mode != "detail"
+    wf = workflow if workflow in ("countdown", "list", "detail") else \
+        ("list" if mode != "detail" else "detail")
+    is_list = wf == "list"
 
     # ① 游戏窗口：抓得到屏幕 + 分辨率对得上
     size = facts.get("size")
@@ -59,9 +71,9 @@ def evaluate(facts, mode="list"):
         out.append(_ck("window", "游戏窗口", True, f"{size[0]}×{size[1]}"))
 
     # ② OCR：没有它读不出商品名和价格，等于瞎抢
+    svc = facts.get("ocr_service") or {}
     if facts.get("ocr"):
         detail = "就绪" + (f" · {facts['ocr_name']}" if facts.get("ocr_name") else "")
-        svc = facts.get("ocr_service") or {}
         if svc.get("managed"):
             up = svc.get("uptime_s") or 0
             detail += f" · 服务已跑 {up / 3600:.1f}h"
@@ -70,11 +82,23 @@ def evaluate(facts, mode="list"):
         out.append(_ck("ocr", "OCR 识别", True, detail))
     else:
         name = facts.get("ocr_name") or ""
-        out.append(_ck("ocr", "OCR 识别", False,
-                       f"不可用{('（' + name + '）') if name else ''}",
-                       {"hint": "先起 OCR 服务：.venv-vl\\Scripts\\paddlex.exe "
-                                "--serve --pipeline tools\\OCR_game.yaml "
-                                "--port 8081 --device gpu:0"}))
+        # 服务正在拉起（Paddle 加载模型 10~20 秒）时不能说「不可用」：
+        # 冷启动那一瞬间检查必然不过，用户看到「不可用」就去手敲命令了，
+        # 其实再等十几秒它自己就绪。这里单独给一句「正在启动」，前端见到
+        # 会改成 3 秒重查一次，恢复后立刻变绿。
+        starting = bool(svc.get("starting")) or bool(
+            svc.get("enabled") and not svc.get("healthy")
+            and not svc.get("last_error"))
+        if starting:
+            detail = "正在启动（加载模型约 10~20 秒，会自动重试）"
+            fix = {"hint": "不用管；超过 1 分钟还这样就看 ocr_service_8081.log"}
+        else:
+            # backend_name() 本身就带「不可用（…）」前缀，别再包一层
+            detail = name or "不可用"
+            fix = {"hint": "先起 OCR 服务：.venv-vl\\Scripts\\paddlex.exe "
+                            "--serve --pipeline tools\\OCR_game.yaml "
+                            "--port 8081 --device gpu:0"}
+        out.append(_ck("ocr", "OCR 识别", False, detail, fix))
 
     # ③ 时间校准
     #
@@ -100,27 +124,63 @@ def evaluate(facts, mode="list"):
                        f"{(clock.get('server') or 'NTP')} {off * 1000:+.0f} ms"
                        "（已补偿）"))
 
-    # ④ 按钮模板：靠它判断「购买按钮出现了」「确认弹窗出来了」
+    # ④ 按钮模板 / 区域：靠它判断「购买按钮出现了」「确认弹窗出来了」
+    # 口径必须和引擎 `_validate`、`scheduler.start`、`_drive_task` 一致，
+    # 否则会出现「检查全绿 → 任务加上 → 点开始秒失败说缺模板」（审查 P0-4）。
     tpl = facts.get("templates") or {}
     reg = facts.get("regions") or {}
     if is_list:
         if not reg.get("list"):
             out.append(_ck("templates", "列表区域", False, "还没框选交易行列表",
                            {"hint": "列表区域在配置里标定；缺了要把游戏停在在售页重标一次"}))
+        elif not reg.get("buy"):
+            # 列表模式点进详情页后仍要用购买按钮定位，区域是硬要求
+            out.append(_ck("templates", "列表区域", False, "还没框选购买按钮",
+                           {"hint": "把游戏停在在售页，标一次购买按钮区域"}))
+        elif not tpl.get("buy"):
+            out.append(_ck("templates", "列表区域", False,
+                           "缺 购买 模板（点进详情页靠它判断按钮可点）",
+                           {"hint": "在商品详情页截一次购买按钮模板"}))
         else:
-            out.append(_ck("templates", "列表区域", True, "已框选"))
-            # 「确认」模板不再拦启动：这一版界面点价格按钮直接成交，没有弹窗
+            # 「确认」模板不拦启动：这一版界面点价格按钮直接成交，没有弹窗
             # 可截。没框它的时候引擎按余额变化判成交（`_buy_without_dialog`）。
-            note = ("确认按钮已框选" if tpl.get("confirm")
+            note = ("确认按钮已框选" if (tpl.get("confirm") and reg.get("confirm"))
                     else "没框确认按钮 —— 按余额变化判断成交")
-            out[-1] = _ck("templates", "列表区域", True, "已框选 · " + note)
+            out.append(_ck("templates", "列表区域", True, "已框选 · " + note))
+    elif wf == "countdown":
+        # 倒计时路线归零那刻直接点购买区域中心，不看按钮长相；但**必须**
+        # 有倒计时区域 —— 以前这里从不看 `regions.clock`，倒计时任务没框
+        # 倒计时也能全绿放行（审查 S7）。
+        if not reg.get("clock"):
+            out.append(_ck("templates", "倒计时区域", False, "还没框选倒计时",
+                           {"hint": "把游戏停在商品页，标一次倒计时区域"}))
+        elif not reg.get("buy"):
+            out.append(_ck("templates", "倒计时区域", False, "还没框选购买按钮",
+                           {"hint": "标一次购买按钮区域（归零那刻点它的中心）"}))
+        elif not reg.get("confirm"):
+            out.append(_ck("templates", "倒计时区域", False, "还没框选确认按钮区域",
+                           {"hint": "标一次确认弹窗里的确认按钮区域"}))
+        elif not tpl.get("confirm"):
+            out.append(_ck("templates", "倒计时区域", False,
+                           "缺 确认 模板（点完要靠它判断弹窗有没有出来）",
+                           {"hint": "确认弹窗出现时截一次确认按钮模板"}))
+        else:
+            out.append(_ck("templates", "倒计时区域", True, "倒计时 + 购买 + 确认 已就绪"))
     else:
         if not tpl.get("buy"):
             out.append(_ck("templates", "购买按钮", False, "缺 购买",
                            {"hint": "购买按钮在配置里标定；缺了要把游戏停在商品页重标一次"}))
+        elif not reg.get("buy"):
+            out.append(_ck("templates", "购买按钮", False, "还没框选购买按钮区域",
+                           {"hint": "把游戏停在商品页，标一次购买按钮区域"}))
+        elif not tpl.get("confirm"):
+            out.append(_ck("templates", "购买按钮", False, "缺 确认",
+                           {"hint": "确认弹窗出现时截一次确认按钮模板"}))
+        elif not reg.get("confirm"):
+            out.append(_ck("templates", "购买按钮", False, "还没框选确认按钮区域",
+                           {"hint": "标一次确认弹窗里的确认按钮区域"}))
         else:
-            out.append(_ck("templates", "购买按钮", True,
-                           "购买 + 确认" if tpl.get("confirm") else "购买（无弹窗界面）"))
+            out.append(_ck("templates", "购买按钮", True, "购买 + 确认"))
 
     # ⑤ 程序权限：比游戏低的话，鼠标键盘消息全被 UIPI 拦掉
     integ = facts.get("integrity") or {}
@@ -147,7 +207,11 @@ def evaluate(facts, mode="list"):
     # 要让人知道现在走的是哪条通道 —— 慢 100 倍的事不能开抢了才发现。
     # ok=False + warn=True：不算「没过」（不拦启动），但界面亮警示。
     drv = facts.get("driver") or {}
-    if drv.get("ok"):
+    if drv.get("mode") == "legacy" or facts.get("input_mode") == "legacy":
+        # 用户显式选了 legacy：这是配置意图，不是故障。亮绿灯、说明慢在哪。
+        out.append(_ck("driver", "输入驱动", True,
+                       "已配置 PostMessage(legacy)（不用驱动，点击慢 ~100 倍）"))
+    elif drv.get("ok"):
         out.append(_ck("driver", "输入驱动", True, "Interception 就绪（内核注入）"))
     else:
         out.append(_ck("driver", "输入驱动", False,
@@ -217,17 +281,20 @@ def collect(cfg, mode="list"):
 
     facts: dict = {"templates": {n: bool(cfg.has_template(n)) for n in ("buy", "confirm")},
                    "regions": {n: bool(cfg.region(n)) for n in ("buy", "confirm", "list", "clock")}}
-    try:
-        facts["ocr"] = bool(ocr.available())
-        facts["ocr_name"] = ocr.backend_name()
-    except Exception:
-        facts["ocr"], facts["ocr_name"] = False, ""
+    # 先问服务管家、再问客户端：status() 现在不阻塞，但顺序反过来的话，
+    # 「服务刚验活成功」和「客户端探活」之间会差一次往返，冷启动那一刻
+    # 容易采到「服务已就绪、客户端还没重连」的假阴性。
     try:
         from . import ocr_service
         svc = ocr_service.current()
         facts["ocr_service"] = svc.status() if svc is not None else None
     except Exception:
         facts["ocr_service"] = None
+    try:
+        facts["ocr"] = bool(ocr.available())
+        facts["ocr_name"] = ocr.backend_name()
+    except Exception:
+        facts["ocr"], facts["ocr_name"] = False, ""
     try:
         facts["clock"] = dict(timesync.info())
     except Exception:
@@ -248,15 +315,21 @@ def collect(cfg, mode="list"):
 
     # 输入驱动（interception）：没就绪不拦启动（自动退 legacy 能跑），
     # 但检查项里要亮出来 —— 别等开抢了才发现点击慢百倍。
-    if cfg.get("input_mode") == "interception":
+    mode = cfg.get("input_mode") or "interception"
+    facts["input_mode"] = mode
+    if mode == "interception":
         try:
             from .interception import driver_ready
             ok, why = driver_ready()
-            facts["driver"] = {"ok": bool(ok), "why": why or None}
+            facts["driver"] = {"ok": bool(ok), "why": why or None,
+                               "mode": "interception"}
         except Exception as e:
-            facts["driver"] = {"ok": False, "why": f"{type(e).__name__}: {e}"}
+            facts["driver"] = {"ok": False, "why": f"{type(e).__name__}: {e}",
+                               "mode": "interception"}
     else:
-        facts["driver"] = {"ok": False, "why": None}
+        # 显式配了 legacy：这不是「驱动没就绪」，是用户自己选的通道，
+        # 不能在检查项里亮红灯说「未就绪，自动退回」（审查 I23）。
+        facts["driver"] = {"ok": False, "why": None, "mode": "legacy"}
 
     s = None
     try:
@@ -278,7 +351,12 @@ def collect(cfg, mode="list"):
         except Exception:                        # noqa: BLE001
             facts["game_hwnd"], facts["game_fore"] = None, None
         try:
-            facts["page"] = Navigator(s, Mouse(s)).where()[0]
+            # **认页面不造 Mouse。** Mouse(s) 会在构造时判定输入模式
+            # （driver_ready() 会去建一个 Interception context），一次检查
+            # 就顺手把驱动挂上、还要在收尾时销毁 —— 检查阶段只是只读抓屏，
+            # 不该碰输入通道（审查 I24）。Navigator.where() 只用 _snap()，
+            # mouse=None + dry_run=True 足够。
+            facts["page"] = Navigator(s, None, dry_run=True).where()[0]
         except Exception as e:
             facts["page"] = None
             facts["page_error"] = f"认不出页面：{type(e).__name__}: {e}"

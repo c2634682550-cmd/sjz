@@ -52,9 +52,10 @@ DEFAULTS = {
     "cooldown_s": 30.0,
     "fail_limit": 3,
     "long_cooldown_s": 600.0,
+    "cooldown_probe_s": 10.0,             # 冷却期里多久做一次「能不能恢复」的探测
     "cache": 64,
     "max_side": 2560,
-    "min_score": 0.35,                    # 低于这个置信度的识别结果丢掉
+    "min_score": 0.5,                     # 低于这个置信度的识别结果丢掉
     "model": "PP-OCRv6 small",            # 只用于自检显示，不影响请求
 }
 
@@ -107,6 +108,7 @@ class Backend:
         self._probe_at = 0.0
         self._probe_ok = False
         self._fail_until = 0.0
+        self._recover_at = 0.0
         self._fails_in_row = 0
         self.last_error = None
         self.stats = {"calls": 0, "hits": 0, "ms": 0.0, "fails": 0, "lines": 0}
@@ -139,8 +141,33 @@ class Backend:
         if self.mode in ("off", "none"):
             return False
         if time.monotonic() < self._fail_until:
-            return False
+            # 冷却期不是「关死」：服务重启好之后必须能自己爬出来。
+            # 以前这里直接 return False，连续 3 次失败就把 _fail_until 推到
+            # 600 秒后 —— 服务明明早就好了，界面还连续 10 分钟报「OCR 不可用」，
+            # 用户只能重启控制台。现在每 cooldown_probe_s 做一次半开探测。
+            return self._recover()
         return self.probe()
+
+    def _recover(self):
+        """冷却期里的半开探测：跑一次极小图的真推理，成功就解除冷却。
+
+        为什么不用 TCP 探活代替：服务在听但每次推理都 500/超时的情况（模型
+        没加载完、显存被占满）TCP 照样通，只有真推理能分辨。
+        """
+        now = time.monotonic()
+        if now < self._recover_at:
+            return False
+        every = self.cfg.get("cooldown_probe_s")
+        self._recover_at = now + (10.0 if every is None else float(every))
+        try:
+            import numpy as np
+            self._post(np.full((32, 128, 3), 32, dtype=np.uint8))
+        except Exception:                # noqa: BLE001 - 还没好，继续冷却
+            return False
+        self._fail_until = 0.0
+        self._fails_in_row = 0
+        self.last_error = None
+        return True
 
     def name(self):
         if self.mode in ("off", "none"):
@@ -152,7 +179,7 @@ class Backend:
 
     # ---------- 识别 ----------
 
-    def _post(self, img):
+    def _post(self, img, timeout=None):
         import cv2
         h, w = img.shape[:2]
         limit = int(self.cfg.get("max_side") or 0)
@@ -174,16 +201,36 @@ class Backend:
         req = urllib.request.Request(
             f"{self.url}/ocr", data=json.dumps(payload).encode("utf-8"),
             method="POST", headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+        wait = self.timeout if timeout is None else float(timeout)
+        with urllib.request.urlopen(req, timeout=wait) as r:
             resp = json.loads(r.read().decode("utf-8"))
         code = resp.get("errorCode", 0)
         if code not in (0, None):
             raise RuntimeError(f"服务端报错 {code}: {resp.get('errorMsg') or resp}")
         return _parse(resp, (w, h), sent)
 
-    def _lines(self, img):
+    def _lines(self, img, timeout=None):
         if img is None or getattr(img, "size", 0) == 0:
             return []
+        if time.monotonic() < self._fail_until:
+            # 熔断的意义：服务卡死（不是拒连）时每次调用都要白等 timeout_s
+            # （默认 5 秒），引擎一轮扫十几张图就是一分多钟，表现出来像
+            # 「程序卡住」。以前这里直接 return []，等于把「服务挂了」伪装成
+            # 「图上没字」—— 上层据此报「面板上没有这项」（review V08）。
+            # 现在抛错：ocr.read_words 非 strict 仍会降级成 []，strict 则
+            # 变成 OCRError，调用方能分清。恢复靠 available() 的半开探测。
+            # 被冷却期挡下来的调用也记一次失败：短冷却（默认 30s）挡住的
+            # 调用如果完全不计数，fail_limit 只能靠真请求攒，服务一直挂
+            # 就会出现「短冷却过期 → 白打一次 → 再冷却」的空转，永远到
+            # 不了长时间停用。
+            self._fails_in_row += 1
+            limit = int(self.cfg.get("fail_limit") or 0)
+            if limit and self._fails_in_row >= limit:
+                self._fail_until = time.monotonic() + float(
+                    self.cfg.get("long_cooldown_s") or 600)
+                self.last_error = (f"{self.last_error or '连续失败'}（连续 "
+                                   f"{self._fails_in_row} 次，本会话长时间停用 PP-OCR）")
+            raise RuntimeError(f"OCR 服务冷却中：{self.last_error or '连续失败'}")
         import cv2
         ok, buf = cv2.imencode(".png", img)
         if not ok:
@@ -196,7 +243,7 @@ class Backend:
         t0 = time.perf_counter()
         with self._lock:
             try:
-                lines = self._post(img)
+                lines = self._post(img, timeout=timeout)
                 floor = float(self.cfg.get("min_score") or 0)
                 if floor:
                     # 低置信度的碎块多半是图标/描边，留着只会污染名称匹配
@@ -223,13 +270,18 @@ class Backend:
         self._cache.put(key, lines)
         return lines
 
-    def read_words(self, img):
-        """[{"x","y","w","h","text"}]，坐标是输入图像素。"""
-        return [dict(x=l["x"], y=l["y"], w=l["w"], h=l["h"], text=l["text"])
-                for l in self._lines(img)]
+    def read_words(self, img, timeout=None):
+        """[{"x","y","w","h","text","score"}]，坐标是输入图像素。
 
-    def read_text(self, img):
-        return "\n".join(l["text"] for l in self._lines(img))
+        score 必须带出去：页码/价格/面板开合这些判据要用它，以前在这里被
+        剥掉，上层只能「有字就当结论」（review V07）。
+        """
+        return [dict(x=l["x"], y=l["y"], w=l["w"], h=l["h"], text=l["text"],
+                     score=float(l.get("score", 1.0)))
+                for l in self._lines(img, timeout=timeout)]
+
+    def read_text(self, img, timeout=None):
+        return "\n".join(l["text"] for l in self._lines(img, timeout=timeout))
 
     def recent_ms(self):
         """最近 20 次识别的中位耗时（毫秒）。没有样本返回 0。"""
@@ -270,12 +322,20 @@ def _parse(resp, orig_size, sent_size):
             if not box or len(box) < 4:
                 continue
             x1, y1, x2, y2 = (float(v) for v in box[:4])
-            if x2 < x1 or y2 < y1:
-                x1, y1, x2, y2 = x1, y1, x1 + x2, y1 + y2
+            # 竖排/旋转文本行会给出「反向框」（x2<x1 或 y2<y1）。以前写成
+            # `(x1, y1, x1+x2, y1+y2)`：w=40,h=900 的输入会被修正成
+            # w=40,h=900 之外的一根跨屏竖条，phrases/near 全部错配（V13）。
+            # 正确做法是交换两个角点，再用 abs 兜底。
+            if x2 < x1:
+                x1, x2 = x2, x1
+            if y2 < y1:
+                y1, y2 = y2, y1
+            w = abs(x2 - x1)
+            h = abs(y2 - y1)
             score = float(scores[i]) if i < len(scores) else 1.0
             out.append({"x": int(round(x1)), "y": int(round(y1)),
-                        "w": max(1, int(round(x2 - x1))),
-                        "h": max(1, int(round(y2 - y1))),
+                        "w": max(1, int(round(w))),
+                        "h": max(1, int(round(h))),
                         "text": t, "score": score})
     return _fit(out, sent_size, orig_size)
 

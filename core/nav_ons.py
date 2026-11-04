@@ -7,16 +7,59 @@
 `Navigator` 组合成可用的对象。
 """
 import ctypes
+import inspect
 import re
 import time
 
 import numpy as np
 
 from . import ocr, vision
-from .nav_coords import (COL_FOLLOW, ONS_CONFIRM, ONS_FILTER, ONS_GRID, ONS_GRID_ROW_H,
+from .nav_coords import (COL_FOLLOW, ONS_CONFIRM, ONS_FILTER, ONS_GRID,
+                         ONS_GRID_ROW_H, ONS_GRID_TOP_Y,
                          ONS_MAX_PICK, ONS_NEXT, ONS_PREV, ONS_PRICE_BLUR,
                          ONS_PRICE_MAX, ONS_PRICE_MIN, ONS_RESET, ONS_TAB,
-                         NavError, _ONS_ALIAS)
+                         NavError, _ONS_ALIAS, _scaled)
+
+
+def _host_size(host):
+    """取分辨率。测试替身只借方法、不带 size，按 1080p 处理（恒等换算）。"""
+    return getattr(host, "size", (1920, 1080))
+
+
+def _pt(host, point):
+    return _scaled(point, *_host_size(host))
+
+
+def _px_box(host, box):
+    x, y, w, h = box
+    x0, y0 = _pt(host, (x, y))
+    x1, y1 = _pt(host, (x + w, y + h))
+    return (int(x0), int(y0), max(1, int(x1 - x0)), max(1, int(y1 - y0)))
+
+
+def _crop(host, img, box):
+    x, y, w, h = _px_box(host, box)
+    return img[y:y + h, x:x + w]
+
+
+def _click_px(host, point, label="", **kw):
+    """点真实像素坐标（OCR/模板返回值），兼容只有 click 的测试替身。"""
+    fn = getattr(host, "click_px", None)
+    if fn is not None and getattr(host, "mouse", None) is not None:
+        return fn(point, label, **kw)
+    return host.click(point, label, **kw)
+
+
+def _words(host, img, strict=False):
+    """读词表。测试替身常把 _ocr_words 重写成单参数版本，按签名降级。"""
+    fn = host._ocr_words
+    try:
+        ps = inspect.signature(fn).parameters
+        takes = ("strict" in ps
+                 or any(p.kind == p.VAR_KEYWORD for p in ps.values()))
+    except (TypeError, ValueError):
+        takes = False
+    return fn(img, strict=strict) if takes else fn(img)
 
 
 def _ons_block_at(y, anchors=None):
@@ -141,7 +184,8 @@ class NavOnsPanel:
         再 `ocr.phrases` 归行拼句，最后把坐标除回去。
         """
         img = self._snap()
-        x, y, w, h = box
+        # 裁剪框是 1080p 基准坐标，必须按实际分辨率换算（review V02）
+        x, y, w, h = _px_box(self, box)
         fx = self.PUB_OCR_FX
         sub = vision.upscale(img[y:y + h, x:x + w], fx)
         if self._ocr_read is None:
@@ -159,7 +203,7 @@ class NavOnsPanel:
     def _pub_shows(self, want):
         """顶部那行筛选文字现在是不是 want（如「只显示公示期」）。"""
         try:
-            crop = self._snap()[180:240, 60:1000]
+            crop = _crop(self, self._snap(), (60, 180, 940, 60))
             if getattr(crop, "size", 0) == 0:
                 return False
             words = self._ocr_words(vision.upscale(crop, 2))
@@ -228,7 +272,8 @@ class NavOnsPanel:
             raise NavError("顶部找不到排序下拉（当前可能不在在售页）")
 
         for _ in range(tries):
-            self.click((btn["cx"], btn["cy"]), "排序下拉")
+            # 排序当前值是 OCR 读到的**真实像素**，不能再过 pt()（review V02）
+            _click_px(self, (btn["cx"], btn["cy"]), "排序下拉")
             # 菜单展开要一会儿：轮询到能读出选项就停（最坏 0.9s）
             rows, t0 = [], time.perf_counter()
             while time.perf_counter() - t0 < 0.9:
@@ -250,8 +295,9 @@ class NavOnsPanel:
                 self.click((960, 700), "收起排序下拉", expect_change=False)
                 time.sleep(0.3)
                 continue
-            self.click((int(hit["x"] + hit["w"] / 2),
-                        int(hit["y"] + hit["h"] / 2)), f"排序·{want}")
+            _click_px(self, (int(hit["x"] + hit["w"] / 2),
+                             int(hit["y"] + hit["h"] / 2)),
+                      f"排序·{want}")
             # 生效就立刻返回（最坏 1.2s），不再固定 sleep
             t1 = time.perf_counter()
             while time.perf_counter() - t1 < 1.2:
@@ -290,8 +336,8 @@ class NavOnsPanel:
             hit = [r for r in rows if key in r["text"]]
             if hit:
                 r = hit[0]
-                self.click((int(r["x"] + r["w"] / 2), int(r["y"] + r["h"] / 2)),
-                           f"公示期·{want}")
+                _click_px(self, (int(r["x"] + r["w"] / 2),
+                                 int(r["y"] + r["h"] / 2)), f"公示期·{want}")
                 # 生效就立刻返回（最坏 1.4s）。切完这一下后面马上就要
                 # 扫列表/点卡片，固定 sleep 全是白等。
                 t1 = time.perf_counter()
@@ -327,7 +373,7 @@ class NavOnsPanel:
             self.say(f"[演练] 滚轮 {notches:+d} 格", "warn")
             return True
         u = ctypes.windll.user32
-        x, y = self.pt(at or self.ONS_SCROLL_AT)
+        x, y = _pt(self, at or self.ONS_SCROLL_AT)
         u.SetCursorPos(int(x), int(y))
         time.sleep(0.2)
         for _ in range(abs(int(notches))):
@@ -518,11 +564,16 @@ class NavOnsPanel:
         img = self._snap()
         if img is None:
             return (None, None)
-        words = self._ocr_words(vision.upscale(img[140:190, 1370:1880], 3))
-        mid = (1625 - 1370) * 3
+        # 价格行 ROI 是基准坐标；mid 也要按同一口径换算（review V02）
+        x0, y0, w, h = _px_box(self, (1370, 140, 510, 50))
+        words = self._ocr_words(vision.upscale(img[y0:y0 + h, x0:x0 + w], 3))
+        mid = (int(_pt(self, (1625, 0))[0]) - x0) * 3
         left, right = [], []
         for w in words:
             t = str(w.get("text", "")).replace(",", "").replace("，", "")
+            # 置信度低的碎块（图标、描边）当数字用会拼出鬼值（review V07）
+            if float(w.get("score", 1.0)) < 0.6:
+                continue
             if not t.isdigit() or w.get("h", 0) > 60:
                 continue
             cx = w.get("x", 0) + w.get("w", 0) / 2.0
@@ -565,13 +616,18 @@ class NavOnsPanel:
 
         面板会滚动，所以锚点必须现读 —— 用固定 y 在滚动后全错。
         """
-        # 按 y 聚成行
-        rows = {}
-        for w in words:
-            key = round(w["y"] / 12)
-            rows.setdefault(key, []).append(w)
+        # 行聚合：以前用 round(y/12) 分桶，y=54 和 y=66 这种跨桶边界的相邻字
+        # 会被拆成两行，标题就永远拼不出来。改成「与上一行首字的 y 差 ≤8」的
+        # 顺序聚类（review V21）。
+        parts = sorted(words, key=lambda w: (w["y"], w["x"]))
+        rows = []
+        for w in parts:
+            if rows and abs(w["y"] - rows[-1][0]["y"]) <= 8:
+                rows[-1].append(w)
+            else:
+                rows.append([w])
         out = []
-        for key, ws in rows.items():
+        for ws in rows:
             ws.sort(key=lambda w: w["x"])
             # 只拼 x 连续（间隙 < 20px）的字
             buf = []
@@ -594,10 +650,15 @@ class NavOnsPanel:
     def _match_title(self, buf, y, out):
         """把拼好的字符串和标题表比对，命中就 append (y+8, block)。"""
         txt = "".join(buf)
+        # 面板标题可能被 OCR 拆成两截、左边多出图标残字，startswith 判不到；
+        # 改成包含匹配，并取命中里最长的那个标题（「更多分类」优先于「更多」）
+        # （review V21）。
+        best = None
         for title, block in self._ONS_TITLES.items():
-            if txt.startswith(title):
-                out.append((y + 8, block))
-                return
+            if title in txt and (best is None or len(title) > len(best[0])):
+                best = (title, block)
+        if best:
+            out.append((y + 8, best[1]))
 
     def ons_options(self, scroll_top=True):
         """读当前面板里所有可见的复选框，返回 [{name, raw, box_pt, text_pt,
@@ -644,13 +705,22 @@ class NavOnsPanel:
             return []
         boxes = [b for b in self._ons_find_boxes(img)
                  if b["cy"] >= 120 and not self._ons_is_decoration(b, img)]
-        words = self._ocr_words(img[30:1080, 1360:1900])
-        words = [{"x": w["x"] + 1360, "x2": w["x"] + 1360 + w["w"],
-                  "y": w["y"] + 30, "text": w["text"]} for w in words]
+        # 面板区域是 1080p 基准坐标，先换算成实际像素再切（review V02）
+        px0, py0, pw, ph = _px_box(self, (1360, 30, 540, 1050))
+        words = _words(self, img[py0:py0 + ph, px0:px0 + pw], strict=True)
+        # 低置信度的碎块不当名字用：OCR 在 14px 小字上会吐 0.2~0.4 分的
+        # 猜测，拿来当选项名就是「点了个名字像的错选项」（review V07）
+        words = [{"x": w["x"] + px0, "x2": w["x"] + px0 + w["w"],
+                  "y": w["y"] + py0, "text": w["text"],
+                  "score": w.get("score", 1.0)} for w in words
+                 if float(w.get("score", 1.0)) >= 0.5]
 
         # 先按「列 + 行距」把方框归到 (block, row, col)
         anchors = self._ons_anchors(words)
-        grid = self._ons_assign_grid(boxes, anchors)
+        # 面板在顶部时的区块首行坐标（真实像素），用于锚点缺失时的几何自证
+        tops = {k: int(_pt(self, (0, y))[1]) for k, y in ONS_GRID_TOP_Y.items()}
+        tol = max(4, int(10 * _host_size(self)[1] / 1080.0))
+        grid = self._ons_assign_grid(boxes, anchors, tops, tol)
         out = []
         for b, (block, row, col) in zip(boxes, grid):
             near = [w for w in words
@@ -688,7 +758,7 @@ class NavOnsPanel:
         return out
 
     @staticmethod
-    def _ons_assign_grid(boxes, anchors=None):
+    def _ons_assign_grid(boxes, anchors=None, tops=None, tol=10):
         """把方框归到 (block, row, col)。
 
         分三步：
@@ -699,9 +769,8 @@ class NavOnsPanel:
 
         2. **给每个区块贴名字**。区块顺序固定为
            rarity → condition → material → color → more，
-           用 OCR 标题锚点确定其中几个，剩下的按顺序推。一个锚点都没有
-           时按「第一个可见区块 = rarity」假设（面板刚打开时的常见状态），
-           但会在返回值里标 block_guessed=True 供上层参考。
+           用 OCR 标题锚点确定其中几个，剩下的按索引差推。**一个锚点都没有
+           时不猜** —— 宁可让网格通道空着，也不按顺序硬贴（review V03）。
 
         3. **算区块内行号**：以该区块最靠上的框为第 0 行，用
            (y - 首行y) / 56 反推。左右两列共用同一套行号，所以某行
@@ -750,11 +819,23 @@ class NavOnsPanel:
                 idx = nearest[1] + (gi - nearest[0])
                 if 0 <= idx < len(order):
                     names[gi] = order[idx]
-        else:
-            # 一个锚点都没有：按「第一个可见组 = rarity」假设
-            for gi in range(len(groups)):
-                if gi < len(order):
-                    names[gi] = order[gi]
+        if not any(n is not None for n in names) and tops:
+            # 一个锚点都没有：**不按顺序猜**（review V03/V21）。唯一例外是
+            # 几何自证 —— 某组的首行正好落在「面板滚到顶部」时该区块首行的
+            # 位置上（±tol 像素，实测整像素滚动）。而且要求命中的区块序列
+            # 是 rarity 开头的连续前缀：面板滚过之后位置全偏，单组命中的
+            # 概率不为零（稀有度第 3 行 ≈ 成色首行），前缀约束能挡住它。
+            cand = []
+            for g in groups:
+                hit = None
+                for block, ty in tops.items():
+                    if abs(g[0]["cy"] - ty) <= tol:
+                        hit = block
+                        break
+                cand.append(hit)
+            idx = [order.index(b) for b in cand if b]
+            if idx and idx == list(range(len(idx))):
+                names = cand
 
         # --- 3. 算行号 ---
         out: list = [None] * len(boxes)
@@ -768,8 +849,7 @@ class NavOnsPanel:
                 out[idx_of[id(b)]] = (block, row, col)
         return out
 
-    @staticmethod
-    def _ons_is_decoration(b, img):
+    def _ons_is_decoration(self, b, img):
         """这个「方框」是不是装饰，而不是可勾选的复选框。
 
         真机上会被误检成方框的东西：
@@ -780,15 +860,19 @@ class NavOnsPanel:
         判据：
           1. y < 200 一律排除（价格区，面板选项都在 300 以下）
           2. 尺寸明显偏小（宽或高 < 24）的排除 —— 真选项统一 29x29
+
+        两个数字都是基准坐标，按实际分辨率换算（review V02）。
         """
-        if b["cy"] < 200:
+        price_line = _pt(self, (0, 200))[1]
+        if b["cy"] < price_line:
             return True
-        if b["w"] < 24 or b["h"] < 24:
+        small = _pt(self, (24, 24))
+        small = min(int(small[0]), int(small[1]))
+        if b["w"] < small or b["h"] < small:
             return True
         return False
 
-    @staticmethod
-    def _ons_find_boxes(img):
+    def _ons_find_boxes(self, img):
         """在右侧面板找复选框外框（29x29 见方）。
 
         真机上每个框会被边缘检测**检出两次**：外框 29x29 和内框 23x23，
@@ -798,28 +882,42 @@ class NavOnsPanel:
         去重规则：中心距离 < 12px 视为同一个框，**保留面积大的那个**
         （外框 29x29 才是完整的框，内框 23x23 只是它的一部分）。
 
-        另外排除两类误检：
-          - x > 1860：面板右边缘的滚动条/头像，不是选项
-          - 宽高比异常的：复选框必须接近正方形
+        另外排除三类误检：
+          - x 超出面板右边界：滚动条/头像，不是选项
+          - **列约束**：选项框只出现在两列上（实测 cx=1396 / 1641），
+            离这两列超过 6px 的框一律不是选项 —— 以前只按尺寸筛，面板里
+            任何一处 29x29 的方角（分割线端头、滚动条端头）都会被当成选项
+            （review V06）
+          - 同一行最多两个框（左右两列各一个），多出来的丢掉
         """
         import cv2 as _cv
-        g = _cv.cvtColor(img[:, 1360:1900], _cv.COLOR_BGR2GRAY)
+        x0, y0 = _pt(self, (1360, 30))
+        x1 = int(_pt(self, (1900, 0))[0])
+        x0, y0 = int(x0), int(y0)
+        if x1 <= x0:
+            return []
+        g = _cv.cvtColor(img[y0:, x0:x1], _cv.COLOR_BGR2GRAY)
         edges = _cv.Canny(g, 20, 60)
         edges = _cv.dilate(edges, np.ones((2, 2), np.uint8), iterations=1)
         cnts, _ = _cv.findContours(edges, _cv.RETR_LIST,
                                    _cv.CHAIN_APPROX_SIMPLE)
+        sin = _pt(self, (22, 0))[0]
+        tol = max(3, int(6 * self.size[0] / 1920.0)) if hasattr(self, "size") else 6
+        cols = (_pt(self, (1396, 0))[0], _pt(self, (1641, 0))[0])
         found = []
         for c in cnts:
             x, y, w, h = _cv.boundingRect(c)
-            if not (22 <= w <= 36 and 18 <= h <= 34):
+            if not (int(sin) <= w <= int(sin * 1.64) and
+                    int(sin * 0.82) <= h <= int(sin * 1.55)):
                 continue
             if abs(w - h) > 10:
                 continue
-            cx = x + 1360 + w // 2
-            if cx > 1860:
-                continue        # 面板右边缘，不是选项
-            found.append({"x": x + 1360, "y": y, "w": w, "h": h,
-                          "cx": cx, "cy": y + h // 2})
+            cx = x + x0 + w // 2
+            cy = y + y0 + h // 2
+            if min(abs(cx - cols[0]), abs(cx - cols[1])) > tol:
+                continue        # 不在两列上，不是选项框
+            found.append({"x": x + x0, "y": y + y0, "w": w, "h": h,
+                          "cx": cx, "cy": cy})
         # 去重：中心 <12px 合并，保留面积最大的
         found.sort(key=lambda b: -b["w"] * b["h"])
         uniq = []
@@ -828,7 +926,22 @@ class NavOnsPanel:
                    abs(b["cy"] - u["cy"]) < 12 for u in uniq):
                 continue
             uniq.append(b)
-        return sorted(uniq, key=lambda b: (b["cy"], b["cx"]))
+        # 同一行（±8px）最多两个框，多出来的按「离两列更近」保留前两个
+        band = max(6, int(8 * _host_size(self)[1] / 1080.0))
+        rows = {}
+        for b in uniq:
+            key = None
+            for k in rows:
+                if abs(b["cy"] - k) <= band:
+                    key = k
+                    break
+            rows.setdefault(b["cy"] if key is None else key, []).append(b)
+        kept = []
+        for grp in rows.values():
+            grp.sort(key=lambda b: min(abs(b["cx"] - cols[0]),
+                                       abs(b["cx"] - cols[1])))
+            kept.extend(grp[:2])
+        return sorted(kept, key=lambda b: (b["cy"], b["cx"]))
 
     @staticmethod
     def _ons_box_on(img, b):
@@ -881,7 +994,8 @@ class NavOnsPanel:
             self.say(f"[演练] {'勾' if want else '取消'} {name} {o['text_pt']}",
                      "warn")
             return True
-        x, y = self.pt(o["text_pt"])
+        # 选项文字的 x/y 都是 OCR 读到的**真实像素**（review V02）
+        x, y = int(o["text_pt"][0]), int(o["text_pt"][1])
         self.mouse.click(x, y, verify=False)
         time.sleep(0.7)
         after = self.ons_options(scroll_top=False)
@@ -918,18 +1032,28 @@ class NavOnsPanel:
         block = o.get("block")
         spec = ONS_GRID.get(block)
         if not spec:
-            return False
+            # 区块名认不出来时（标题锚点缺了）按**选项名**反查所属区块：
+            # 「极品」只在稀有度里有、字母只在成色里有，名字本身就能定位。
+            # 命中多个区块（「不限」这种三组都有的）就不猜，直接放弃。
+            hits = [b for b, sp in ONS_GRID.items()
+                    if any(o["name"] == nm for col in sp for _r, nm in col)]
+            if len(hits) != 1:
+                return False
+            spec = ONS_GRID[hits[0]]
         all_name = spec[0][0][1]        # 区块首行左列就是「所有…」
         if all_name == o["name"]:
             return False
+        # 同区块的其他勾选项：按区块的选项名集合判，不依赖 a["block"]
+        # （区块名可能是空的）
+        names = {nm for col in spec for _r, nm in col}
         others = [a for a in after
-                  if a["block"] == block and a["on"] and a["name"] != o["name"]]
+                  if a["name"] in names and a["on"] and a["name"] != o["name"]]
         if others:
             return False
         target = [a for a in after if a["name"] == all_name]
         if not target:
             return False
-        x, y = self.pt(target[0]["text_pt"])
+        x, y = int(target[0]["text_pt"][0]), int(target[0]["text_pt"][1])
         self.mouse.click(x, y, verify=False)
         time.sleep(0.7)
         check = [a for a in self.ons_options(scroll_top=False)
@@ -966,7 +1090,7 @@ class NavOnsPanel:
         不是典藏外观页的「★我的关注」入口。
         """
         img = self._snap()
-        x, y = self.pt(COL_FOLLOW)
+        x, y = _pt(self, COL_FOLLOW)
         patch = img[int(y) - 10:int(y) + 10, int(x) - 10:int(x) + 10]
         if patch.size == 0:
             return False
@@ -996,7 +1120,7 @@ class NavOnsPanel:
         if self.dry_run:
             self.say(f"[演练] 点关注星标（{'加' if want else '取消'}）", "warn")
             return want
-        x, y = self.pt(COL_FOLLOW)
+        x, y = _pt(self, COL_FOLLOW)
         self.mouse.click(x, y, verify=False)
         time.sleep(max(0.05, float(wait)))
         after = self.follow_state()
@@ -1016,8 +1140,12 @@ class NavOnsPanel:
         img = self._snap()
         if img is None or getattr(img, "size", 0) == 0:
             return None
-        crop = img[915:975, 470:1010]
-        words = self._ocr_words(vision.upscale(crop, 6))
+        crop = _crop(self, img, (470, 915, 540, 60))
+        if getattr(crop, "size", 0) == 0:
+            return None
+        # 低置信度的碎块不能拿来拼页码（review V07）
+        words = [w for w in _words(self, vision.upscale(crop, 6), True)
+                 if float(w.get("score", 1.0)) >= 0.6]
         flat = "".join(w.get("text", "") for w in words)
         m = re.search(r"第\s*(\d+)\s*页", flat)
         if m:
@@ -1039,7 +1167,12 @@ class NavOnsPanel:
         img = self._snap()
         if img is None or getattr(img, "size", 0) == 0:
             return False
-        crop = img[100:140, 1370:1520]
-        words = self._ocr_words(vision.upscale(crop, 3))
-        flat = "".join(w.get("text", "") for w in words)
+        crop = _crop(self, img, (1370, 100, 150, 40))
+        if getattr(crop, "size", 0) == 0:
+            return False
+        # strict：OCR 挂了就抛 NavError，不能返回 False 让 recover() 以为
+        # 「面板已经关了」然后空转（review V08/V18）
+        words = _words(self, vision.upscale(crop, 3), strict=True)
+        flat = "".join(w.get("text", "") for w in words
+                       if float(w.get("score", 1.0)) >= 0.6)
         return "价" in flat and "格" in flat

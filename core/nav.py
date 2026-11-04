@@ -26,6 +26,7 @@
   3. 每次点击后校验画面变化。没变化就重试，连续失败就抛
      `NavError`，绝不「再试一次别的坐标」——那等于乱点。
 """
+import re
 import time
 
 import numpy as np
@@ -77,7 +78,10 @@ _PAGE_ANCHORS = [
     # （tests/test_nav.py 的 DETAIL_TEXT 用例当场抓到）。在售列表页独有的
     # 是左上角「在售 / 推荐」两个标签里的「推荐」——detail 页没有。
     ("onsale", ("推荐",), ()),
-    ("onsale", ("第1页",), ()),
+    # 页码用正则，不写死「第1页」：翻到第 2 页以后 OCR 读到的就是「第2页」，
+    # 写死之后这条判据失效，后面的「相似皮肤/编号」把整页判成 detail
+    # （review V03，已用 "在售第3页…" 复现）。
+    ("onsale", re.compile(r"第\s*\d+\s*页"), ()),
     ("detail", ("相似皮",), ()),
     ("detail", ("编号", "淘汰"), ()),
     # 市场页（曼德尔砖 / 典藏外观 / 典藏挂饰）的统一判据。
@@ -105,6 +109,18 @@ _PAGE_ANCHORS = [
 ]
 
 
+def click_px(host, point, label="", **kw):
+    """点真实像素坐标。Navigator 走 click_px；只有 click 的测试替身退回 click。
+
+    测试替身（FakeOCRHost 之类）把 Navigator 的方法绑在自己身上，没有
+    click_px；1920x1080 下 click 的缩放本来就是恒等，退回去结果一样。
+    """
+    fn = getattr(host, "click_px", None)
+    if fn is None:
+        return host.click(point, label, **kw)
+    return fn(point, label, **kw)
+
+
 def classify(text):
     """从 OCR 拼串判断当前在哪一页。认不出返回 "unknown"。
 
@@ -118,6 +134,11 @@ def classify(text):
         return "unknown"
     flat = "".join(str(text).split())
     for page, need, _opt in _PAGE_ANCHORS:
+        # need 可以是词组元组，也可以是预编译正则（页码这类必须匹配数字的判据）
+        if hasattr(need, "search"):
+            if need.search(flat):
+                return page
+            continue
         if all(w in flat for w in need):
             return page
     return "unknown"
@@ -125,17 +146,23 @@ def classify(text):
 
 # 顶部标签的绿色选中框。像素判据比 OCR 可靠得多：实测选中「曼德尔砖」时
 # 绿框在 x127-257，选中「典藏外观」时在 x257-387，位置本身就是答案。
+_TAB_SAMPLE_Y = 53
+_PAGE_NO_BOX = (470, 915, 540, 60)   # 「第 N 页」ROI（基准坐标）
 _TAB_CENTERS = (192, 322, 454)   # 曼德尔砖 / 典藏外观 / 典藏挂饰
 _TAB_NAMES = ("mandel", "collection", "charm")
 
 
-def tab_from_pixels(img, y=53, x0=100, x1=600, min_run=60):
+def tab_from_pixels(img, y=53, x0=100, x1=600, min_run=60, band=8):
     """从顶部标签栏的绿色选中框判断当前选中哪个标签。
 
     绿色判据：G 明显高于 R 和 B。实测选中框颜色 BGR(133,177,86)，
     G/R≈2.06、G/B≈1.33 —— 注意 G/B 只有 1.33，蓝绿分量很接近，所以
     只能拿 G 跟 R 比，不能同时要求 G 远高于 B。
     早期写成 `g > r*1.4 and g > b*1.4` 并要求 g>100，实测全部漏检。
+
+    纵向在 y-band..y+band 内逐行取最长绿色 run 再取最大：判据只有 1~2px
+    厚时（实测 y=53 有框、y=51/55 全无），DPI 或窗口缩放稍微一动整条判据
+    就失效（review V04）。
 
     找不到就返回 None。
     """
@@ -144,20 +171,24 @@ def tab_from_pixels(img, y=53, x0=100, x1=600, min_run=60):
     h, w = img.shape[:2]
     if y >= h or x1 > w:
         return None
-    row = img[y, x0:x1].astype(np.int16)
-    b, g, r = row[:, 0], row[:, 1], row[:, 2]
-    mask = (g > 80) & (g > r * 1.2) & (g > b * 1.05)
+    best = None
+    for row_y in range(max(0, y - band), min(h, y + band + 1)):
+        row = img[row_y, x0:x1].astype(np.int16)
+        b, g, r = row[:, 0], row[:, 1], row[:, 2]
+        mask = (g > 80) & (g > r * 1.2) & (g > b * 1.05)
 
-    best, start = None, None
-    for i, v in enumerate(mask):
-        if v and start is None:
-            start = i
-        elif not v and start is not None:
-            if best is None or (i - start) > (best[1] - best[0]):
-                best = (start, i)
-            start = None
-    if start is not None and (best is None or (len(mask) - start) > (best[1] - best[0])):
-        best = (start, len(mask))
+        run, start = None, None
+        for i, v in enumerate(mask):
+            if v and start is None:
+                start = i
+            elif not v and start is not None:
+                if run is None or (i - start) > (run[1] - run[0]):
+                    run = (start, i)
+                start = None
+        if start is not None and (run is None or (len(mask) - start) > (run[1] - run[0])):
+            run = (start, len(mask))
+        if run is not None and (best is None or (run[1] - run[0]) > (best[1] - best[0])):
+            best = run
     if best is None or best[1] - best[0] < min_run:
         return None
 
@@ -199,10 +230,27 @@ class NavBase:
     def pt(self, point):
         return _scaled(point, self.size[0], self.size[1])
 
+    def px_box(self, box):
+        """把 1920x1080 基准坐标系里的矩形 (x, y, w, h) 裁到当前分辨率。
+
+        ROI 常量全部是基准坐标，裁剪前必须过这一道：以前直接拿 1080p 的
+        数字去切 2560x1440 的图，切到的是另一块界面（review V02）。
+        """
+        x, y, w, h = box
+        x0, y0 = self.pt((x, y))
+        x1, y1 = self.pt((x + w, y + h))
+        return (int(x0), int(y0),
+                max(1, int(x1 - x0)), max(1, int(y1 - y0)))
+
+    def crop_box(self, img, box):
+        """按基准坐标裁一块（自动换算到当前分辨率）。"""
+        x, y, w, h = self.px_box(box)
+        return img[y:y + h, x:x + w]
+
     def say(self, msg, level="info"):
         self._log(msg, level)
 
-    def _read_page_no(self, img):
+    def _read_page_no(self, img, min_score=0.6):
         """单独高倍读页码那一小块（「第 N 页」）。
 
         为什么不能只靠整屏 OCR：在售页和详情页的**右侧详情面板长得一样**
@@ -210,15 +258,22 @@ class NavBase:
         的「第 N 页」—— 可那是 12px 的小字，整屏 1 倍 OCR 直接读不到
         （真机实测：在售页被判成 detail，导航因此走错路）。
 
-        这块 540x60 放大 6 倍读，只要几毫钟。
+        这块放大 6 倍读，只要几毫钟。页码是「在售还是详情」的唯一判据，
+        所以低置信度（<0.6）的碎块一律丢掉，不能拿它下结论（review V07）。
+        OCR 本身失败时抛 NavError，而不是返回空串冒充「没有页码」（V08）。
         """
+        from . import ocr as _ocr
+        x, y, w, h = self.px_box(_PAGE_NO_BOX)
+        crop = img[y:y + h, x:x + w]
+        if crop.size == 0:
+            raise NavError(f"页码 ROI 超出画面：{self.px_box(_PAGE_NO_BOX)} / {img.shape}")
+        big = vision.upscale(crop, 6)
         try:
-            from . import ocr as _ocr
-            crop = img[915:975, 470:1010]
-            big = vision.upscale(crop, 6)
-            return "".join(w.get("text", "") for w in _ocr.read_words(big))
-        except Exception:
-            return ""
+            words = _ocr.read_words(big, raise_on_error=True)
+        except Exception as e:
+            raise NavError(f"读页码时 OCR 不可用：{e}") from e
+        return "".join(w.get("text", "") for w in words
+                       if float(w.get("score", 1.0)) >= min_score)
 
     def _read_text(self, img):
         """OCR 整屏，返回拼串。ocr_read 可注入，测试不用真 OCR。"""
@@ -238,8 +293,17 @@ class NavBase:
         return classify(text), text
 
     def tab_now(self):
-        """当前选中的顶部标签（靠绿色选中框的像素位置判断）。"""
-        return tab_from_pixels(self._snap())
+        """当前选中的顶部标签（靠绿色选中框的像素位置判断）。
+
+        采样行 y 和 x 范围都按实际分辨率缩放：标签栏在非 1080p 下是等比例的
+        另一条线，写死 y=53 会采到空白（review V04/V02）。
+        """
+        img = self._snap()
+        y = self.pt((0, _TAB_SAMPLE_Y))[1]
+        x0 = self.pt((100, 0))[0]
+        x1 = self.pt((600, 0))[0]
+        min_run = max(20, int(60 * self.size[0] / 1920.0))
+        return tab_from_pixels(img, y=y, x0=x0, x1=x1, min_run=min_run)
 
     def require(self, want, step=""):
         """断言当前页是 want 之一，不是就抛 NavError。
@@ -274,25 +338,52 @@ class NavBase:
     @staticmethod
     def _diff(a, b):
         """两张整屏图的差异比例。阈值 30 是实测出来的：正常画面波动 <2%，
-        真正的界面切换 >10%。"""
-        import numpy as np
+        真正的界面切换 >10%。
+
+        抓帧失败（锁屏、显示模式切换、mss 抛错）时 `_snap()` 会给 None，
+        形状也可能变。这两种情况以前是 AttributeError/ValueError —— 不是
+        NavError，会绕过上层的兜底把线程打挂（review V19）。一律当作「变了」。
+        """
+        if a is None or b is None:
+            return 1.0
+        if getattr(a, "shape", None) != getattr(b, "shape", None):
+            return 1.0
         d = np.abs(a.astype(np.int16) - b.astype(np.int16)).max(axis=2)
         return float((d > 30).mean())
 
-    def _assert_safe(self, point):
+    def _assert_safe(self, point, raw=False):
         """拒绝点到禁用坐标附近。半径 40px —— 比按钮间距（73px）的一半稍大，
-        宁可误报也不能漏报。"""
-        x, y = self.pt(point)
+        宁可误报也不能漏报。
+
+        raw=True 表示 point 已经是真实屏幕像素（OCR/模板返回值），
+        不能再缩放一次（review V02）。
+        """
+        x, y = (int(point[0]), int(point[1])) if raw else self.pt(point)
         for name, bad in FORBIDDEN.items():
             bx, by = self.pt(bad)
             if abs(x - bx) <= 40 and abs(y - by) <= 40:
                 raise NavError(f"拒绝点击 ({x},{y})：太接近「{name}」({bx},{by})")
 
-    def click(self, point, label="", expect_change=True, timeout=4.0):
-        """点一个标定好的点，等画面变化。
+    def click(self, point, label="", expect_change=True, timeout=4.0, raw=False):
+        """点一个标定好的点（**基准坐标**），等画面变化。
 
-        返回实际变化比例。expect_change=False 时不校验（用于点输入框这种
-        不改变整屏的操作）。
+        raw=True 时 point 已经是真实屏幕像素，直接按原值点。坐标口径只有
+        一处缩放：基准坐标 → 实际分辨率。以前 OCR 像素又被 pt() 乘一次缩放
+        系数，2560x1440 下 y=345 的卡片点到了 460（下一张卡）—— 买错货的
+        直接原因（review V02）。
+        """
+        self._assert_safe(point, raw=raw)
+        x, y = (int(point[0]), int(point[1])) if raw else self.pt(point)
+        return self._click_at(x, y, label or str(point), expect_change, timeout)
+
+    def click_px(self, point, label="", expect_change=True, timeout=4.0):
+        """点**真实屏幕像素**坐标（OCR / 模板返回的坐标，不再换算）。"""
+        x, y = int(point[0]), int(point[1])
+        self._assert_safe((x, y), raw=True)
+        return self._click_at(x, y, label or str(point), expect_change, timeout)
+
+    def _click_at(self, x, y, label, expect_change, timeout):
+        """按真实像素点下去并等画面变化。
 
         **每次点击都校验游戏在前台**（Mouse 带了游戏窗口句柄时才有）：
         游戏不是前台时会忽略鼠标输入 —— 点击「成功」了但状态一点没变，
@@ -300,15 +391,17 @@ class NavBase:
         报错（实测：控制台窗口或终端压着游戏时，点全落在那个窗口上）。
         早报「目标窗口不在前台」比事后猜要省事得多。
         """
-        self._assert_safe(point)
-        x, y = self.pt(point)
         if self.dry_run:
-            self.say(f"[演练] 点「{label or point}」({x},{y})", "warn")
+            self.say(f"[演练] 点「{label}」({x},{y})", "warn")
             return 1.0
 
         before = self._snap()
         hwnd = getattr(self.mouse, "_game_hwnd", None)
-        self.mouse.click(x, y, verify=False, expect_foreground=hwnd)
+        ok = self.mouse.click(x, y, verify=False, expect_foreground=hwnd)
+        if ok is False:
+            # 真机返回 0 表示这一击根本没送出去（窗口不在前台/被拦截），
+            # 以前静默继续，上层看到的只是「画面没变化」（review I8）。
+            raise NavError(f"点「{label}」({x},{y}) 失败：鼠标点击没有生效")
         if not expect_change:
             time.sleep(0.3)
             return 0.0
@@ -321,7 +414,7 @@ class NavBase:
             best = max(best, d)
             if d > 0.10:
                 break
-        self.say(f"点「{label or point}」({x},{y}) 变化 {best * 100:.1f}%"
+        self.say(f"点「{label}」({x},{y}) 变化 {best * 100:.1f}%"
                  + ("★" if best > 0.10 else "（无响应）"),
                  "info" if best > 0.10 else "warn")
         return best
@@ -381,7 +474,19 @@ class NavBase:
         self.say(f"标签确认：{got}", "info")
         return True
 
-    def _ocr_words(self, img):
+    def _ocr_words(self, img, strict=False):
+        """读一片区域的词表。
+
+        strict=True 时，「OCR 服务挂了」抛 NavError，与「这里真的没字」区分开
+        （review V08）：以前异常被吞成 []，调用方据此报「面板上没有 X」。
+        注入的测试 OCR 不走 strict —— 它不会失败，也不需要真服务。
+        """
+        if strict and not getattr(self, "_ocr_injected", True):
+            from . import ocr as _ocr
+            try:
+                return _ocr.read_words(img, raise_on_error=True)
+            except Exception as e:
+                raise NavError(f"OCR 不可用：{e}") from e
         if self._ocr_read is None:
             from . import ocr as _ocr
             self._ocr_read = _ocr.read_words

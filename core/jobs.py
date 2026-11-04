@@ -73,6 +73,13 @@ def _run(job, fn):
             job["log"].append(line)
     finally:
         job["finished"] = time.time()
+        # `except Exception` 接不住 BaseException（KeyboardInterrupt / SystemExit
+        # / 某些库自己抛的）：线程带着 state="running" 就没了，`busy()` 永远为
+        # True，之后所有动作都被 Busy 拒掉，只有重启进程才能恢复（审查 S21）。
+        if job["state"] == "running":
+            job["error"] = job["error"] or "任务异常结束（BaseException）"
+            job["state"] = "failed"
+            job["log"].append("任务异常结束，没留下状态")
 
 
 def status(job_id):

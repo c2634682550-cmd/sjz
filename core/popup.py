@@ -101,7 +101,10 @@ def _shortfall(rows):
         # 只接受干净的 3~8 位纯数字；带括号/逗号残留的一律当没读到
         if 3 <= len(digits) <= 8 and not any(ch in head for ch in "〔〕[]()（）"):
             return int(digits)
-        return None
+        # 这一行读残了就看下一行。以前这里直接 return None，第一条噪声行
+        # 会把后面干净的那条也一起废掉 —— 弹窗里「缺少 2,001 三角币」
+        # 常常被拆成两三行，第一行全是括号。
+        continue
     return None
 
 

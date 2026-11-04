@@ -26,6 +26,7 @@ API 备忘（照 library/interception.h 抄，不能凭感觉填）：
 import ctypes
 import os
 import sys
+import threading
 
 # ---------------- 常量（interception.h 原文） ----------------
 
@@ -57,7 +58,12 @@ FILTER_NONE = 0x0000
 
 
 class MouseStroke(ctypes.Structure):
-    """InterceptionMouseStroke，16 字节。"""
+    """InterceptionMouseStroke，20 字节。
+
+    布局是 u16 state / u16 flags / i16 rolling / i32 x / i32 y / u32 information；
+    rolling 后面有 2 字节对齐填充，所以不是 2+2+2+4+4+4=18，而是 20。
+    send 时按这个大小传，尺寸算错驱动会直接收 0（点击静默失效）。
+    """
     _fields_ = [
         ("state", ctypes.c_ushort),
         ("flags", ctypes.c_ushort),
@@ -76,9 +82,6 @@ class KeyStroke(ctypes.Structure):
         ("information", ctypes.c_uint),
     ]
 
-
-# InterceptionStroke 是 16 字节缓冲（mouse 大小），键盘 stroke 也装它
-Stroke = MouseStroke * 1
 
 # Predicate 回调：set_filter 用，这里只发不收，给个永假就行
 _PRED = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_int)
@@ -166,56 +169,64 @@ class Interception:
     def __init__(self):
         self._ctx = None
         self._lock_err = None
+        # 多线程（引擎线程 + 热键/扫描线程）同时第一次点击时会各建一个
+        # context：后建的那个覆盖 self._ctx，先建的那个内核句柄就永久泄漏，
+        # 而且两个 context 互相抢设备。创建/销毁必须串行化。
+        self._lock = threading.RLock()
 
     def _open(self):
-        if self._ctx is not None:
+        with self._lock:
+            if self._ctx is not None:
+                return self._ctx
+            lib = _LIB.load()
+            if lib is None:
+                raise InterceptionError(_LIB.error())
+            ctx = lib.interception_create_context()
+            # 驱动没装时 create_context 可能返回 NULL，也可能返回一个
+            # send 全失败的 context —— 两种都等第一次 send 才暴露。
+            if not ctx:
+                raise InterceptionError(
+                    "Interception 驱动不可用：先以管理员运行 "
+                    "install-interception.exe install 并重启")
+            self._ctx = ctx
             return self._ctx
-        lib = _LIB.load()
-        if lib is None:
-            raise InterceptionError(_LIB.error())
-        ctx = lib.interception_create_context()
-        # 驱动没装时 create_context 可能返回 NULL，也可能返回一个
-        # send 全失败的 context —— 两种都等第一次 send 才暴露。
-        if not ctx:
-            raise InterceptionError(
-                "Interception 驱动不可用：先以管理员运行 "
-                "install-interception.exe install 并重启")
-        self._ctx = ctx
-        return self._ctx
 
     def close(self):
-        if self._ctx is not None:
-            lib = _LIB.load()
-            if lib is not None:
-                lib.interception_destroy_context(self._ctx)
-            self._ctx = None
+        with self._lock:
+            if self._ctx is not None:
+                lib = _LIB.load()
+                if lib is not None:
+                    lib.interception_destroy_context(self._ctx)
+                self._ctx = None
 
     def send_mouse(self, state, x=0, y=0, rolling=0, flags=MOUSE_MOVE_RELATIVE):
-        ctx = self._open()
-        lib = _LIB.load()
-        stroke = MouseStroke(state=state, flags=flags, rolling=rolling,
-                             x=x, y=y, information=0)
-        n = lib.interception_send(ctx, MOUSE(0), ctypes.byref(stroke), 1)
-        if n != 1:
-            raise InterceptionError(
-                "Interception 驱动没有接收点击（send 返回 0）。"
-                "常见原因：装完驱动没重启；或驱动被卸载/被杀软清掉。"
-                "重跑 install-interception.exe install 后重启即可。")
+        with self._lock:
+            ctx = self._open()
+            lib = _LIB.load()
+            stroke = MouseStroke(state=state, flags=flags, rolling=rolling,
+                                 x=x, y=y, information=0)
+            n = lib.interception_send(ctx, MOUSE(0), ctypes.byref(stroke), 1)
+            if n != 1:
+                raise InterceptionError(
+                    "Interception 驱动没有接收点击（send 返回 0）。"
+                    "常见原因：装完驱动没重启；或驱动被卸载/被杀软清掉。"
+                    "重跑 install-interception.exe install 后重启即可。")
 
     def send_key(self, scan, up=False, e0=False):
-        ctx = self._open()
-        lib = _LIB.load()
-        state = (KEY_UP if up else KEY_DOWN) | (KEY_E0 if e0 else 0)
-        stroke = KeyStroke(code=scan, state=state, information=0)
-        # KeyStroke 8 字节，但 API 要求 16 字节 stroke —— 官方样例传
-        # InterceptionStroke（16B char 数组）装它。这里照做：先填 MouseStroke
-        # 缓冲的前 8 字节。直接构造 MouseStroke、按 KeyStroke 布局填前 8 字节。
-        buf = MouseStroke()
-        ctypes.memmove(ctypes.byref(buf), ctypes.byref(stroke),
-                       ctypes.sizeof(stroke))
-        n = lib.interception_send(ctx, KEYBOARD(0), ctypes.byref(buf), 1)
-        if n != 1:
-            raise InterceptionError("Interception 驱动没有接收按键（send 返回 0）")
+        with self._lock:
+            ctx = self._open()
+            lib = _LIB.load()
+            state = (KEY_UP if up else KEY_DOWN) | (KEY_E0 if e0 else 0)
+            stroke = KeyStroke(code=scan, state=state, information=0)
+            # KeyStroke 8 字节，但 API 要求 20 字节 stroke —— 官方样例传
+            # InterceptionStroke（20B char 数组）装它。这里照做：先填
+            # MouseStroke 缓冲的前 8 字节。
+            buf = MouseStroke()
+            ctypes.memmove(ctypes.byref(buf), ctypes.byref(stroke),
+                           ctypes.sizeof(stroke))
+            n = lib.interception_send(ctx, KEYBOARD(0), ctypes.byref(buf), 1)
+            if n != 1:
+                raise InterceptionError("Interception 驱动没有接收按键（send 返回 0）")
 
 
 _SHARED = Interception()

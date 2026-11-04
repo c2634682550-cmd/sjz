@@ -32,11 +32,22 @@ def acquire(name=MUTEX_NAME):
         return True
     try:
         k32 = ctypes.windll.kernel32
+        # 64 位下 HANDLE 是 8 字节，ctypes 默认把返回值当 int(32 位) 截断，
+        # 句柄高位丢失后 CloseHandle 关的是一个不存在的值，互斥量泄漏。
+        k32.CreateMutexW.restype = ctypes.c_void_p
+        k32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                     ctypes.c_wchar_p]
+        # GetLastError 是「上一次调用」的残留值，不归零会把上一次别处的
+        # 183 当成「已经有实例在跑」（审查 S24）。
+        k32.SetLastError(0)
         handle = k32.CreateMutexW(None, False, name)
+        err = k32.GetLastError()
         if not handle:
-            # 建不出来（权限/内核对象耗尽）—— 别拦着用户
-            return True
-        if k32.GetLastError() == _ERROR_ALREADY_EXISTS:
+            # 建不出来（权限/内核对象耗尽）：**不能放行**，否则多开又回来了。
+            print(f"[single_instance] CreateMutexW 失败（err={err}），"
+                  f"无法确认是否已有实例，按「已有实例」处理")
+            return False
+        if err == _ERROR_ALREADY_EXISTS:
             # 这个 handle 是我们打开的「已有对象」的引用，得关掉，
             # 否则会把别人的互斥量一直挂在进程里
             try:
@@ -47,6 +58,7 @@ def acquire(name=MUTEX_NAME):
         _handle = handle
         return True
     except Exception:
+        # 非 Windows（没有 kernel32）：没有闸可抢，别把程序拦死
         return True
 
 

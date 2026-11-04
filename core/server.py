@@ -30,7 +30,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import preflight, timesync
-from .config import Config, DATA_DIR
+from .config import (Config, DATA_DIR, mode_for_workflow, normalize_workflow,
+                     task_workflow)
 from . import records
 from . import switches
 from .hotkey import HookHotkey, Hotkey
@@ -56,6 +57,20 @@ _hotkey = None          # 停止热键
 _hotkey_start = None    # 开抢热键
 _hotkey_pre = None      # 休市截前热键
 
+# 停止热键去抖：连按 F8 时钩子会连发好几次，每次都起一个 stop 线程去
+# join 引擎 —— 线程越堆越多，还会在日志里刷一屏「已停止」（审查 S26）。
+_stop_hotkey_at = 0.0
+_STOP_HOTKEY_GAP = 0.3
+
+
+def _dry_run_requested_for_hotkey():
+    """F7 是不是演练 —— 和 HTTP 那条路走同一个判定（审查 S8/S20）。
+
+    以前这里硬编码 `dry_run=False`：设置里明明选了「演练」，热键一按
+    却真的去点鼠标。
+    """
+    return _dry_run_requested({})
+
 
 def touch():
     """记一次请求。每个 HTTP 请求都会调它。"""
@@ -74,6 +89,65 @@ def busy():
         return _scheduler.busy()
     except Exception:                        # noqa: BLE001
         return False
+
+
+def _as_bool(value):
+    """"false" / 0 / "0" / "off" 都是 False —— 别让字符串 truthy 蒙混过去。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "off", "no", "否")
+    return None
+
+
+def _as_int(value):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_trigger_mode(value):
+    return value if value in ("vanish", "appear") else None
+
+
+def _as_workflow(value):
+    wf = normalize_workflow(value, "")
+    return wf or None
+
+
+def _as_input_mode(value):
+    return value if value in ("interception", "legacy") else None
+
+
+# POST /api/config 收哪些字段、各是什么类型。以前是 `cfg[key] = data[key]`
+# 裸赋值：`"failsafe": "false"` 存成字符串（真值 → 紧急停用反而不生效）、
+# `"monitor": "2"` 存成字符串（抓屏直接报参数错误）。现在统一过一遍类型闸，
+# 脏值丢掉、保留原值（审查：`/api/config` 无类型校验）。
+_CONFIG_COERCERS = {
+    "threshold": _as_float,
+    "click_hz": _as_float,
+    "confirm_clicks": _as_int,
+    "confirm_interval_ms": _as_int,
+    "fire_timeout_s": _as_float,
+    "failsafe": _as_bool,
+    "trigger_mode": _as_trigger_mode,
+    "workflow": _as_workflow,
+    "monitor": _as_int,
+    "save_shots": _as_bool,
+    "arm_grace_s": _as_float,
+    "list_max_tries": _as_int,
+    "input_mode": _as_input_mode,
+}
 
 
 def _as_list(value):
@@ -300,11 +374,16 @@ class Handler(BaseHTTPRequestHandler):
         # 改完整份写回，调度器那边同时改任务状态时，两边后写的会把先写的
         # 整份盖掉（用户看到「设置改完几秒后自己变回去」）。
         with Config.transaction() as cfg:
-            for key in ("threshold", "click_hz", "confirm_clicks", "confirm_interval_ms",
-                        "fire_timeout_s", "failsafe", "trigger_mode", "workflow", "monitor",
-                        "save_shots", "arm_grace_s", "list_max_tries", "input_mode"):
+            for key, coerce in _CONFIG_COERCERS.items():
                 if key in data:
-                    cfg[key] = data[key]
+                    value = coerce(data[key])
+                    # None = 这值不合法：丢掉，保留盘上原值，别把配置写脏
+                    if value is not None:
+                        cfg[key] = value
+            if "workflow" in data:
+                # mode 是 workflow 的派生视图，这里必须跟着走，
+                # 否则存进去的就是「workflow=list、mode=detail」这种自相矛盾的组合
+                cfg["mode"] = mode_for_workflow(cfg["workflow"])
             # 界面上的抢购条件也存 —— 关掉再打开要能接着干
             if isinstance(data.get("console"), dict):
                 cur = dict(cfg.get("console") or {})
@@ -531,39 +610,42 @@ class Handler(BaseHTTPRequestHandler):
 
     def _preflight(self, data):
         """启动前检查。慢（约 1 秒，要抓屏认页面），只在进第 3 步和手动重测时调。"""
-        from . import actions
         mode = "detail" if (data.get("mode") == "detail") else "list"
+        wf = normalize_workflow(data.get("workflow"), "") or \
+            ("list" if mode == "list" else "detail")
         try:
-            checks = actions.preflight_now(mode)
+            cfg = Config.load()
+            # 直接调 preflight（而不是 actions.preflight_now）是为了把 workflow
+            # 带进去：倒计时路线要看 clock 区域，只看 mode 会把倒计时任务
+            # 判成「一切正常」（审查 S7）。
+            checks = preflight.evaluate(preflight.collect(cfg, mode), mode, wf)
         except Exception as e:
             return self._json({"ok": False, "msg": f"检查失败：{type(e).__name__}: {e}",
                                "checks": []}, 500)
         return self._json({"ok": preflight.all_ok(checks), "checks": checks})
 
     def _sched_start(self, data):
+        dry_run = _dry_run_requested(data)
         # 权限不够就别开跑：UIPI 会把我们发的鼠标键盘消息全拦掉且不报错，
         # 跑起来是「点了没反应」，最后还可能被记成「没抢到」。
         try:
             from .input import needs_elevation
             # 演练模式不点鼠标，权限低也能跑 —— 拦它没有意义，反而让人
             # 以为「连试一下都不行」。只有真点的时候才必须提权。
-            if needs_elevation() and not data.get("dry_run", True):
+            if needs_elevation() and not dry_run:
                 return self._json({"ok": False,
                                    "msg": "控制台权限比游戏低，点不动它 —— "
                                           "请以管理员身份重新运行 start.bat"})
         except Exception:
             pass
-        mode = "list"
-        try:
-            tasks = [t for t in Config.load()["queue"] if t.get("enabled", True)]
-            if tasks:
-                mode = tasks[0].get("mode") or "list"
-        except Exception:                        # noqa: BLE001
-            pass
-        ok_gate, why = _preflight_gate(mode)
+        # mode/workflow 从**第一条要跑的任务**推导，和 dispatch 时一致。
+        # 以前这里默认 "list"、scheduler.start 默认 "detail" —— 两个默认值
+        # 相反，同一份配置在两处能得出不同结论（审查 S7）。
+        mode, workflow = _next_task_route()
+        ok_gate, why = _preflight_gate(mode, workflow)
         if not ok_gate:
             return self._json({"ok": False, "msg": f"启动前检查没过：{why}"})
-        ok, msg = _scheduler.start(dry_run=data.get("dry_run", True))
+        ok, msg = _scheduler.start(dry_run=dry_run)
         return self._json({"ok": ok, "msg": msg})
 
     def _sched_stop(self):
@@ -683,16 +765,66 @@ def _sync_on_boot():
         _scheduler.note(f"启动校时出错：{type(e).__name__}: {e}", "warn")
 
 
-def _preflight_gate(mode="list"):
+def _next_task_route():
+    """下一条要跑的任务走哪条路线，返回 (mode, workflow)。
+
+    和 scheduler 完全同一套推导（`config.task_workflow`），避免
+    HTTP 这一层和调度层自己算自己的一套（审查 S7）。
+    """
+    try:
+        from .scheduler import ARMED, PENDING
+        cfg = Config.load()
+        tasks = [t for t in cfg["queue"] if t.get("enabled", True)]
+        # 只认「还会跑」的那条：`queue[0]` 可能是一条已经跑完的旧任务，
+        # 拿它的路线判检查项，会和 scheduler.start 自己看到的第一条对不上
+        # （审查 S7 补漏）。已经在跑的 ARMED/RUNNING 也算，scheduler 里
+        # 只把 PENDING/ARMED 当「待跑」，这里保持一致。
+        runnable = [t for t in tasks
+                    if t.get("status") in (PENDING, ARMED)]
+        pick = (runnable or tasks or [None])[0]
+        default = cfg.get("workflow") or "countdown"
+        workflow = (task_workflow(pick, default) if pick
+                    else normalize_workflow(default))
+    except Exception:                        # noqa: BLE001
+        workflow = "countdown"
+    return mode_for_workflow(workflow), workflow
+
+
+def _dry_run_requested(data):
+    """这次启动是不是演练。
+
+    优先级：请求里显式给了就用它；没给就听配置（run.mode=dry 或
+    env.dry_run）。以前 `data.get("dry_run", True)` 默认演练，界面上
+    明明没勾「演练」却只点了空气（审查 S20）。
+    """
+    if isinstance(data, dict) and data.get("dry_run") is not None:
+        return bool(data["dry_run"])
+    try:
+        cfg = Config.load()
+        run_mode = str(cfg.get("run_mode") or "").strip().lower()
+        if run_mode == "dry":
+            return True
+        val = cfg.get("dry_run")
+        # 真配置一定带这个键（DEFAULTS 里有，默认 True）。只有在精简过的
+        # 配置对象里才会缺 —— 那种情况按「正式」处理，和以前热键的行为一致。
+        return False if val is None else bool(val)
+    except Exception:                        # noqa: BLE001
+        return True
+
+
+def _preflight_gate(mode="list", workflow=None):
     """开抢前的检查闸门。返回 (ok, 说明)。
 
     开关 env.preflight 关掉时直接放行 —— 有人就是不想被拦（比如界面改版
     导致某项检查误报）。但默认是开的：宁可开不了工，也别带着瞎的眼睛去抢。
+
+    workflow 必须和调度器/引擎同一口径（`preflight.evaluate` 的参数），
+    否则会出现「preflight 全绿 → 任务加上 → 一点开始就报缺模板」（P0-4）。
     """
     cfg = Config.load()
     if not switches.get(cfg, "env.preflight"):
         return True, "启动前检查已关闭"
-    checks = preflight.evaluate(preflight.collect(cfg, mode), mode)
+    checks = preflight.evaluate(preflight.collect(cfg, mode), mode, workflow)
     bad = [c["label"] for c in checks if not c["ok"] and not c.get("warn")]
     if bad:
         return False, f"{'、'.join(bad)} 没过"
@@ -706,8 +838,16 @@ def _hotkey_stop():
     再 join 调度器 3 秒 —— 这 5 秒全卡在热键的消息循环里，用户连按几下
     都没反应，看起来就是「按了不停」。改成丢给后台线程，热键线程马上回去
     收消息；同时记一条「正在停止」，让界面上有个交代。
+
+    连按去抖（300ms 内只受理一次）：钩子一次按键可能连发好几条，
+    每条都起一个 stop 线程会在日志里刷屏、也白等 join（审查 S26）。
     """
+    global _stop_hotkey_at
     try:
+        now = time.time()
+        if now - _stop_hotkey_at < _STOP_HOTKEY_GAP:
+            return
+        _stop_hotkey_at = now
         # 先留一条「收到了」，不然钩子没触发时完全看不出是没收到还是停不掉
         _scheduler.note("收到停止热键", "info")
         threading.Thread(target=_scheduler.stop, name="hotkey-stop",
@@ -735,15 +875,12 @@ def _hotkey_toggle():
         if not tasks:
             _scheduler.note("热键开抢：队列是空的（或全部停用）", "warn")
             return
-        mode = tasks[0].get("mode") or "list"
-        # collect 回来的是「事实」，判断要交给 evaluate —— 界面那条路
-        # （_preflight）也是这么走的。之前这里把 facts 当检查列表迭代，
-        # 取 c["label"] 直接抛 TypeError，F7 开抢从来没成功过。
-        ok_gate, why = _preflight_gate(mode)
+        mode, workflow = _next_task_route()
+        ok_gate, why = _preflight_gate(mode, workflow)
         if not ok_gate:
             _scheduler.note(f"热键开抢被拦下：{why}", "warn")
             return
-        ok, msg = _scheduler.start(dry_run=False)
+        ok, msg = _scheduler.start(dry_run=_dry_run_requested_for_hotkey())
         _scheduler.note(f"热键开抢：{msg}", "info" if ok else "warn")
     except Exception as e:
         _scheduler.note(f"热键开抢出错：{type(e).__name__}: {e}", "error")

@@ -9,13 +9,18 @@
 """
 import ctypes
 import threading
+import time
 from ctypes import wintypes
 
-_user32 = ctypes.windll.user32
-_kernel32 = ctypes.windll.kernel32
+# **必须用 use_last_error=True 的 WinDLL**：ctypes.windll 不保存 LastError，
+# 下面的 ctypes.get_last_error() 永远返回 0 —— 注册失败时日志写「错误码 0」，
+# 用户拿不到「被别的程序占用(1409)」这类真正的原因。
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 _WM_HOTKEY = 0x0312
 _WM_QUIT = 0x0012
+_WM_NULL = 0x0000
 
 _MOD_ALT = 0x0001
 _MOD_CONTROL = 0x0002
@@ -111,24 +116,41 @@ class HookHotkey:
         self._ok = False
         self._msg = "未启动"
         self._last_fire = 0.0
+        # 状态字段被三个线程读写（钩子线程、stop() 调用方、status() 读方）
+        self._lock = threading.RLock()
+
+    def _dispatch(self, fn):
+        """把回调挪到工作线程执行。
+
+        **低级钩子线程里不能做重活。** 回调超时（注册表
+        LowLevelHooksTimeout，默认 300ms）系统会静默把钩子摘掉，之后按
+        什么键都没反应 —— 表现就是「急停失灵」，而且完全不报错。
+        所以钩子线程只负责置标志 + 起线程，回调本身在工作线程里跑。
+        """
+        def run():
+            try:
+                if self.log:
+                    self.log(f"钩子收到 {self.spec}")
+            except Exception:                     # noqa: BLE001
+                pass
+            try:
+                if fn:
+                    fn()
+            except Exception:                     # noqa: BLE001
+                pass
+
+        t = threading.Thread(target=run, name="hotkey-fire", daemon=True)
+        t.start()
+        return t
 
     def _fire(self):
         # 按住不放时系统会连续发 KEYDOWN，去重 0.4 秒
-        import time as _t
-        now = _t.perf_counter()
-        if now - self._last_fire < 0.4:
-            return
-        self._last_fire = now
-        try:
-            if self.log:
-                self.log(f"钩子收到 {self.spec}")
-        except Exception:                     # noqa: BLE001
-            pass
-        try:
-            if self.callback:
-                self.callback()
-        except Exception:                     # noqa: BLE001
-            pass
+        now = time.perf_counter()
+        with self._lock:
+            if now - self._last_fire < 0.4:
+                return
+            self._last_fire = now
+        self._dispatch(self.callback)
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -151,16 +173,17 @@ class HookHotkey:
                 return _user32.CallNextHookEx(None, n_code, w_param, l_param)
 
             self._proc = _HOOKPROC(handler)
-            self._hook = _user32.SetWindowsHookExW(
-                _WH_KEYBOARD_LL, self._proc, None, 0)
-            self._ok = bool(self._hook)
-            if self._ok:
-                self._msg = f"热键 {self.spec} 已就绪（低级钩子）"
-            else:
-                err = ctypes.get_last_error()
-                self._msg = f"热键 {self.spec} 钩子安装失败（错误码 {err}）"
+            ctypes.set_last_error(0)
+            hook = _user32.SetWindowsHookExW(_WH_KEYBOARD_LL, self._proc, None, 0)
+            ok = bool(hook)
+            with self._lock:
+                self._hook = hook
+                self._ok = ok
+                self._msg = (f"热键 {self.spec} 已就绪（低级钩子）" if ok else
+                             f"热键 {self.spec} 钩子安装失败"
+                             f"（错误码 {ctypes.get_last_error()}）")
             ready.set()
-            if not self._ok:
+            if not ok:
                 return
             msg = wintypes.MSG()
             while True:
@@ -168,33 +191,67 @@ class HookHotkey:
                 if ret == 0:                    # WM_QUIT
                     break
                 if ret == -1:                   # 出错：别静默退出
-                    self._ok = False
-                    self._msg = (f"热键 {self.spec} 消息循环出错"
-                                 f"（{ctypes.get_last_error()}）")
+                    with self._lock:
+                        self._ok = False
+                        self._msg = (f"热键 {self.spec} 消息循环出错"
+                                     f"（{ctypes.get_last_error()}）")
                     break
                 _user32.TranslateMessage(ctypes.byref(msg))
                 _user32.DispatchMessageW(ctypes.byref(msg))
-            if self._hook:
-                _user32.UnhookWindowsHookEx(self._hook)
-                self._hook = None
+            with self._lock:
+                hook, self._hook = self._hook, None
+                self._ok = False
+                if self._msg.startswith("热键") and "已就绪" in self._msg:
+                    self._msg = f"热键 {self.spec} 钩子已退出"
+            if hook:
+                _user32.UnhookWindowsHookEx(hook)
 
-        self._thread = threading.Thread(target=loop, daemon=True)
+        self._thread = threading.Thread(target=loop, name="hotkey-hook", daemon=True)
         self._thread.start()
         ready.wait(timeout=2.0)
-        return self._ok, self._msg
+        with self._lock:
+            return self._ok, self._msg
 
     def stop(self):
-        if self._tid:
-            _user32.PostThreadMessageW(self._tid, _WM_QUIT, 0, 0)
-        self._tid = None
-        self._ok = False
-        self._msg = "已停止"
+        tid = self._tid
+        if tid:
+            _user32.PostThreadMessageW(tid, _WM_QUIT, 0, 0)
+        thread = self._thread
+        if thread and thread.is_alive():
+            thread.join(timeout=1.0)
+        with self._lock:
+            self._tid = None
+            self._ok = False
+            # 句柄交给钩子线程自己清（loop 退出时会 Unhook 并把 _hook 置 None）；
+            # 这里直接清掉的话，线程晚一点退出就少一次 UnhookWindowsHookEx。
+            self._msg = "已停止"
         return True
 
     def status(self):
-        return {"spec": self.spec,
-                "active": bool(self._thread and self._thread.is_alive() and self._ok),
-                "msg": self._msg}
+        """热键此刻真的还挂着吗？
+
+        **不能只看本地 flag**：钩子被系统摘掉（回调超时、线程没了）时
+        `_ok` 还是 True，UI 就会一直显示「已就绪」。这里回读系统状态：
+        句柄还在、线程还活着、线程的消息队列还收得到 PostThreadMessage。
+        """
+        with self._lock:
+            msg = self._msg
+        thread = self._thread
+        alive = bool(thread and thread.is_alive())
+        with self._lock:
+            hook = self._hook
+            ok = self._ok
+            tid = self._tid
+        live = bool(ok and hook and alive)
+        if live and tid:
+            # 消息队列没了 = 线程已被系统回收（GetMessage 已返回）
+            if not _user32.PostThreadMessageW(tid, _WM_NULL, 0, 0):
+                live = False
+                with self._lock:
+                    self._ok = False
+                    self._msg = f"热键 {self.spec} 钩子已失效（消息队列没了）"
+                msg = self._msg
+        return {"spec": self.spec, "active": bool(live), "msg": msg}
 
 
 class Hotkey:
@@ -211,6 +268,18 @@ class Hotkey:
         self._id = 0
         self._ok = False
         self._msg = "未启动"
+        self._lock = threading.RLock()
+
+    def _dispatch(self, fn):
+        """回调挪到工作线程，别卡住消息循环。"""
+        def run():
+            try:
+                if fn:
+                    fn()
+            except Exception:                     # noqa: BLE001
+                pass
+
+        threading.Thread(target=run, name="hotkey-fire", daemon=True).start()
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -226,42 +295,58 @@ class Hotkey:
 
         def loop():
             self._tid = _kernel32.GetCurrentThreadId()
+            ctypes.set_last_error(0)
             ok = _user32.RegisterHotKey(None, self._id, mods, vk)
-            self._ok = bool(ok)
-            if not ok:
-                err = ctypes.get_last_error() if hasattr(ctypes, "get_last_error") else 0
-                self._msg = (f"热键 {self.spec} 注册失败（错误码 {err}）——"
-                             f"多半是别的程序已经占用了，换一个键")
-            else:
-                self._msg = f"热键 {self.spec} 已就绪"
+            with self._lock:
+                self._ok = bool(ok)
+                if not ok:
+                    self._msg = (f"热键 {self.spec} 注册失败"
+                                 f"（错误码 {ctypes.get_last_error()}）——"
+                                 f"多半是别的程序已经占用了，换一个键")
+                else:
+                    self._msg = f"热键 {self.spec} 已就绪"
             ready.set()
             if not ok:
                 return
             msg = wintypes.MSG()
             while _user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 if msg.message == _WM_HOTKEY and msg.wParam == self._id:
-                    try:
-                        if self.callback:
-                            self.callback()
-                    except Exception:
-                        pass
+                    self._dispatch(self.callback)
                 elif msg.message == _WM_QUIT:
                     break
             _user32.UnregisterHotKey(None, self._id)
+            with self._lock:
+                self._ok = False
+                if "已就绪" in self._msg:
+                    self._msg = f"热键 {self.spec} 已退出"
 
-        self._thread = threading.Thread(target=loop, daemon=True)
+        self._thread = threading.Thread(target=loop, name="hotkey-msg", daemon=True)
         self._thread.start()
         ready.wait(timeout=2.0)
-        return self._ok, self._msg
+        with self._lock:
+            return self._ok, self._msg
 
     def stop(self):
-        if self._tid:
-            _user32.PostThreadMessageW(self._tid, _WM_QUIT, 0, 0)
-        self._tid = None
-        self._ok = False
-        self._msg = "已停止"
+        tid = self._tid
+        if tid:
+            _user32.PostThreadMessageW(tid, _WM_QUIT, 0, 0)
+        thread = self._thread
+        if thread and thread.is_alive():
+            thread.join(timeout=1.0)
+        with self._lock:
+            self._tid = None
+            self._ok = False
+            self._msg = "已停止"
         return True
 
     def status(self):
-        return {"spec": self.spec, "active": bool(self._thread and self._thread.is_alive() and self._ok),
-                "msg": self._msg}
+        """回读线程状态：线程死了就不可能还在监听。"""
+        thread = self._thread
+        alive = bool(thread and thread.is_alive())
+        with self._lock:
+            ok = self._ok and alive
+            if self._ok and not alive:
+                self._ok = False
+                self._msg = f"热键 {self.spec} 线程已退出"
+            msg = self._msg
+        return {"spec": self.spec, "active": bool(ok), "msg": msg}

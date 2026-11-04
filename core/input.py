@@ -74,10 +74,30 @@ class _INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("u", _U)]
 
 
+def _cursor_pos():
+    """真实光标位置；读不到（测试桩 / 无桌面）返回 None。
+
+    不要直接用 `_user32.GetCursorPos`：测试里 `_user32` 会被换成只实现了
+    SetCursorPos 的桩，AttributeError 会从「点完之后恢复光标」这一步抛出来，
+    把真正的点击错误盖掉。读不到就不恢复，不影响主流程。
+    """
+    try:
+        p = wintypes.POINT()
+        if _user32.GetCursorPos(ctypes.byref(p)):
+            return p.x, p.y
+    except Exception:                        # noqa: BLE001
+        return None
+    return None
+
+
 class Mouse:
-    def __init__(self, screen, game_hwnd=None, mode="interception"):
-        self._origin_left = screen.bounds["left"]
-        self._origin_top = screen.bounds["top"]
+    def __init__(self, screen=None, game_hwnd=None, mode="interception"):
+        # screen 可为 None：Keyboard.click 的兼容路径只需要「原点 0,0」的
+        # 绝对坐标语义，没必要为了一个原点去造一个 Screen（那要开 mss、
+        # 还要用户有第二个显示器）。以前走 Mouse.__new__ 手填字段，
+        # 漏掉 _mode/_drv_warn 之后第一次 click 才 AttributeError。
+        self._origin_left = screen.bounds["left"] if screen is not None else 0
+        self._origin_top = screen.bounds["top"] if screen is not None else 0
         self._game_hwnd = game_hwnd
         # interception = 驱动注入；legacy = SetCursorPos+PostMessage。
         # 驱动不可用（没装/被杀软清了）时自动退 legacy：宁可慢，不要停。
@@ -185,40 +205,65 @@ class Mouse:
         dx, dy = self._abs(x, y)
         flags = MOUSE_MOVE_ABSOLUTE | MOUSE_VIRTUAL_DESKTOP
         drv = shared()
+        # 按下与抬起必须成对：down 抛异常（驱动被卸、坐标越界）时如果不补
+        # up，驱动侧就留着一个按住的左键 —— 之后所有点击都变成拖拽。
         try:
             drv.send_mouse(0, x=dx, y=dy, flags=flags)       # 光标到位
             drv.send_mouse(MOUSE_LEFT_DOWN, x=dx, y=dy, flags=flags)
-            drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags)
         except InterceptionError as e:
             raise MouseStolen(f"Interception 驱动点击失败：{e}")
+        finally:
+            try:
+                drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags)
+            except InterceptionError as e:
+                raise MouseStolen(f"Interception 驱动抬起失败：{e}")
 
     def _click_messages(self, x, y, verify=True):
         """旧的 PostMessage 点击路径。留着：驱动不可用时的兜底。
 
         游戏必须用「SetCursorPos + PostMessage」组合，不能只发消息：
         它按下时读「当前真实光标位置」（docs/auto-buy-design.md §4.8）。
+
+        **每一步都查返回值**：PostMessageW 返回 0 = 消息没进队列（窗口已
+        退出 / UIPI 拦下 / 句柄失效），以前一律不看，表现是「点了没反应」
+        却查不出原因。光标位置也必须在 finally 里还回去。
         """
         sx, sy = self._origin_left + x, self._origin_top + y
-        _user32.SetCursorPos(sx, sy)
-        time.sleep(0.04)
+        origin = _cursor_pos()
+        try:
+            if not _user32.SetCursorPos(sx, sy):
+                raise MouseStolen(f"SetCursorPos({sx},{sy}) 失败，点不到目标")
+            time.sleep(0.04)
 
-        hwnd = self._game_hwnd or self.foreground()
-        pt = wintypes.POINT(sx, sy)
-        _user32.ScreenToClient(hwnd, ctypes.byref(pt))
-        lp = ((pt.y & 0xFFFF) << 16) | (pt.x & 0xFFFF)
-        _user32.PostMessageW(hwnd, _WM_MOUSEMOVE, 0, lp)
-        time.sleep(0.02)
-        _user32.PostMessageW(hwnd, _WM_LBUTTONDOWN, _MK_LBUTTON, lp)
-        time.sleep(0.06)
-        _user32.PostMessageW(hwnd, _WM_LBUTTONUP, 0, lp)
+            hwnd = self._game_hwnd or self.foreground()
+            if not hwnd:
+                raise MouseStolen("没有目标窗口句柄，无法投递点击")
+            pt = wintypes.POINT(sx, sy)
+            _user32.ScreenToClient(hwnd, ctypes.byref(pt))
+            lp = ((pt.y & 0xFFFF) << 16) | (pt.x & 0xFFFF)
+            # (消息, wParam, 按下后的等待)
+            steps = ((_WM_MOUSEMOVE, 0, 0.02),
+                     (_WM_LBUTTONDOWN, _MK_LBUTTON, 0.06),
+                     (_WM_LBUTTONUP, 0, 0.0))
+            for msg, wp, hold in steps:
+                if not _user32.PostMessageW(hwnd, msg, wp, lp):
+                    raise MouseStolen(
+                        f"PostMessageW(0x{msg:04X}) 失败：窗口 {hwnd} 收不到"
+                        f"点击消息（已退出或被 UIPI 拦下）")
+                if hold:
+                    time.sleep(hold)
 
-        if verify:
-            time.sleep(0.05)
-            cx, cy = self.cursor()
-            if abs(cx - sx) > 6 or abs(cy - sy) > 6:
-                raise MouseStolen(
-                    f"光标没停在目标上（想在 {sx},{sy}，实际 {cx},{cy}）——"
-                    f"有别的程序或人在动鼠标")
+            if verify:
+                time.sleep(0.05)
+                pos = _cursor_pos()
+                if pos is not None and (abs(pos[0] - sx) > 6 or abs(pos[1] - sy) > 6):
+                    raise MouseStolen(
+                        f"光标没停在目标上（想在 {sx},{sy}，实际 {pos[0]},{pos[1]}）——"
+                        f"有别的程序或人在动鼠标")
+        finally:
+            # 光标是用户的东西：点完放回原处，别把用户的鼠标丢在游戏里。
+            if origin is not None:
+                _user32.SetCursorPos(origin[0], origin[1])
 
     @staticmethod
     def ensure_foreground(hwnd, tries=3, gap=0.25, screen=None):
@@ -300,8 +345,9 @@ class Mouse:
 
         实测（`docs/auto-buy-design.md` §4.8）：清掉之后 SetCursorPos 立刻恢复。
 
-        返回是否真的清掉了 —— 有些程序会在下一帧把锁重新设上，
-        调用方可以据此判断要不要重复清。
+        **返回 (ok, had) 二元组，不是布尔**：ok = 这次清锁成功，had = 清之前
+        确实有锁。有些程序会在下一帧把锁重新设上，调用方要据 had 判断「本来
+        就没锁」还是「刚被重新锁上」。别拿它当 bool 用（元组恒为真）。
         """
         before = wintypes.RECT()
         had = bool(_user32.GetClipCursor(ctypes.byref(before)))
@@ -324,24 +370,6 @@ class Mouse:
         moved = (p.x, p.y) == probe
         _user32.SetCursorPos(x0, y0)        # 放回去，别弄乱用户的鼠标
         return not moved
-
-
-class _KEYBDINPUT(ctypes.Structure):
-    _fields_ = [
-        ("wVk", wintypes.WORD),
-        ("wScan", wintypes.WORD),
-        ("dwFlags", wintypes.DWORD),
-        ("time", wintypes.DWORD),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
-    ]
-
-
-class _KEYINPUT(ctypes.Structure):
-    class _U(ctypes.Union):
-        _fields_ = [("ki", _KEYBDINPUT)]
-
-    _anonymous_ = ("u",)
-    _fields_ = [("type", wintypes.DWORD), ("u", _U)]
 
 
 # 扫描码表：游戏读的是硬件扫描码，不是虚拟键码
@@ -372,6 +400,11 @@ VK = {
     "F6": 0x75, "F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79,
     "F11": 0x7A, "F12": 0x7B,
 }
+# 字母和数字也必须补齐：legacy 路径拿 VK 当 wParam，表里查不到就是 None，
+# PostMessageW(hwnd, WM_KEYDOWN, None, ...) 会被按 0 处理 —— 打字和字母
+# 快捷键全部静默失效（扫描码表里有，容易漏掉这一张）。
+VK.update({chr(c): c for c in range(0x41, 0x5B)})     # A-Z
+VK.update({chr(c): c for c in range(0x30, 0x3A)})     # 0-9
 
 # 扩展键（键盘右侧小键盘区/方向键区）：Interception 驱动注入要带 KEY_E0
 # 位，PostMessage 兜底路径要 bit24 扩展标志。表里没有的键都不是扩展键。
@@ -465,13 +498,10 @@ class Keyboard:
         from .input import Mouse  # 本模块内的自引用，避免循环导入
         m = getattr(self, "_mouse_for_click", None)
         if m is None:
-            m = Mouse.__new__(Mouse)
-            m._origin_left = m._origin_top = 0
-            m._game_hwnd = self.hwnd
-            m._vx = _user32.GetSystemMetrics(_SM_XVIRTUALSCREEN)
-            m._vy = _user32.GetSystemMetrics(_SM_YVIRTUALSCREEN)
-            m._vw = max(1, _user32.GetSystemMetrics(_SM_CXVIRTUALSCREEN) - 1)
-            m._vh = max(1, _user32.GetSystemMetrics(_SM_CYVIRTUALSCREEN) - 1)
+            # 走正常构造，别用 __new__ 手填字段：__new__ 绕过了
+            # __init__ 里的模式判定（_mode / _drv_warn / 虚拟屏尺寸），
+            # 少填一个就 AttributeError，而报错点在「第一次点击」时才出现。
+            m = Mouse(None, game_hwnd=self.hwnd, mode=self._mode)
             self._mouse_for_click = m
         m.click(x, y)
 
@@ -482,25 +512,33 @@ class Keyboard:
         （实测典藏外观列表滚 12 屏纹丝不动）。驱动注入的滚轮是真实
         事件，**但仍要先动光标**：游戏按「当前光标位置」决定把滚动
         交给哪个区域。所以这里保留 SetCursorPos，滚动本身走驱动。
+
+        滚完把光标放回原处：一次翻页要滚 6 格（约 1 秒），期间游戏全屏、
+        用户碰不到鼠标；不放回去会让用户的鼠标停在列表中间。
         """
-        _user32.SetCursorPos(int(x), int(y))
-        time.sleep(0.05)
-        step = 120
-        if self._mode == "legacy":
+        ox_oy = _cursor_pos()
+        try:
+            _user32.SetCursorPos(int(x), int(y))
+            time.sleep(0.05)
+            step = 120
+            if self._mode == "legacy":
+                for _ in range(abs(int(notches))):
+                    delta = step if int(notches) > 0 else -step
+                    _user32.mouse_event(0x0800, 0, 0, delta, 0)  # MOUSEEVENTF_WHEEL
+                    time.sleep(0.12)
+                time.sleep(0.2)
+                return True
+            from .interception import MOUSE_WHEEL, shared
             for _ in range(abs(int(notches))):
                 delta = step if int(notches) > 0 else -step
-                _user32.mouse_event(0x0800, 0, 0, delta, 0)  # MOUSEEVENTF_WHEEL
+                # rolling 是有符号 i16：120 = 向上一格
+                shared().send_mouse(MOUSE_WHEEL, rolling=delta)
                 time.sleep(0.12)
             time.sleep(0.2)
             return True
-        from .interception import MOUSE_WHEEL, shared
-        for _ in range(abs(int(notches))):
-            delta = step if int(notches) > 0 else -step
-            # rolling 是有符号 i16：120 = 向上一格
-            shared().send_mouse(MOUSE_WHEEL, rolling=delta)
-            time.sleep(0.12)
-        time.sleep(0.2)
-        return True
+        finally:
+            if ox_oy is not None:
+                _user32.SetCursorPos(ox_oy[0], ox_oy[1])
 
 
 # ---------------- 完整性级别（UIPI） ----------------
@@ -552,37 +590,45 @@ def process_integrity(hwnd=None):
         h = kernel32.OpenProcess(0x1000, False, pid.value)
         if not h:
             return None
+        # 这个句柄是自己开的，必须自己关；不关就是每次查完整性泄漏一个
+        # 内核句柄（preflight 每次启动都查，长时间跑会耗光）。
+        own_handle = True
     else:
         h = kernel32.GetCurrentProcess()
+        own_handle = False
 
     token = wintypes.HANDLE()
-    if not advapi32.OpenProcessToken(h, token_query, ctypes.byref(token)):
-        return None
     try:
-        n = wintypes.DWORD()
-        advapi32.GetTokenInformation(token, token_integrity_level,
-                                    None, 0, ctypes.byref(n))
-        if not n.value:
-            return None
-        buf = ctypes.create_string_buffer(n.value)
-        advapi32.GetTokenInformation(token, token_integrity_level,
-                                    buf, n.value, ctypes.byref(n))
-        label = ctypes.cast(buf, ctypes.POINTER(_TOKEN_MANDATORY_LABEL)).contents
-        advapi32.ConvertSidToStringSidW.restype = ctypes.c_void_p
-        advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p,
-                                                     ctypes.POINTER(ctypes.c_void_p)]
-        p = ctypes.c_void_p()
-        if not advapi32.ConvertSidToStringSidW(label.Label.Sid, ctypes.byref(p)):
+        if not advapi32.OpenProcessToken(h, token_query, ctypes.byref(token)):
             return None
         try:
-            rid = int(ctypes.wstring_at(p).split("-")[-1])
+            n = wintypes.DWORD()
+            advapi32.GetTokenInformation(token, token_integrity_level,
+                                        None, 0, ctypes.byref(n))
+            if not n.value:
+                return None
+            buf = ctypes.create_string_buffer(n.value)
+            advapi32.GetTokenInformation(token, token_integrity_level,
+                                        buf, n.value, ctypes.byref(n))
+            label = ctypes.cast(buf, ctypes.POINTER(_TOKEN_MANDATORY_LABEL)).contents
+            advapi32.ConvertSidToStringSidW.restype = ctypes.c_void_p
+            advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p,
+                                                        ctypes.POINTER(ctypes.c_void_p)]
+            p = ctypes.c_void_p()
+            if not advapi32.ConvertSidToStringSidW(label.Label.Sid, ctypes.byref(p)):
+                return None
+            try:
+                rid = int(ctypes.wstring_at(p).split("-")[-1])
+            finally:
+                kernel32.LocalFree(p)
+            return rid
+        except Exception:
+            return None
         finally:
-            kernel32.LocalFree(p)
-        return rid
-    except Exception:
-        return None
+            kernel32.CloseHandle(token)
     finally:
-        kernel32.CloseHandle(token)
+        if own_handle:
+            kernel32.CloseHandle(h)
 
 
 def integrity_name(rid):

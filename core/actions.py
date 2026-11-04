@@ -43,7 +43,12 @@ def _open_devices(cfg, log=None):
     say = _log_fn(log)
     screen = Screen(cfg.get("monitor") or 1)
     try:
-        hwnd = find_game_window() or Mouse.foreground()
+        # **找不到目标窗口就失败，不许拿前台窗口顶替。** 前台可能是控制台
+        # 自己、浏览器、IDE —— 拿它当游戏，点击/POST 全都落在错的窗口上，
+        # 表现是「程序一直在点，游戏毫无反应」，而且日志看不出原因。
+        hwnd = find_game_window()
+        if not hwnd:
+            raise NavError("找不到游戏窗口（UnrealWindow）—— 先把游戏开起来")
         mode = cfg.get("input_mode") or "interception"
         mouse = Mouse(screen, game_hwnd=hwnd, mode=mode)
         # **必须先把游戏提到前面**：控制台窗口压在游戏上时，游戏按真实

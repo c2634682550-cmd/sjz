@@ -30,6 +30,11 @@ _CURRENCY = re.compile(r"[¥￥]\s*(\d[\d,]*(?:\.\d+)?)")
 
 # 数字之间的空格（可能连着 OCR 认错的单字，如 `15 囤 00`）
 _DIGIT_GAP = re.compile(r"(?<=\d)\s*[\u4e00-\u9fff]?\s*(?=\d)")
+# 「小数 + 间隔 + 一笔价格」的数字串：小数段要先保护起来，见 _squeeze_digits。
+# 条件是后面那笔数至少 4 位（或带千位逗号），否则它更像是磨损值被 OCR 拆开
+# 了（`0.583 172` 应该合成 `0.583172`，不能挤出一个 172 的价格）。
+_DECIMAL_TAIL = re.compile(
+    r"(\d[\d,]*\.\d+)(\s*[\u4e00-\u9fff]?\s*)(?=\d[\d,]{3,}|\d+,\d)")
 
 # 型号 token：字母开头、内部含数字（QBZ95-1 / M250 / MP7 / KC17 / S2）。
 # 这些数字**不是价格**，必须先从文本里摘掉再取数。
@@ -54,15 +59,30 @@ def _squeeze_digits(text):
 
     `15 000` -> `15000`；`15 囤 00` -> `15000`；`015 252` -> `015252`。
     只处理「空格/单个汉字夹在两个数字之间」的情况，不动正常文字。
+
+    **小数不能被挤。** `0.120 9,500`（磨损 + 价格）里的空格左边属于磨损值
+    `0.120`，挤掉就变成 `0.1209,500`，切出 `0.1209` 和 `500` —— 价格读成
+    500，pick() 立刻挑中它去买贵的。所以先把小数整段保护起来，挤完再还原。
     """
     if not text:
         return text
+    held = []
+
+    def _hold(m):
+        held.append(m.group(1))
+        # 只把小数段换成占位符，中间的空格原样留着 —— 挤空格时占位符
+        # 左边不是数字，`(?<=\d)` 就不会跨过小数和小数后面那笔价格。
+        return f"\x00{len(held) - 1}\x00" + m.group(2)
+
+    tmp = _DECIMAL_TAIL.sub(_hold, text)
     prev = None
-    cur = text
+    cur = tmp
     # 反复挤，直到稳定（`15 囤 000` 这类可能要两轮）
     while cur != prev:
         prev = cur
         cur = _DIGIT_GAP.sub("", cur)
+    for i, tok in enumerate(held):
+        cur = cur.replace(f"\x00{i}\x00", tok)
     return cur
 
 
@@ -263,7 +283,10 @@ class Scanner:
             return scan(img, **kw)
 
         kw = {} if self.delta is None else {"delta": self.delta}
-        changed = cardmod.changed_cards(self.prev, img, found, **kw)
+        # prev_cards 必须传：两帧卡片数不一样时（翻页/刷新）下标不能按位置
+        # 对应，否则会把上一批的缓存（名字、价格）当成新卡用。
+        changed = cardmod.changed_cards(self.prev, img, found,
+                                        prev_cards=self.cards, **kw)
         read = self.read_text or ocr.read_text
 
         rows = []
@@ -446,9 +469,14 @@ def check(row, task):
 
     lo = float(task.get("min_price") or 0)
     hi = float(task.get("max_price") or 0)
-    if lo or hi:
-        if row["price"] is None:
+    if row["price"] is None:
+        # **价格读不出来就默认拦掉。** 只有显式配置 allow_unknown_price 才放行。
+        # 以前只在配了上下限时才拦：没配限价（最常见）的行价一律放行，OCR 读
+        # 残的那条（价格 None）总被当成「最便宜」，pick() 永远第一个挑它，
+        # 点进去买的是条没核对过价格的挂单。
+        if not task.get("allow_unknown_price"):
             return False, "价格没读出来"
+    else:
         if lo and row["price"] < lo:
             return False, f"价格 {row['price']:.0f} 低于下限 {lo:.0f}"
         if hi and row["price"] > hi:
@@ -487,17 +515,32 @@ def check(row, task):
     return True, f"符合（{score}）"
 
 
+def _same_spot(row, spot):
+    """exclude 里的一个元素是不是就是指这一行。
+
+    老调用方传的是一行的 y（浮点）；新调用方传 (x0, cy) 二元组。**只按 y
+    比会误伤**：交易行列表是网格排布，同一横排的几张卡 y 完全相同，按 y
+    排除会把整排剩下的卡一起判成「已经点过」—— 那一排永远不再点。
+    """
+    if isinstance(spot, (tuple, list)):
+        if len(spot) < 2:
+            return abs(row["cy"] - float(spot[0])) <= 6
+        return (abs(row["cy"] - float(spot[1])) <= 6 and
+                abs(row["x0"] - float(spot[0])) <= 8)
+    return abs(row["cy"] - float(spot)) <= 6
+
+
 def pick(rows, task, exclude=None):
     """从行里挑一条。返回 (row, 原因, 全部诊断)。
 
-    exclude 是已经点过的行的 y 坐标，避免同一行反复点。
+    exclude 是已经点过的位置：老的传 y，新的传 (x0, cy)，两种都认。
     排序按任务的 sort 字段：price（默认，捡漏就是找最便宜的）。
     """
     exclude = exclude or []
     diag = []
     hits = []
     for row in rows:
-        if any(abs(row["cy"] - y) <= 6 for y in exclude):
+        if any(_same_spot(row, spot) for spot in exclude):
             diag.append({"text": row["text"], "ok": False, "why": "已经点过"})
             continue
         ok, why = check(row, task)

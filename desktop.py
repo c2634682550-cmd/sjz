@@ -282,7 +282,13 @@ def main():
         webview.start()
 
         # 用户关窗：正常退出，进程跟着结束（服务线程是 daemon）。
-        if closed["value"] or win.events.closed.wait(0.5):
+        # 老版本 pywebview 没有 win.events（上面注册回调时就已 try 兜住），
+        # 这里再直接摸它一次会 AttributeError → 掉进下面的 except，被当成
+        # 「开窗失败」去开浏览器 + 常驻服务，用户会看到两个窗口。
+        events = getattr(win, "events", None)
+        closed_evt = getattr(events, "closed", None)
+        if closed["value"] or (closed_evt is not None
+                               and closed_evt.wait(0.5)):
             _log("窗口已关闭，退出")
             return 0
 
@@ -308,7 +314,7 @@ def main():
         return 0
 
 
-def _serve_until_interrupt(thread, idle_exit_s=180):
+def _serve_until_interrupt(thread, idle_exit_s=180, tick_s=10.0):
     """浏览器模式下等服务线程结束。
 
     这条路没有窗口可关，只能靠 Ctrl+C / 任务管理器 —— 所以至少要
@@ -318,6 +324,13 @@ def _serve_until_interrupt(thread, idle_exit_s=180):
     自己退出。以前没有这一步，用户关掉标签后进程一直挂着、占着端口和
     单实例闸，下次双击只会看到「已经有一个实例在跑」而屏幕上什么都没有 ——
     从用户角度看就是「程序关不掉」。
+
+    看门狗有个前提：**它盯的那个线程还活着**。所以每轮醒来都要先确认一遍，
+    线程没了就收工，绝不 os._exit —— 这一条以前漏了，后果很吓人：谁调用
+    `_serve_until_interrupt` 时进程已经跑了 180 秒以上（idle_seconds 早就
+    超了），看门狗第一轮醒来就把整个进程干掉，哪怕它盯的线程 0.05 秒前就
+    结束了。实测就是整跑 pytest 时在 81% 无声退出、exit code 还是 0
+    （os._exit 绕过 atexit，junit 都来不及写）。
     """
     _log(f"浏览器模式：关掉页面后约 {idle_exit_s // 60} 分钟会自动退出"
          "（也可以直接 Ctrl+C）")
@@ -325,7 +338,9 @@ def _serve_until_interrupt(thread, idle_exit_s=180):
 
     def _watch():
         while thread.is_alive():
-            time.sleep(10)
+            time.sleep(tick_s)
+            if not thread.is_alive():
+                return                   # 服务线程已经结束，看门狗跟着收工
             if _srv.idle_seconds() < idle_exit_s:
                 continue
             if _srv.busy():

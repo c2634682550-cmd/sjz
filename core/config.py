@@ -129,7 +129,7 @@ DEFAULTS = {
             "timeout_s": 5.0,
             "cache": 64,                      # 同图缓存条数
             "max_side": 2560,                 # 超过就先缩图再发
-            "min_score": 0.35,                # 低于这个置信度的行丢掉
+            "min_score": 0.5,                 # 低于这个置信度的行丢掉（与 ocr_ppocr 默认一致）
             "model": "PP-OCRv6 small",        # 只用于自检显示，不影响请求
             "cooldown_s": 30.0,
             "fail_limit": 3,                  # 连续失败几次就长时间停用
@@ -157,14 +157,106 @@ _save_lock = threading.RLock()
 # 任务 id 的形态（scheduler 用 uuid4().hex[:8] 生成）
 _TASK_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 
+# 抢购路线的唯一枚举。`workflow` 是**唯一真源**，`mode`（list/detail）
+# 只是它的派生视图 —— 以前两个字段各自为政，`workflow:"countdown"` +
+# `mode:"list"` 的任务会让前置检查去看列表区域（审查 S7）。
+WORKFLOWS = ("countdown", "list", "detail")
+TRIGGER_MODES = ("vanish", "appear")
+
+
+class ConfigLoadError(RuntimeError):
+    """config.json 读不出来（被占用 / 权限 / 一直是坏文件）。
+
+    抛这个而不是退回默认值：`transaction()` 一退就会 `_save_locked()`，
+    拿默认值回写等于把用户的框选 / 队列 / 阈值整份抹掉，不可逆（审查 S1）。
+    """
+
+
+def normalize_workflow(value, fallback="countdown"):
+    """把任意输入归一成合法路线；不认识就退回 fallback。"""
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in WORKFLOWS:
+            return v
+    return fallback
+
+
+def mode_for_workflow(workflow):
+    """workflow → 引擎的 mode（list / detail）。"""
+    return "list" if normalize_workflow(workflow) == "list" else "detail"
+
+
+def task_workflow(task, fallback="countdown"):
+    """任务走哪条路线。workflow 优先；老任务没有它时按 mode 迁移。"""
+    task = task or {}
+    wf = normalize_workflow(task.get("workflow"), "")
+    if wf:
+        return wf
+    legacy = task.get("mode")
+    if legacy == "list":
+        return "list"
+    if legacy == "detail":
+        return "detail"
+    return normalize_workflow(fallback)
+
 
 class Config:
     def __init__(self, data=None):
         self.data = json.loads(json.dumps(DEFAULTS))
         if data:
             self._merge(data)
+        self._normalize()
         for d in (TEMPLATE_DIR, DATA_DIR):
             os.makedirs(d, exist_ok=True)
+
+    def _normalize(self):
+        """加载期归一：非法值不留在内存里，交给下游一个自洽的配置。
+
+        三件事（审查 S6/S7/S25）：
+          · `trigger_mode` 只允许 vanish/appear，仓库里那个 "countdown"
+            会被引擎当成 appear（>vanish）又按 vanish 记日志 —— 统一成 vanish；
+          · `workflow` 是唯一真源，`mode` 由它派生；老配置只有 `mode` 时
+            迁移成 workflow；
+          · 队列里每条任务同样归一，并把 `fire_at` 变成数字（`pending.sort`
+            以前直接 `t["fire_at"]`，缺字段就 KeyError 打死调度线程）。
+        """
+        d = self.data
+        trig = d.get("trigger_mode")
+        d["trigger_mode"] = trig if trig in TRIGGER_MODES else "vanish"
+
+        wf = normalize_workflow(d.get("workflow"), "")
+        if not wf:
+            legacy = d.get("mode")
+            wf = ("list" if legacy == "list"
+                  else "detail" if legacy == "detail" else "countdown")
+        d["workflow"] = wf
+        d["mode"] = mode_for_workflow(wf)
+
+        if not isinstance(d.get("queue"), list):
+            d["queue"] = []
+        d["queue"] = [t for t in d["queue"] if isinstance(t, dict)]
+        if not isinstance(d.get("regions"), dict):
+            d["regions"] = json.loads(json.dumps(DEFAULTS["regions"]))
+        for name, box in list(d["regions"].items()):
+            if box is not None and not isinstance(box, dict):
+                d["regions"][name] = None
+        if not isinstance(d.get("console"), dict):
+            d["console"] = json.loads(json.dumps(DEFAULTS["console"]))
+        if not isinstance(d.get("filter_defaults"), dict):
+            d["filter_defaults"] = json.loads(json.dumps(DEFAULTS["filter_defaults"]))
+
+        for t in d["queue"]:
+            twf = task_workflow(t, wf)
+            t["workflow"] = twf
+            t["mode"] = mode_for_workflow(twf)
+            try:
+                t["fire_at"] = float(t.get("fire_at") or 0)
+            except (TypeError, ValueError):
+                t["fire_at"] = 0.0
+            if not isinstance(t.get("regions"), dict):
+                t["regions"] = {}
+            if not isinstance(t.get("status"), str) or not t.get("status"):
+                t["status"] = "pending"
 
     def _merge(self, data):
         for k, v in data.items():
@@ -253,7 +345,7 @@ class Config:
         Windows 会抛 PermissionError（共享冲突）。
         """
         with _save_lock:
-            return cls._load_locked()
+            return cls._load_locked()[0]
 
     @classmethod
     @contextlib.contextmanager
@@ -266,9 +358,17 @@ class Config:
         为什么需要：调用方各自 load() → 改 → save()，各自持一份全量
         快照，后写的会把先写的整份覆盖 —— 这就是「设置改完自己变回去」
         的根因。整段持锁之后，读到的永远是最新盘上内容。
+
+        **读失败不打盘**（审查 S1）：以前读失败会拿到一份默认值，退出时
+        照样 `_save_locked()` —— 被占用/权限问题就变成整份配置被默认值
+        覆盖。这里改为抛 ConfigLoadError：调用方报错或跳过本次写入。
         """
         with _save_lock:
-            cfg = cls._load_locked()
+            cfg, ok = cls._load_locked()
+            if not ok:
+                raise ConfigLoadError(
+                    "config.json 读不出来（被占用或权限不足），"
+                    f"本次不写盘以免覆盖原文件：{CONFIG_PATH}")
             yield cfg
             cfg._save_locked()
 
@@ -277,33 +377,49 @@ class Config:
 
         给长时间运行的循环用：引擎在跑一轮抢购时手上握着 cfg 对象，
         想让用户中途改的筛选条件生效，就得让这个对象的 data 换成最新的。
+
+        **读失败原样保留**（审查 S5）：以前失败会拿到默认值再 update 进来，
+        引擎手上的 regions / active_task 被清空，下一轮直接按「没框选」
+        报错。失败就什么都不改。
         """
         with _save_lock:
-            fresh = self._load_locked()
+            fresh, ok = self._load_locked()
+            if not ok:
+                print("[config] reload 失败，保留当前内存里的配置")
+                return self
             self.data.clear()
             self.data.update(fresh.data)
         return self
 
     @classmethod
     def _load_locked(cls):
-        """真正的读。调用方必须已经持有 _save_lock（所以不能调 save()）。"""
+        """真正的读。调用方必须已经持有 _save_lock（所以不能调 save()）。
+
+        返回 `(配置, 是否读到合法配置)`。第二项为 False 时调用方**禁止写盘**。
+        """
         if not os.path.isfile(CONFIG_PATH):
             cfg = cls()
             cfg._save_locked()                     # 第一次运行：把默认值落盘
-            return cfg
+            return cfg, True
 
         for attempt in range(9):
             try:
                 with open(CONFIG_PATH, encoding="utf-8") as f:
-                    return cls(json.load(f))
+                    data = json.load(f)
+                # 顶层不是对象（"abc" / 123 / [...]）同样当坏文件：以前这种
+                # 内容进 _merge 会 AttributeError，或者被当成合法配置悄悄
+                # 补全默认值，用户看到的是「配置自己重置了」（审查 S1）。
+                if not isinstance(data, dict):
+                    raise ValueError(f"顶层不是 JSON 对象（{type(data).__name__}）")
+                return cls(data), True
             except ValueError as e:
-                # **只有 JSON 坏了才留档重置**（手改漏个逗号最常见）。
+                # **只有内容坏了才留档重置**（手改漏个逗号最常见）。
                 # 以前这里连 OSError 一起吞，把「文件被占用」也当成「文件坏了」，
                 # 会把好好的配置备份走再重置 —— 那是数据丢失。
                 cls._quarantine(e)
                 cfg = cls()
                 cfg._save_locked()
-                return cfg
+                return cfg, True
             except OSError:
                 # 读不了（被占用/权限）≠ 文件坏了：重试，最后兜底用默认值
                 # 但**不落盘**，下次启动再试。
@@ -312,13 +428,15 @@ class Config:
                     continue
                 print(f"[config] config.json 暂时读不了（被占用？），"
                       f"本次用默认值，不覆盖原文件：{CONFIG_PATH}")
-                return cls()
+                return cls(), False
 
     @staticmethod
     def _quarantine(err):
         """把坏掉的 config.json 改名留档，返回备份路径（失败返回 None）。"""
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        backup = f"{CONFIG_PATH}.broken-{stamp}"
+        # 保留 `.broken-<ts>` 段（现有测试按这个前缀断言），末尾再带 `.bad`
+        # 标记，一眼能看出这是坏掉的配置备份。
+        backup = f"{CONFIG_PATH}.broken-{stamp}.bad"
         try:
             os.replace(CONFIG_PATH, backup)
             print(f"[config] config.json 读不出来（{err}），已备份为 "

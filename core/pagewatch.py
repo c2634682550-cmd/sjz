@@ -18,6 +18,10 @@ import time
 import cv2
 import numpy as np
 
+# 控制台窗口标题里会出现这些标记（desktop.py 的 WINDOW_TITLE 前缀）。
+# 前台窗口标题命中就认为「控制台挡在游戏前面」，不去认页面。
+_CONSOLE_TITLES = ("SJZ 抢购控制台", "SJZ 控制台")
+
 
 class PageWatcher:
     """后台盯着当前页面。start() 之后 snapshot() 随时能拿到。"""
@@ -31,6 +35,10 @@ class PageWatcher:
 
     def __init__(self, monitor=1, interval=1.5, nav_factory=None):
         self.interval = interval
+        # 用户选的那块屏（配置里的 monitor）。以前构造函数收了参数却
+        # 从来不存，`_make_nav` 硬编码 `Screen(1)` —— 选 2 号屏的用户
+        # 永远认的是 1 号屏（审查 S19）。
+        self.monitor = monitor
         self._nav_factory = nav_factory    # 可注入，便于测试
         self._lock = threading.Lock()
         self._page = "unknown"
@@ -76,7 +84,7 @@ class PageWatcher:
         from .input import Mouse
         from .nav import Navigator
         from .screen import Screen
-        screen = Screen(1)
+        screen = Screen(self.monitor)
         self._nav = Navigator(screen, Mouse(screen), snap=screen.grab,
                               dry_run=False)
         return self._nav
@@ -120,15 +128,30 @@ class PageWatcher:
 
     @staticmethod
     def _own_window_in_front():
-        """前台窗口是不是我们自己（控制台窗口）。"""
+        """前台窗口是不是「我们自己」（控制台窗口）。
+
+        只比 PID 是不够的：桌面版的控制台可能是 WebView2 / 浏览器宿主 /
+        打包后的 exe，**开的进程和我们并不相同**，PID 永远对不上，
+        于是控制台压着游戏时照样去认页面，抓到的全是控制台自己的字（审查 S12）。
+        所以：本进程的窗口算我们的；标题是这个控制台标题的窗口也算我们的。
+        """
         try:
             import ctypes
             from ctypes import wintypes
             u = ctypes.windll.user32
             fg = u.GetForegroundWindow()
+            if not fg:
+                return False
             pid = wintypes.DWORD()
             u.GetWindowThreadProcessId(fg, ctypes.byref(pid))
-            return pid.value == os.getpid()
+            if pid.value == os.getpid():
+                return True
+            # 控制台是独立宿主进程时按标题认（desktop.py 里那个窗口标题）
+            u.GetWindowTextW.restype = ctypes.c_int
+            buf = ctypes.create_unicode_buffer(256)
+            u.GetWindowTextW(fg, buf, 256)
+            title = buf.value or ""
+            return any(mark in title for mark in _CONSOLE_TITLES)
         except Exception:
             return False
 
