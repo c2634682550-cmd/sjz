@@ -104,6 +104,21 @@ class NavColPanel:
         """浮层是否展开（自己抓屏）。"""
         return self._dropdown_open_img(self._snap())
 
+    def _dropdown_open_settled(self, tries=2, gap=0.12):
+        """判浮层开没开，读不到再确认一次。
+
+        **单次判断不可靠。** 判据是「面板上能不能读出赛季选项名」，而 OCR
+        偶尔就是读不到 —— 这时会把「明明开着」判成「没开」，于是再点一下
+        把它收起来，下一轮又判「没开」再点一下才展开。用户看到的就是
+        「赛季下拉点了两次」（每次还白等 0.9 秒）。
+        """
+        for i in range(tries):
+            if self._dropdown_open():
+                return True
+            if i + 1 < tries:
+                time.sleep(gap)
+        return False
+
     def _dropdown_open_img(self, img):
         """浮层是否展开。
 
@@ -330,8 +345,12 @@ class NavColPanel:
 
         # 先确保面板开着（col_filter 自带「已开就不点」的判断）
         if not self._panel_open():
-            self.col_filter()
-            time.sleep(0.8)
+            # 再确认一次：这里误判的代价是**再点一次筛选按钮**，而那一按
+            # 会把刚打开的面板关掉，后面所有操作全落空。
+            time.sleep(0.15)
+            if not self._panel_open():
+                self.col_filter()
+                time.sleep(0.8)
 
         # 已经是目标赛季就别再滚一遍下拉：选一次要滚 3 屏、每屏一次 OCR，
         # 实测十几秒；读一眼下拉框只要一次 OCR。
@@ -346,14 +365,23 @@ class NavColPanel:
         # 射手'] —— 那是面板里的复选框文字，说明浮层其实没开着）。
         #
         # 复位方式：点一下下拉框（收/开各一次），每次都验证。不猜初始
-        # 状态 —— 点一次的结果直接决定下一步，最多 4 次就能到「展开」。
+        # 状态 —— 点一次的结果直接决定下一步。
+        # 判断用 _dropdown_open_settled（读不到会再确认一次），点完**轮询**
+        # 而不是固定等 0.9 秒：展开得快时 0.3 秒就能往下走。
         opened = False
         for _ in range(4):
-            if self._dropdown_open():
+            if self._dropdown_open_settled():
                 opened = True
                 break
             self.click(COL_SEASON, "赛季下拉", expect_change=False)
-            time.sleep(0.9)
+            t_open = time.perf_counter()
+            while time.perf_counter() - t_open < 0.9:
+                if self._dropdown_open_settled(tries=1):
+                    opened = True
+                    break
+                time.sleep(0.08)
+            if opened:
+                break
         if not opened:
             raise NavError("点了赛季下拉但没展开（读不到首项文字）")
 
@@ -748,26 +776,46 @@ class NavColPanel:
             self.say("筛选面板状态已经和目标一致，一个框都不用点", "info")
             return now
 
+        def _missing(state):
+            """哪些框的状态还不对（和上面 todo 的 label 同名，便于补点）。"""
+            bad = []
+            if tier is not None:
+                for i, want in enumerate(tier):
+                    if state["tier"][i] != want:
+                        bad.append(f"品阶[{i}]")
+            if guns is not None:
+                for name, want in guns.items():
+                    if state["guns"].get(name) != want:
+                        bad.append(f"枪种「{name}」")
+            if owned is not None and state["owned"] != owned:
+                bad.append("已拥有")
+            if not_owned is not None and state["not_owned"] != not_owned:
+                bad.append("未拥有")
+            return bad
+
+        # 每个框点完只等 0.15 秒：勾选框是**即时切换**的，0.35 秒纯属白等
+        # （9 个框就是 3 秒，抢购里够别人把货买走了）。真被吞了事件的话，
+        # 下面统一校验会抓出来并补点一次。
         for label, pt, want in todo:
             x, y = self.pt(pt)
             self.mouse.click(x, y, verify=False)
-            time.sleep(0.35)
-        time.sleep(0.4)
+            time.sleep(0.15)
+        time.sleep(0.25)
 
         after = self._read_boxes(self._snap())
-        bad = []
-        if tier is not None:
-            for i, want in enumerate(tier):
-                if after["tier"][i] != want:
-                    bad.append(f"品阶[{i}]")
-        if guns is not None:
-            for name, want in guns.items():
-                if after["guns"].get(name) != want:
-                    bad.append(f"枪种「{name}」")
-        if owned is not None and after["owned"] != owned:
-            bad.append("已拥有")
-        if not_owned is not None and after["not_owned"] != not_owned:
-            bad.append("未拥有")
+        bad = _missing(after)
+        if bad:
+            # 补点一次：游戏刚切到前台时，第一下点击偶尔会被吞掉
+            again = [t for t in todo if t[0] in bad]
+            if again:
+                self.say(f"有 {len(bad)} 个框没生效，补点一次：{bad}", "warn")
+                for label, pt, want in again:
+                    x, y = self.pt(pt)
+                    self.mouse.click(x, y, verify=False)
+                    time.sleep(0.18)
+                time.sleep(0.3)
+                after = self._read_boxes(self._snap())
+                bad = _missing(after)
         if bad:
             raise NavError(
                 f"点了 {len(todo)} 个框，但 {bad} 的状态还是不对 —— "
@@ -860,8 +908,26 @@ class NavColPanel:
         time.sleep(0.6)
 
     def skin_scroll_top(self, max_notches=40):
-        """把皮肤列表滚回顶。"""
-        self.skin_scroll(-max_notches)
+        """把皮肤列表滚回顶。
+
+        **不能固定滚满 40 格**：一格 0.18 秒，40 格就是 7.2 秒，而每扫一次
+        列表开头都要滚一次（真机上「筛选完到点中卡片」要 20 多秒，一半耗在
+        这里）。改成边滚边看：每 6 格读一眼列表，第一项不再变化就说明到底了。
+        """
+        x = self._SKIN_LIST_X[0] + 120
+        prev = None
+        done = 0
+        while done < max_notches:
+            for _ in range(min(6, max_notches - done)):
+                self.keyboard.wheel(x, 600, 1)       # 正数向上
+                time.sleep(0.12)
+                done += 1
+            time.sleep(0.35)
+            items = self.skin_items()
+            first = items[0][0] if items else None
+            if first is not None and first == prev:
+                break                                 # 滚不动了 = 到顶
+            prev = first
 
     # 选中皮肤的**完整名字**（标题）。
     #
@@ -892,11 +958,16 @@ class NavColPanel:
         if not rows:
             return ""
         # 框里偶尔会多出一行（上边框的装饰字、残留的标签）。皮肤名一定
-        # 含枪种关键词，按这个挑，挑不到才退回第一行。
+        # 含枪种关键词，按这个挑。
+        # **挑不到就返回空，不能退回第一行**：退回第一行会把「默认」
+        # 「相似皮肤」这种无关文字当成标题返回，调用方（SkinFinder）拿它
+        # 去比对，相似度 0.00 → 判「不是它」→ 明明是对的卡片被否掉，
+        # 于是反复点开下一张 —— 又慢又容易点错（真机日志：「点开是「默认」
+        # （0.00），不是它」）。空字符串让调用方知道「这次没读到，再等一会儿」。
         for r in rows:
             if any(w in r["text"] for w in self._SKIN_NAME_WORDS):
                 return r["text"].strip()
-        return rows[0]["text"].strip()
+        return ""
 
     def close_filter_panel(self):
         """把开着的筛选面板关掉（「确认」按钮的位置两种布局都一样）。
@@ -927,17 +998,40 @@ class NavColPanel:
     def goto_collection(self):
         """走到典藏外观页（从任何状态都能进）。
 
-        步骤：关掉可能开着的筛选面板 → 判断是不是在市场页 → 不是就按 F4
-        进市场 → 切到典藏外观标签。
+        步骤：关掉可能开着的筛选面板 → **在售页/详情页先按 Esc 退回上一级**
+        → 不是市场页就按 F4 进市场 → 切到典藏外观标签。
+
+        为什么必须先按 Esc：在售页（点「购买」进来的那个挂单列表）按 F4
+        **回不到典藏外观页** —— 实测 F4 之后绿框停在「曼德尔砖」，接着点
+        「典藏外观」标签连报三次「没切过去」，整个定位流程就死在这一步
+        （日志 20:28:33~20:28:59 就是这么卡死的）。Esc 是游戏左下角写着
+        的那个「返回」，一级一级退，退得回去。
         """
         self.close_filter_panel()
         page, _ = self.where()
+        if page in ("onsale", "detail"):
+            if self.dry_run:
+                self.say(f"[演练] 按 Esc 从「{page}」返回上一级", "warn")
+            elif self.keyboard is not None:
+                self.say(f"当前在「{page}」，按 Esc 返回上一级", "info")
+                self.keyboard.tap("ESC")
+                time.sleep(0.9)
+            page, _ = self.where()
         if page not in ("market", "filter_collection"):
             self.say(f"当前在「{page}」，按 F4 进市场", "info")
             self.open_market()
             time.sleep(1.5)
         if self.tab_now() != "collection":
-            self.tab("collection")
+            try:
+                self.tab("collection")
+            except NavError:
+                # 有弹窗挡着（最常见：「该商品已被购买」提示还没收）。
+                # 按 Esc 收掉再点一次，否则整个定位流程就死在这一步。
+                if self.keyboard is not None and not self.dry_run:
+                    self.say("标签点不动，先按 Esc 收掉挡着的弹窗", "warn")
+                    self.keyboard.tap("ESC")
+                    time.sleep(0.6)
+                self.tab("collection")
             time.sleep(0.8)
         return self.where()[0]
 

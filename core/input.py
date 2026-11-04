@@ -26,6 +26,16 @@ _SM_CYVIRTUALSCREEN = 79
 
 # 提权重开一次之后，子进程靠这个环境变量知道「别再重开了」。
 ELEVATED_ENV = "SJZ_ELEVATED"
+# 同一条信息再走一遍命令行：`runas` 由 UAC 服务代启进程，环境块不一定
+# 继承（实测没继承），只靠环境变量会让子进程再提一次，变成无限弹 UAC。
+ELEVATE_FLAG = "--elevated"
+
+# ShellExecute 的返回码里这些是「错误」但数值 > 32，只判 rc <= 32 会漏：
+#   5    ERROR_ACCESS_DENIED      —— 组策略/安全软件拦下
+#   740  ERROR_ELEVATION_REQUIRED —— 没提成
+#   1060 ERROR_SERVICE_DOES_NOT_EXIST
+#   1223 ERROR_CANCELLED          —— 用户在 UAC 上点了「否」
+SHELL_ERROR_CODES = frozenset((5, 740, 1060, 1223))
 
 
 class MouseStolen(Exception):
@@ -155,9 +165,16 @@ class Mouse:
         if expect_foreground:
             fg = self.foreground()
             if fg != expect_foreground:
-                raise WindowNotForeground(
-                    f"目标窗口 {expect_foreground} 不在前台（当前前台 {fg}）。"
-                    f"点击会被系统投递给前台窗口，目标收不到。")
+                # 前台被抢走了 —— 最常见的原因就是**用户刚点了控制台上的
+                # 「开始抢购」**，控制台窗口自己跑到前台，游戏被压下去。
+                # 以前这里直接抛 WindowNotForeground，整场抢购就停在这一步
+                # （日志里就是「目标窗口不在前台」+ 一秒后任务失败）。
+                # 用户要的是「别停」，所以先抢一次；抢不回来才报错。
+                if not self.ensure_foreground(expect_foreground):
+                    raise WindowNotForeground(
+                        f"目标窗口 {expect_foreground} 不在前台"
+                        f"（当前前台 {self.foreground()}），抢不回来。"
+                        f"点击会被系统投递给前台窗口，目标收不到。")
 
         if self._mode == "legacy":
             return self._click_messages(x, y, verify=verify)
@@ -691,9 +708,16 @@ def elevate_self():
     import sys
 
     # 已经提过一次就别再提。判定逻辑万一还是认为「权限不够」（比如游戏
-    # 以 System 跑），重开只会变成无限弹 UAC —— 子进程继承这个环境变量，
-    # 进来第一件事就是放弃，把选择权交回用户（界面上会提示手动以管理员运行）。
-    if os.environ.get(ELEVATED_ENV) == "1":
+    # 以 System 跑），重开只会变成无限弹 UAC —— 子进程进来第一件事就是
+    # 放弃，把选择权交回用户（界面上会提示手动以管理员运行）。
+    #
+    # 两条判据并用，缺一不可：
+    #   · 环境变量：同一个父进程链里最直接；
+    #   · 命令行开关：`runas` 是**由 UAC 服务代启**的，新进程的环境块不一定
+    #     继承父进程的（实测这台机器上就没继承）—— 只靠环境变量，子进程会
+    #     认为「我没提过」，于是再提一次，desktop.log 里连着一串
+    #     「已以管理员身份重新启动，本进程退出」就是这么来的。
+    if os.environ.get(ELEVATED_ENV) == "1" or ELEVATE_FLAG in sys.argv[1:]:
         return False
 
     if not needs_elevation():
@@ -701,18 +725,24 @@ def elevate_self():
 
     if getattr(sys, "frozen", False):
         exe = sys.executable
-        params = subprocess.list2cmdline(sys.argv[1:])
+        params = subprocess.list2cmdline(sys.argv[1:] + [ELEVATE_FLAG])
     else:
         exe = sys.executable
-        params = subprocess.list2cmdline([os.path.abspath(sys.argv[0])] + sys.argv[1:])
+        params = subprocess.list2cmdline(
+            [os.path.abspath(sys.argv[0])] + sys.argv[1:] + [ELEVATE_FLAG])
     try:
         os.environ[ELEVATED_ENV] = "1"      # 子进程继承：它不会再重开自己
-        # ShellExecuteW 的 "runas" 会弹 UAC；返回 > 32 表示成功启动
+        # ShellExecuteW 的 "runas" 会弹 UAC；返回 > 32 一般表示成功启动。
+        # 但**不能只看 > 32**：UAC 被点「否」时返回的是 ERROR_CANCELLED
+        # (1223)、被策略拦下是 5 / 740 —— 这些都是错误码，却都大于 32。
+        # 以前只判 rc <= 32，于是「用户点了否」被当成「已重开」：本进程
+        # 退出、又没有新窗口，用户看到的就是双击之后什么都没发生，再点
+        # 一次再弹一次 UAC。
         rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params,
                                                  None, 1)
     except Exception:
         return False
-    if rc <= 32:
+    if rc <= 32 or rc in SHELL_ERROR_CODES:
         # 没提起来（UAC 被拒/找不到程序）：把自己身上的标记撤掉，
         # 免得用户手动再点一次「以管理员运行」时反而不提权了
         os.environ.pop(ELEVATED_ENV, None)

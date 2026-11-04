@@ -253,6 +253,15 @@ class NavBase:
         if self.dry_run:
             self.say(f"  [演练] 跳过页面校验（{step or want}）", "warn")
             return None
+        # 断言前先把游戏抢回前台：`where()` 读的是屏幕截图，前台一旦被
+        # 别的窗口占住，读到的就是那个窗口的内容 —— 实测点完「购买」后
+        # 读到「编辑(E)窗口(W)帮助(H)关于(A)」，于是把一次成功的导航判成
+        # 失败（日志：「点购买：期望页面 ('detail','onsale')，实际 market」）。
+        # 已经在前台时 ensure_foreground 立即返回，不额外花钱。
+        hwnd = getattr(self.mouse, "_game_hwnd", None)
+        ensure = getattr(self.mouse, "ensure_foreground", None)
+        if hwnd and ensure:
+            ensure(hwnd)
         page, text = self.where()
         wants = (want,) if isinstance(want, str) else tuple(want)
         if page in wants:

@@ -120,6 +120,19 @@ class NavOnsPanel:
     # 下拉文字只有 14px，原尺寸下 WinRT 会整行跳过笔画少的字，必须放大再 OCR。
     PUB_OCR_FX = 2.0
 
+    # ---------------- 顶部排序 ----------------
+    # 五个选项：默认排序 / 按价格升序 / 按价格降序 / 按成色升序 / 按成色降序。
+    # 按钮在公示期下拉右边（1920×1080 实测：文字起点 x≈861）。
+    SORT_OPTIONS = ("默认排序", "按价格升序", "按价格降序",
+                    "按成色升序", "按成色降序")
+    # 菜单从按钮下沿展开，比公示期那个长（5 项）。x 从 780 起，
+    # 和公示期菜单（330~790）错开，互不干扰。
+    SORT_MENU_BOX = (780, 235, 520, 340)
+    # 顶部筛选栏里**排序那一块**。x 从 800 起：公示期下拉的右沿在 790 附近，
+    # 再往左会把两个下拉的文字拼成一行（实测读出「只显示公示期默认排序」），
+    # 既认不出选项，算出来的中心点还落在两个下拉中间，点下去什么都不是。
+    TOP_BAR_BOX = (800, 170, 500, 75)
+
     def _crop_lines(self, box):
         """OCR 一个矩形区域，把词按行拼成整句（坐标回填成整屏坐标）。
 
@@ -155,6 +168,100 @@ class NavOnsPanel:
         except Exception:
             return False
 
+    # ---------------- 顶部排序（读/切） ----------------
+
+    def _top_bar_items(self):
+        """读顶部筛选栏的文字，返回 [{"text","cx","cy"}]，坐标是整屏坐标。"""
+        return [{"text": r["text"],
+                 "cx": int(r["x"] + r["w"] / 2),
+                 "cy": int(r["y"] + r["h"] / 2)}
+                for r in self._crop_lines(self.TOP_BAR_BOX)]
+
+    def _sort_state(self, items=None):
+        """返回 (顶部栏里那一项, 它对应哪个选项)。认不出返回 (None, None)。
+
+        认法按可靠性排：
+          1. **子串**——OCR 偶尔把相邻文字粘在一起（「只显示公示期默认排序」），
+             整串相似度会被拉低到认不出，但选项本身还在串里
+          2. 相似度——OCR 缺字时兜底（「默认排」「按价格升」）
+        """
+        items = items if items is not None else self._top_bar_items()
+        for it in items:
+            for opt in self.SORT_OPTIONS:
+                if opt in it["text"]:
+                    return it, opt
+        best, best_opt, best_score = None, None, 0.0
+        for it in items:
+            for opt in self.SORT_OPTIONS:
+                s = ocr.similarity(it["text"], opt)
+                if s > best_score:
+                    best, best_opt, best_score = it, opt, s
+        if best_score < 0.8:
+            return None, None
+        return best, best_opt
+
+    def _sort_now(self, items=None):
+        """当前排序值（顶部栏里那项）。读不到返回 None。"""
+        return self._sort_state(items)[1]
+
+    def sort_by(self, want="默认排序", tries=2):
+        """把顶部排序切到 want，返回是否切成功。
+
+        为什么要能选：列表默认按上架时间排，「按价格升序」才是捡漏的起点
+        —— 默认排序里最便宜的那件可能在第 3 页，而倒计时模式只看第一页。
+
+        按钮位置靠 OCR 找当前值，不写死坐标：**每个等待都改成「生效就
+        返回」**（原来固定 sleep 0.9+1.4=2.3 秒，现在正常情况 0.3 秒）。
+        """
+        if want not in self.SORT_OPTIONS:
+            raise NavError(f"不认识的排序：{want}")
+        items = self._top_bar_items()
+        btn, now = self._sort_state(items)
+        if now == want:
+            self.say(f"排序已经是「{want}」，不用再切", "info")
+            return True
+        if btn is None:
+            # 读不到当前值就别乱点 —— 多半是不在在售页，点下去会点错地方。
+            # 把读到的内容打出来：不然只知道「找不到」，没法判断是坐标偏了
+            # 还是 OCR 把「默认排序」读成了别的字。
+            self.say("顶部读到：" + str([it["text"] for it in items]), "warn")
+            raise NavError("顶部找不到排序下拉（当前可能不在在售页）")
+
+        for _ in range(tries):
+            self.click((btn["cx"], btn["cy"]), "排序下拉")
+            # 菜单展开要一会儿：轮询到能读出选项就停（最坏 0.9s）
+            rows, t0 = [], time.perf_counter()
+            while time.perf_counter() - t0 < 0.9:
+                rows = self._crop_lines(self.SORT_MENU_BOX)
+                if any(r["text"] in self.SORT_OPTIONS for r in rows):
+                    break
+                time.sleep(0.08)
+            # 菜单里的选项也按相似度认（「按价格升序 / 按价格降序」只差一个字，
+            # 用前两字匹配会点错方向）
+            hit, hit_score = None, 0.0
+            for r in rows:
+                s = ocr.similarity(r["text"], want)
+                if s > hit_score:
+                    hit, hit_score = r, s
+            if hit_score < 0.8:
+                hit = None
+            if hit is None:
+                self.say("排序下拉里读到：" + str([r["text"] for r in rows]), "warn")
+                self.click((960, 700), "收起排序下拉", expect_change=False)
+                time.sleep(0.3)
+                continue
+            self.click((int(hit["x"] + hit["w"] / 2),
+                        int(hit["y"] + hit["h"] / 2)), f"排序·{want}")
+            # 生效就立刻返回（最坏 1.2s），不再固定 sleep
+            t1 = time.perf_counter()
+            while time.perf_counter() - t1 < 1.2:
+                if self._sort_now() == want:
+                    self.say(f"排序已切到「{want}」")
+                    return True
+                time.sleep(0.15)
+        self.say(f"没能把排序切到「{want}」—— 请手动在顶部切一下", "warn")
+        return False
+
     def pub_filter(self, want="只显示公示期", tries=3):
         """把顶部公示期筛选切到 want。返回是否切成功。
 
@@ -169,8 +276,14 @@ class NavOnsPanel:
             return True
         for _ in range(tries):
             self.click(self.PUB_BTN, "公示期筛选")
-            time.sleep(0.9)
-            rows = self._crop_lines(self.PUB_MENU_BOX)
+            # 菜单展开要一会儿：轮询到读出选项就停（最坏 0.9s）。
+            # 以前是固定 sleep(0.9)，快的时候白等。
+            rows, t0 = [], time.perf_counter()
+            while time.perf_counter() - t0 < 0.9:
+                rows = self._crop_lines(self.PUB_MENU_BOX)
+                if rows:
+                    break
+                time.sleep(0.08)
             # 用前两个字当键：「不限」「只显」「不显」互相区分得开，而末尾
             # 那个「期」真机 OCR 经常读成「恚」或直接丢掉。
             key = want[:2]
@@ -179,12 +292,16 @@ class NavOnsPanel:
                 r = hit[0]
                 self.click((int(r["x"] + r["w"] / 2), int(r["y"] + r["h"] / 2)),
                            f"公示期·{want}")
-                time.sleep(1.4)
-                now = "".join(x["text"] for x in
-                              self._crop_lines(self.PUB_BTN_BOX))
-                if key in now:
-                    self.say(f"公示期筛选已切到「{want}」")
-                    return True
+                # 生效就立刻返回（最坏 1.4s）。切完这一下后面马上就要
+                # 扫列表/点卡片，固定 sleep 全是白等。
+                t1 = time.perf_counter()
+                while time.perf_counter() - t1 < 1.4:
+                    now = "".join(x["text"] for x in
+                                  self._crop_lines(self.PUB_BTN_BOX))
+                    if key in now:
+                        self.say(f"公示期筛选已切到「{want}」")
+                        return True
+                    time.sleep(0.1)
             else:
                 self.say("下拉里读到：" + str([r["text"] for r in rows]), "warn")
                 self.click((960, 700), "收起公示期下拉", expect_change=False)
