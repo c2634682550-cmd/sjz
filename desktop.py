@@ -196,6 +196,9 @@ def main():
     ap.add_argument("--height", type=int, default=800)
     ap.add_argument("--doctor", action="store_true",
                     help="打印路径与依赖自检后退出（排查打包问题用）")
+    # 提权重开时由 core.input.elevate_self 自动加上：只表示「这次别再提权」，
+    # 对用户没有意义，所以不出现在 --help 里。有它才不会无限弹 UAC。
+    ap.add_argument("--elevated", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     if args.doctor:
@@ -305,13 +308,37 @@ def main():
         return 0
 
 
-def _serve_until_interrupt(thread):
+def _serve_until_interrupt(thread, idle_exit_s=180):
     """浏览器模式下等服务线程结束。
 
     这条路没有窗口可关，只能靠 Ctrl+C / 任务管理器 —— 所以至少要
     把地址打出来，别让人以为程序挂了。
+
+    还要起一个看门狗：页面关掉之后（连续 idle_exit_s 秒一个请求都没有）
+    自己退出。以前没有这一步，用户关掉标签后进程一直挂着、占着端口和
+    单实例闸，下次双击只会看到「已经有一个实例在跑」而屏幕上什么都没有 ——
+    从用户角度看就是「程序关不掉」。
     """
-    _log("浏览器模式：关掉这个进程要按 Ctrl+C（或在任务管理器里结束）")
+    _log(f"浏览器模式：关掉页面后约 {idle_exit_s // 60} 分钟会自动退出"
+         "（也可以直接 Ctrl+C）")
+    from core import server as _srv
+
+    def _watch():
+        while thread.is_alive():
+            time.sleep(10)
+            if _srv.idle_seconds() < idle_exit_s:
+                continue
+            if _srv.busy():
+                continue                 # 正在抢，别把进程干掉
+            _log(f"!! {idle_exit_s} 秒没有页面连过来（标签关了？），自动退出")
+            try:
+                from core.single_instance import release
+                release()
+            except Exception:            # noqa: BLE001
+                pass
+            os._exit(0)
+
+    threading.Thread(target=_watch, name="idle-watchdog", daemon=True).start()
     try:
         while thread.is_alive():
             thread.join(0.5)

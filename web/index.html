@@ -30,7 +30,7 @@
   ::-webkit-scrollbar-thumb{background:#232c3b;border-radius:4px}
   ::-webkit-scrollbar-track{background:transparent}
 
-  /* ---------------- 顶栏 ---------------- */
+  /* ---------------- 顶栏（同时是窗口拖拽区） ---------------- */
   .topbar{
     height:46px;flex:0 0 46px;display:flex;align-items:center;gap:18px;
     padding:0 14px;background:linear-gradient(180deg,#141a24,#0f141c);
@@ -40,9 +40,7 @@
   .brand em{font-style:normal;color:var(--blue)}
   .brand small{font-size:11px;color:var(--muted);font-weight:400}
   .tabs{display:flex;gap:2px;margin-left:6px}
-  .tabs button{
-    padding:6px 14px;border-radius:7px;color:var(--muted);font-size:13px;
-  }
+  .tabs button{padding:6px 14px;border-radius:7px;color:var(--muted);font-size:13px}
   .tabs button:hover{color:var(--text);background:#1a2130}
   .tabs button.on{color:#fff;background:#1d2a3f;box-shadow:inset 0 0 0 1px #2b3d5c}
   .pills{margin-left:auto;display:flex;gap:8px;align-items:center}
@@ -57,59 +55,74 @@
   .pill.bad .dot{background:var(--red)}
   .pill.ok{color:#bfe9d6}
 
-  /* ---------------- 主体三栏 ---------------- */
-  .shell{flex:1;display:flex;min-height:0}
-  .rail{
-    width:56px;flex:0 0 56px;background:#0c1119;border-right:1px solid var(--line);
-    display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;
+  /* ---------------- 窗口按钮（无边框窗口唯一的关闭入口） ----------------
+     窗口是 frameless 的，没有系统标题栏 —— 也就没有那个「×」。
+     这两个按钮是**唯一**能关掉程序的地方，所以必须在顶栏右侧。
+     浏览器模式（没有 pywebview）下隐藏：那儿的窗口归浏览器管。 */
+  .winctl{display:none;align-items:center;gap:2px;margin-left:6px}
+  body.has-wv .winctl{display:flex}
+  .winctl button{
+    width:38px;height:46px;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);border-radius:0;
   }
-  .rail button{
-    width:42px;height:44px;border-radius:9px;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:10px;
-  }
-  .rail button:hover{background:#151d2a;color:var(--text)}
-  .rail button.on{background:#16223a;color:var(--blue)}
-  .rail svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;opacity:.9}
+  .winctl button:hover{background:#1a2130;color:var(--text)}
+  .winctl button.close:hover{background:#c0392b;color:#fff}
+  .winctl svg{width:13px;height:13px;stroke:currentColor;stroke-width:1.6;fill:none}
 
+  /* ---------------- 主体 ---------------- */
+  .shell{flex:1;display:flex;min-height:0}
   main{flex:1;min-width:0;display:flex;flex-direction:column}
-  .page{flex:1;min-height:0;display:none;flex-direction:column;padding:12px 14px}
+  .page{flex:1;min-height:0;display:none;flex-direction:column;padding:12px 14px;overflow:auto}
   .page.on{display:flex}
 
   /* ---------------- 任务条 ---------------- */
   .taskbar{
-    display:flex;align-items:center;gap:14px;padding:10px 14px;
+    display:flex;align-items:center;gap:10px;padding:10px 14px;flex:0 0 auto;
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
   }
-  .taskbar .target{flex:1;min-width:0}
+  .taskbar .target{flex:1;min-width:120px}
   .taskbar .target .lbl{font-size:11px;color:var(--muted)}
   .taskbar .target .val{
-    font-size:17px;font-weight:700;color:#e8f0fb;white-space:nowrap;
+    font-size:15px;font-weight:700;color:#e8f0fb;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;
   }
-  .taskbar .target .val.empty{color:var(--dim);font-weight:400;font-size:14px}
+  .taskbar .target .val.empty{color:var(--dim);font-weight:400;font-size:13px}
+  .pickers{display:flex;gap:6px;align-items:center;flex:0 0 auto}
+  .pickers select{max-width:150px}
   .btn{
     padding:8px 20px;border-radius:8px;background:#1b2434;border:1px solid #2a3648;
-    color:var(--text);font-weight:600;transition:.15s;
+    color:var(--text);font-weight:600;transition:.15s;white-space:nowrap;
   }
   .btn:hover{background:#22304a}
+  .btn.sm{padding:5px 12px;font-size:12px}
   .btn.primary{background:linear-gradient(180deg,#2f7ddb,#2566b8);border-color:#3d8be8;color:#fff}
   .btn.primary:hover{filter:brightness(1.1)}
+  .btn.primary.dry{background:linear-gradient(180deg,#e0b44a,#b98c1e);border-color:#c9a136;color:#241a02}
   .btn.danger{background:#3a1f22;border-color:#5c2b30;color:#ff9a94}
   .btn.danger:hover{background:#4a262a}
   .btn:disabled{opacity:.45;cursor:not-allowed}
 
   /* ---------------- 筛选行 ---------------- */
-  .filterbar{
-    display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;
-  }
+  .filterbar{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;flex:0 0 auto}
   .filterbar .field{display:flex;align-items:center;gap:6px}
   .filterbar label{color:var(--muted);font-size:12px}
-  .filterbar select,.filterbar input{min-width:96px}
-  .filterbar .grow{flex:1}
+  .filterbar select{min-width:96px}
+  .filterbar input{width:88px}
+
+  /* ---------------- 状态条（失败原因就放这儿，轮询不许盖） ---------------- */
+  .notice{
+    display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 12px;flex:0 0 auto;
+    border-radius:8px;background:#101722;border:1px solid var(--line);
+    color:var(--muted);font-size:12.5px;overflow:hidden;
+  }
+  .notice .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .notice.ok{background:#0f2019;border-color:#1f5a3f;color:#7ee0a8}
+  .notice.err{background:#2a1315;border-color:#6b2b2f;color:#ffb3ad}
+  .notice.warn{background:#241c0c;border-color:#6b5320;color:#ffcf5c}
 
   /* ---------------- 表格 ---------------- */
   .tablewrap{
-    flex:1;min-height:0;margin-top:10px;background:var(--panel);
+    flex:1;min-height:120px;margin-top:10px;background:var(--panel);
     border:1px solid var(--line);border-radius:var(--radius);overflow:auto;
   }
   table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -130,35 +143,46 @@
   .tag.s{background:#2b1f3d;color:#c8a2ff}
   .tag.a{background:#1f2b3d;color:#8ab4ff}
   .tag.b{background:#1f3330;color:#6fd6b0}
+  .tag.hit{background:#12301f;color:#7ee0a8}
+  .tag.bad{background:#2a1315;color:#ffb3ad}
   .empty-row td{text-align:center;color:var(--dim);padding:26px}
   .tablefoot{
-    display:flex;align-items:center;gap:16px;padding:8px 4px 0;color:var(--muted);font-size:12px;
+    display:flex;align-items:center;gap:16px;padding:8px 4px 0;color:var(--muted);
+    font-size:12px;flex:0 0 auto;
   }
   .tablefoot b{color:var(--text);font-weight:600}
+  .tablefoot .sp{margin-left:auto}
 
-  /* ---------------- 右侧执行面板 ---------------- */
-  .side{
-    width:296px;flex:0 0 296px;background:#0c1119;border-left:1px solid var(--line);
-    padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;
+  /* ---------------- 日志（收在抢购页底部） ---------------- */
+  .logpane{
+    margin-top:10px;flex:0 0 auto;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);
   }
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+  .loghead{
+    display:flex;align-items:center;justify-content:space-between;padding:6px 12px;
+    font-size:11px;color:var(--muted);cursor:pointer;user-select:none;
+  }
+  .logpane.closed .logbox{display:none}
+  .logpane.closed .loghead{border-bottom:0}
+  .logbox{
+    height:112px;overflow-y:auto;padding:0 12px 8px;
+    font-family:Consolas,"Courier New",monospace;font-size:11.5px;line-height:1.65;
+    border-top:1px solid var(--line);
+  }
+  .logbox .t{color:var(--dim);margin-right:8px}
+  .logbox .hit{color:var(--green)}
+  .logbox .warn{color:var(--amber)}
+  .logbox .err{color:var(--red)}
+
+  /* ---------------- 卡片 / 开关 ---------------- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-bottom:10px}
   .card h3{
     font-size:11px;color:var(--muted);font-weight:600;letter-spacing:1px;
     margin-bottom:9px;text-transform:uppercase;
   }
-  .seg{display:flex;gap:4px;background:#0b1017;padding:3px;border-radius:8px;border:1px solid var(--line)}
-  .seg button{flex:1;padding:6px 4px;border-radius:6px;color:var(--muted);font-size:12px}
-  .seg button.on{background:#1e2b40;color:#dbe8fa}
   .row{display:flex;align-items:center;gap:8px;margin-top:8px}
   .row label{color:var(--muted);font-size:12px;flex:0 0 52px}
   .row input{flex:1;min-width:0}
-  .chips{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{
-    padding:4px 10px;border-radius:6px;background:#0e141d;border:1px solid var(--line);
-    color:var(--muted);font-size:12px;
-  }
-  .chip.on{background:#1b2b1f;border-color:#2f6b45;color:#7ee0a8}
-  /* 开关分组：每组一个可折叠的块 */
   .swgroup{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
   .swgroup:first-child{border-top:0;margin-top:0;padding-top:0}
   .swhead{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
@@ -167,13 +191,6 @@
   .swhead .arw{transition:transform .15s;color:var(--dim);font-size:10px}
   .swgroup.closed .arw{transform:rotate(-90deg)}
   .swgroup.closed .swbody{display:none}
-  /* 演练徽章：一眼看出「这一轮不会真买」 */
-  .drybadge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;
-    font-size:10px;font-weight:700;letter-spacing:.3px;
-    background:#4a3a12;color:#ffcf5c;border:1px solid #7a5f1e;vertical-align:middle}
-  .buy.dry{background:linear-gradient(180deg,#e0b44a,#b98c1e);color:#241a02}
-  .btn.primary.dry{background:linear-gradient(180deg,#e0b44a,#b98c1e);color:#241a02}
-
   .switem{display:flex;align-items:center;gap:10px;padding:5px 0}
   .switem .nm{flex:1;min-width:0;font-size:12px}
   .switem .ds{display:block;color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.35}
@@ -187,26 +204,16 @@
   .swtog.on::after{left:18px;background:#fff}
   .swunit{color:var(--dim);font-size:10.5px;flex:0 0 auto}
 
-  .buy{
-    width:100%;padding:13px;border-radius:9px;font-size:15px;font-weight:700;
-    background:linear-gradient(180deg,#3ecf8e,#26a06c);color:#04170f;border:0;
-    /* 右栏内容多了会滚动，按钮吸在底部 —— 不然它被挤到看不见的地方 */
-    position:sticky;bottom:0;margin-top:auto;
-    box-shadow:0 -8px 16px #0a0d12cc;
+  /* 环境检查：一排小胶囊 */
+  .checks{display:flex;flex-wrap:wrap;gap:6px}
+  .check{
+    display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;
+    background:#0e141d;border:1px solid var(--line);font-size:12px;color:#9fb0c6;
   }
-  .buy:hover{filter:brightness(1.08)}
-  .buy:disabled{opacity:.4}
-
-  /* ---------------- 日志 / 记录 ---------------- */
-  .logbox{
-    flex:1;min-height:0;overflow-y:auto;background:var(--panel);border:1px solid var(--line);
-    border-radius:var(--radius);padding:10px 12px;font-family:Consolas,"Courier New",monospace;
-    font-size:12px;line-height:1.7;
-  }
-  .logbox .t{color:var(--dim);margin-right:8px}
-  .logbox .hit{color:var(--green)}
-  .logbox .warn{color:var(--amber)}
-  .logbox .err{color:var(--red)}
+  .check .m{font-size:11px;opacity:.85}
+  .check.bad{border-color:#6b2b2f;color:#ffb3ad;background:#2a1315}
+  .check.warn{border-color:#6b5320;color:#ffcf5c;background:#241c0c}
+  .check.ok{border-color:#1f5a3f}
 
   /* ---------------- 状态栏 ---------------- */
   .statusbar{
@@ -216,8 +223,6 @@
   .statusbar .sp{margin-left:auto}
   .statusbar b{color:var(--text);font-weight:500}
 
-  /* 设置页 */
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .hint{color:var(--dim);font-size:11.5px;margin-top:6px;line-height:1.6;white-space:pre-wrap}
   .kbd{
     display:inline-block;padding:1px 6px;border-radius:4px;background:#1a2230;
@@ -227,48 +232,44 @@
 </head>
 <body>
 
-<header class="topbar">
+<!-- 顶栏同时是窗口拖拽区（无边框窗口靠 .pywebview-drag-region 才能拖） -->
+<header class="topbar pywebview-drag-region">
   <div class="brand"><em>SJZ</em> 三角洲 <small>抢购控制台</small></div>
   <nav class="tabs" id="tabs">
-    <button data-page="market" class="on">市场</button>
-    <button data-page="tasks">清单</button>
-    <button data-page="log">日志</button>
+    <button data-page="run" class="on">抢购</button>
+    <button data-page="queue">队列</button>
     <button data-page="records">记录</button>
     <button data-page="settings">设置</button>
   </nav>
   <div class="pills">
-    <span class="pill" id="pillGame"><i class="dot"></i><span>游戏窗口</span></span>
+    <span class="pill" id="pillGame"><i class="dot"></i><span>游戏</span></span>
     <span class="pill" id="pillOcr"><i class="dot"></i><span>OCR</span></span>
-    <span class="pill" id="pillClock"><i class="dot"></i><span>校准</span></span>
+    <span class="pill" id="pillClock"><i class="dot"></i><span>权限</span></span>
+  </div>
+  <!-- 无边框窗口没有系统标题栏，关闭只能靠这两个按钮（js_api → desktop.py 的 WinCtl） -->
+  <div class="winctl">
+    <button id="btnMin" title="最小化">
+      <svg viewBox="0 0 16 16"><path d="M3 12h10"/></svg>
+    </button>
+    <button id="btnClose" class="close" title="关闭程序">
+      <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </button>
   </div>
 </header>
 
 <div class="shell">
-  <aside class="rail" id="rail">
-    <button data-page="market" class="on" title="市场">
-      <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg><span>市场</span>
-    </button>
-    <button data-page="tasks" title="清单">
-      <svg viewBox="0 0 24 24"><path d="M4 6h3v3H4zM4 15h3v3H4zM11 7.5h9M11 16.5h9"/></svg><span>清单</span>
-    </button>
-    <button data-page="log" title="日志">
-      <svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg><span>日志</span>
-    </button>
-    <button data-page="records" title="记录">
-      <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8"/></svg><span>记录</span>
-    </button>
-    <button data-page="settings" title="设置">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2"/></svg><span>设置</span>
-    </button>
-  </aside>
-
   <main>
-    <!-- ============ 市场 ============ -->
-    <section class="page on" id="page-market">
+    <!-- ============ 抢购（唯一入口） ============ -->
+    <section class="page on" id="page-run">
       <div class="taskbar">
         <div class="target">
           <div class="lbl">当前目标</div>
-          <div class="val empty" id="targetName">未选择皮肤（抢所有挂单）</div>
+          <div class="val empty" id="targetName">未选择 · 抢所有挂单</div>
+        </div>
+        <div class="pickers">
+          <select id="skinSeason"><option value="">全部赛季</option></select>
+          <select id="skinPick"><option value="">— 选皮肤 —</option></select>
+          <button class="btn sm" id="btnClearPick" title="清除目标">清除</button>
         </div>
         <button class="btn primary" id="btnStart">开始抢购</button>
         <button class="btn danger" id="btnStop" disabled>停止</button>
@@ -282,7 +283,6 @@
             <option value="detail">详情页</option>
           </select>
         </div>
-        <div class="field"><label>赛季</label><select id="fSeason"><option value="">全部</option></select></div>
         <div class="field"><label>品阶</label>
           <select id="fTier">
             <option value="">全部</option><option>传说</option><option>史诗</option>
@@ -296,16 +296,19 @@
           </select>
         </div>
         <div class="field"><label>价格</label>
-          <input id="fMin" type="number" placeholder="最低" style="width:90px">
+          <input id="fMin" type="number" placeholder="最低">
           <span style="color:var(--dim)">~</span>
-          <input id="fMax" type="number" placeholder="最高" style="width:90px">
+          <input id="fMax" type="number" placeholder="最高">
         </div>
         <div class="field"><label>数量</label>
           <input id="fQuota" type="number" value="1" min="1" style="width:64px">
         </div>
-        <div class="grow"></div>
-        <button class="btn" id="btnApply">应用条件</button>
+        <div class="field"><label>预算</label>
+          <input id="pBudget" type="number" placeholder="不限">
+        </div>
       </div>
+
+      <div class="notice" id="notice"><span class="txt">待机</span></div>
 
       <div class="tablewrap">
         <table>
@@ -316,51 +319,54 @@
               <th style="width:120px">成色</th>
               <th style="width:110px">价格</th>
               <th style="width:80px">位置</th>
-              <th style="width:90px">状态</th>
             </tr>
           </thead>
           <tbody id="rows">
-            <tr class="empty-row"><td colspan="6">还没有扫描数据 —— 点「开始抢购」后这里会实时显示列表里的挂单</td></tr>
+            <tr class="empty-row"><td colspan="5">还没有扫描数据 —— 点「开始抢购」后这里会实时显示列表里的挂单</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="tablefoot">
-        <span>显示 <b id="cnt">0</b>/<b id="cntAll">0</b></span>
         <span>扫描 <b id="stScans">0</b> 次</span>
         <span>频率 <b id="stHz">0</b> Hz</span>
         <span>已买 <b id="stBought">0</b></span>
         <span class="sp"></span>
-        <span id="stState" style="color:var(--muted)">空闲</span>
+        <span>显示 <b id="cnt">0</b> 条</span>
+      </div>
+
+      <div class="logpane" id="logpane">
+        <div class="loghead" id="logToggle">
+          <span>运行日志</span><span>点这里收起 / 展开</span>
+        </div>
+        <div class="logbox" id="logbox"></div>
       </div>
     </section>
 
-    <!-- ============ 清单 ============ -->
-    <section class="page" id="page-tasks">
+    <!-- ============ 队列（只读 + 清理） ============ -->
+    <section class="page" id="page-queue">
       <div class="taskbar">
         <div class="target">
-          <div class="lbl">任务清单</div>
-          <div class="val" style="font-size:14px;font-weight:400;color:var(--muted)">
-            按顺序执行：筛选 → 定位 → 倒计时 → 购买
+          <div class="lbl">执行队列</div>
+          <div class="val" style="font-size:13px;font-weight:400;color:var(--muted)">
+            抢购页的条件会自动同步成一条任务，按顺序执行
           </div>
         </div>
-        <button class="btn" id="btnAddTask">把当前目标加进清单</button>
         <button class="btn" id="btnClearDone">清空已完成</button>
-        <button class="btn primary" id="btnRunQueue">开始执行</button>
       </div>
 
       <div class="tablewrap" style="margin-top:10px">
         <table>
           <thead><tr>
-            <th style="width:44px">✓</th>
-            <th style="width:44px">#</th>
+            <th style="width:44px">启用</th>
             <th>目标</th>
-            <th style="width:260px">条件</th>
-            <th style="width:90px">状态</th>
-            <th style="width:50px"></th>
+            <th style="width:240px">条件</th>
+            <th style="width:150px">进度</th>
+            <th style="width:200px">状态</th>
+            <th style="width:56px"></th>
           </tr></thead>
           <tbody id="taskRows">
-            <tr class="empty-row"><td colspan="6">清单是空的 —— 在市场页选好目标后点「把当前目标加进清单」</td></tr>
+            <tr class="empty-row"><td colspan="6">队列是空的</td></tr>
           </tbody>
         </table>
       </div>
@@ -371,22 +377,21 @@
       </div>
     </section>
 
-    <!-- ============ 日志 ============ -->
-    <section class="page" id="page-log">
-      <div class="logbox" id="logbox"></div>
-    </section>
-
     <!-- ============ 记录 ============ -->
     <section class="page" id="page-records">
+      <div class="tablefoot" style="padding:0 2px 8px">
+        <span id="recStats"></span>
+        <button class="btn sm" id="btnRecRefresh">刷新</button>
+      </div>
       <div class="tablewrap">
         <table>
           <thead><tr>
-            <th style="width:150px">时间</th><th>皮肤</th>
-            <th style="width:100px">价格</th><th style="width:80px">成色</th>
-            <th style="width:80px">结果</th>
+            <th style="width:140px">时间</th><th>皮肤</th>
+            <th style="width:110px">价格</th><th style="width:90px">用时</th>
+            <th style="width:120px">结果</th><th style="width:70px">截图</th>
           </tr></thead>
           <tbody id="recRows">
-            <tr class="empty-row"><td colspan="5">还没有成交记录</td></tr>
+            <tr class="empty-row"><td colspan="6">还没有成交记录</td></tr>
           </tbody>
         </table>
       </div>
@@ -395,82 +400,33 @@
     <!-- ============ 设置 ============ -->
     <section class="page" id="page-settings">
       <div class="card">
-        <h3>全部开关</h3>
-        <div class="hint" style="margin-bottom:8px">
-          拨一下立刻生效，不用重启。每一项都对应引擎真读的配置，不是摆设。
-        </div>
-        <div id="switchGroups"></div>
-      </div>
-      <div class="card" style="margin-top:10px">
-        <h3>操作</h3>
-        <div class="row" style="gap:8px">
-          <button class="btn" id="btnPreflight">启动前检查</button>
-          <button class="btn" id="btnTimesync">时间校准</button>
-          <button class="btn" id="btnSave">保存设置</button>
+        <h3>环境</h3>
+        <div class="checks" id="preflightList"></div>
+        <div class="row">
+          <button class="btn sm" id="btnPreflight">重新检查</button>
+          <button class="btn sm" id="btnTimesync">时间校准</button>
         </div>
         <div class="hint" id="preflightOut"></div>
       </div>
+
+      <div class="card">
+        <h3>开关</h3>
+        <div class="hint" style="margin:0 0 8px">
+          拨一下立刻生效，不用重启。每一项都对应引擎真读的配置。
+        </div>
+        <div id="switchGroups"></div>
+      </div>
+
+      <div class="card">
+        <h3>高级</h3>
+        <div class="row" style="margin-top:0;gap:8px">
+          <button class="btn sm" id="btnFollow">关注当前挂单</button>
+          <button class="btn sm" id="btnUnfollow">取消关注</button>
+        </div>
+        <div class="hint" id="followHint">交易行右侧详情面板顶部的星标。金色 = 已关注。抢购进行中不能点。</div>
+      </div>
     </section>
   </main>
-
-  <!-- ============ 右侧执行设置 ============ -->
-  <aside class="side">
-    <div class="card">
-      <h3>执行模式</h3>
-      <div class="seg" id="segMode">
-        <button data-mode="single" class="on">单件</button>
-        <button data-mode="multi">多件</button>
-        <button data-mode="all">全自动</button>
-      </div>
-      <div class="hint">单件：买到一件就停；多件：按数量买够为止。</div>
-    </div>
-
-    <div class="card">
-      <h3>目标皮肤</h3>
-      <div class="row" style="margin-top:0">
-        <select id="skinSeason" style="flex:1"><option value="">全部赛季</option></select>
-      </div>
-      <div class="row">
-        <select id="skinPick" style="flex:1"><option value="">— 先选赛季 —</option></select>
-      </div>
-      <div class="row">
-        <button class="btn" id="btnPick" style="flex:1">设为目标</button>
-        <button class="btn" id="btnClearPick" style="flex:0 0 auto">清除</button>
-      </div>
-      <div class="hint" id="pickHint">选中后引擎会先去典藏外观把这一件点出来。</div>
-    </div>
-
-    <div class="card">
-      <h3>成色筛选</h3>
-      <div class="chips" id="wearChips">
-        <button class="chip" data-wear="S">S</button>
-        <button class="chip" data-wear="A">A</button>
-        <button class="chip" data-wear="B">B</button>
-        <button class="chip" data-wear="C">C</button>
-      </div>
-      <div class="hint">不选 = 不限成色。</div>
-    </div>
-
-    <div class="card">
-      <h3>价格与数量</h3>
-      <div class="row" style="margin-top:0"><label>最低</label><input id="pMin" type="number" placeholder="不限"></div>
-      <div class="row"><label>最高</label><input id="pMax" type="number" placeholder="不限"></div>
-      <div class="row"><label>预算</label><input id="pBudget" type="number" placeholder="不限"></div>
-      <div class="row"><label>数量</label><input id="pQuota" type="number" value="1" min="1"></div>
-    </div>
-
-    <div class="card">
-      <h3>关注当前挂单</h3>
-      <div class="row" style="margin-top:0;gap:8px">
-        <button class="btn" id="btnFollow" style="flex:1">关注</button>
-        <button class="btn" id="btnUnfollow" style="flex:1">取消关注</button>
-      </div>
-      <div class="hint" id="followHint">交易行右侧详情面板顶部的星标。金色=已关注。</div>
-    </div>
-
-    <button class="buy" id="btnBuy">开始抢购</button>
-    <div class="hint" style="text-align:center">快捷键 <span class="kbd">F7</span> 开始 / 停止</div>
-  </aside>
 </div>
 
 <footer class="statusbar">
@@ -478,14 +434,15 @@
   <span>OCR <b id="sbOcr">—</b></span>
   <span>校准 <b id="sbClock">—</b></span>
   <span class="sp"></span>
+  <span><span class="kbd">F7</span> 开始 / 停止</span>
   <span id="sbClock2">—</span>
-  <span>SJZ v0.1</span>
+  <span>SJZ v0.2</span>
 </footer>
 
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
-const STATE = {sched:null, cfg:null, catalog:null, target:null, wear:new Set(), mode:'single'};
+const STATE = {sched:null, cfg:null, catalog:null, target:null, notice:null, switches:{}};
 
 async function api(path, body){
   const opt = body === undefined ? {} : {
@@ -496,14 +453,45 @@ async function api(path, body){
   return r.json();
 }
 
-/* ---------------- 页面切换 ---------------- */
+/* 后端把错误放在 {"ok":false,"msg":"…"} 里，但非 2xx 时 api() 抛的是整段
+   JSON 文本 —— 直接丢给用户就是一屏花括号。这里把 msg 抠出来。 */
+function cleanErr(e){
+  const m = String((e && e.message) || e || '');
+  try{ const j = JSON.parse(m); if(j && j.msg) return j.msg; }catch(_){}
+  return m;
+}
+
+/* ---------------- 状态条 ---------------- */
+/* 失败原因必须能看见，而且不能被每秒一次的轮询盖掉。
+   以前 startRun 把错误写进状态栏，紧接着 poll() 又把它改回「空闲」，
+   用户看到的就是「点了没反应」。 */
+function notice(text, level='', holdMs=0){
+  STATE.notice = {text, level, until: holdMs ? Date.now() + holdMs : 0};
+  renderNotice();
+}
+function renderNotice(fallback){
+  const el = $('#notice');
+  const n = STATE.notice;
+  if(n && (!n.until || Date.now() < n.until)){
+    el.className = 'notice ' + (n.level || '');
+    el.innerHTML = '<span class="txt"></span>';
+    el.firstChild.textContent = n.text;
+    return;
+  }
+  if(n && n.until){ STATE.notice = null; }
+  el.className = 'notice';
+  el.innerHTML = '<span class="txt"></span>';
+  el.firstChild.textContent = fallback || '待机';
+}
+
+/* ---------------- 页面切换（只有顶栏一套导航） ---------------- */
 function showPage(name){
   $$('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + name));
-  $$('#tabs button, #rail button').forEach(b =>
-    b.classList.toggle('on', b.dataset.page === name));
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.page === name));
+  // 记录页是懒加载：切过去才拉一次（成交记录只在打开时看，没必要每秒轮询）
+  if(name === 'records') loadRecords();
 }
-$$('#tabs button, #rail button').forEach(b =>
-  b.addEventListener('click', () => showPage(b.dataset.page)));
+$$('#tabs button').forEach(b => b.addEventListener('click', () => showPage(b.dataset.page)));
 
 /* ---------------- 渲染 ---------------- */
 function fmtPrice(v){
@@ -522,8 +510,8 @@ function esc(s){
 function renderRows(rows){
   const tb = $('#rows');
   if(!rows || !rows.length){
-    tb.innerHTML = '<tr class="empty-row"><td colspan="6">还没有扫描数据 —— 点「开始抢购」后这里会实时显示列表里的挂单</td></tr>';
-    $('#cnt').textContent = 0; $('#cntAll').textContent = 0;
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5">还没有扫描数据 —— 点「开始抢购」后这里会实时显示列表里的挂单</td></tr>';
+    $('#cnt').textContent = 0;
     return;
   }
   tb.innerHTML = rows.map((r,i) =>
@@ -533,10 +521,8 @@ function renderRows(rows){
       '<td>' + wearTag(r.wear) + (r.craft ? '<span class="tag">' + esc(r.craft) + '</span>' : '') + '</td>' +
       '<td class="price">' + fmtPrice(r.price) + '</td>' +
       '<td class="muted">' + (r.cy ? Math.round(r.cy) : '—') + '</td>' +
-      '<td class="muted">—</td>' +
     '</tr>').join('');
   $('#cnt').textContent = rows.length;
-  $('#cntAll').textContent = rows.length;
 }
 
 function renderLog(lines){
@@ -556,44 +542,91 @@ function setPill(el, state, text){
   el.querySelector('span:last-child').textContent = text;
 }
 
+/* ---------------- 记录页 ----------------
+   这个页签原来只有一张空表：HTML 里有 recRows，但没有任何脚本往里写，
+   /api/records 也从来没人调 —— 抢完一趟想回看「哪件、多少钱」永远是空的。 */
+const REC_RESULT = {hit: '抢到', miss: '没等到弹窗', no_money: '余额不足',
+                    over_budget: '超预算', aborted: '中止'};
+
+async function loadRecords(){
+  const tb = $('#recRows');
+  let r;
+  try{
+    r = await api('/api/records?limit=200');
+  }catch(e){
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">读记录失败：' +
+                   esc(cleanErr(e)) + '</td></tr>';
+    return;
+  }
+  const rows = (r && r.rows) || [];
+  const st = (r && r.stats) || {};
+  $('#recStats').textContent = rows.length
+    ? ('共 ' + (st.tries || rows.length) + ' 次尝试 · 抢到 ' + (st.hits || 0) +
+       ' 件 · 花费 ' + fmtPrice(st.spent || 0) + ' · 命中率 ' + (st.rate || 0) + '%')
+    : '';
+  if(!rows.length){
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">还没有成交记录 —— 抢到、没抢到都会记在这里</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(x => {
+    const hit = x.result === 'hit';
+    const res = '<span class="tag ' + (hit ? 'hit' : 'bad') + '">' +
+                esc(REC_RESULT[x.result] || x.result || '—') + '</span>' +
+                (hit && x.verified === false ? '<span class="tag">未校验</span>' : '');
+    const shot = x.shot
+      ? '<a class="muted" href="/shots/' + encodeURIComponent(x.shot) +
+        '" target="_blank" rel="noopener">看图</a>'
+      : '<span class="muted">—</span>';
+    return '<tr>' +
+      '<td class="muted">' + esc(x.t || '') + '</td>' +
+      '<td class="name" title="' + esc(x.name) + '">' + esc(x.name || '—') + '</td>' +
+      '<td class="price">' + fmtPrice(x.price) + '</td>' +
+      '<td class="muted">' + (x.elapsed != null ? esc(x.elapsed) + 's' : '—') + '</td>' +
+      '<td>' + res + '</td>' +
+      '<td>' + shot + '</td>' +
+    '</tr>';
+  }).join('');
+}
+$('#btnRecRefresh').addEventListener('click', loadRecords);
+
+/* ---------------- 轮询 ---------------- */
 async function poll(){
   try{
     const st = await api('/api/scheduler');
     STATE.sched = st;
     const eng = st.engine || {};
     const stats = eng.stats || {};
+    const running = !!eng.running;
 
-    setPill($('#pillGame'), eng.running ? 'ok' : '', eng.running ? '运行中' : '待机');
+    setPill($('#pillGame'), running ? 'ok' : '', running ? '运行中' : '待机');
     renderRows(eng.rows || []);
     renderLog(eng.log || st.log || []);
     $('#stScans').textContent = stats.scans || 0;
     $('#stHz').textContent = Number(stats.hz || 0).toFixed(1);
     $('#stBought').textContent = stats.clicks || 0;
-    $('#stState').textContent = eng.error ? ('出错：' + eng.error)
-      : (eng.running ? (eng.state || '运行中') : '空闲');
-    $('#stState').style.color = eng.error ? 'var(--red)' : 'var(--muted)';
 
-    const running = !!eng.running;
     $('#btnStart').disabled = running;
     $('#btnStop').disabled = !running;
-    $('#btnBuy').disabled = running;
-    // 这里每秒重写一次文案，必须自己带上演练标记，否则 syncDryBadge
-    // 设的字一秒后就被抹掉（实测：按钮上「（演练）」闪一下就不见了）
-    $('#btnBuy').textContent = running ? '正在抢购…'
+    $('#btnStart').textContent = running ? '正在抢购…'
       : (isDry() ? '开始抢购（演练）' : '开始抢购');
-    $('#btnBuy').classList.toggle('dry', !running && isDry());
+    $('#btnStart').classList.toggle('dry', !running && isDry());
+
+    renderTasks(st.tasks || []);
+
+    const logs = st.log || [];
+    const last = logs[logs.length - 1];
+    renderNotice(eng.error ? ('出错：' + eng.error)
+      : (running ? ('运行中 · ' + (eng.state || '') + (last ? ' · ' + last.msg : ''))
+                 : (last ? last.t + ' ' + last.msg : '待机')));
 
     $('#sbConn').textContent = '已连接';
     $('#sbClock2').textContent = new Date().toLocaleTimeString('zh-CN');
-    // 队列直接从这一份状态里取：/api/scheduler 已经带 tasks 了，
-    // 再打一次 /api/tasks 等于每秒两次请求、两份渲染。
-    renderTasks(st.tasks || []);
   }catch(e){
     $('#sbConn').textContent = '连接断开';
   }
 }
 
-/* ---------------- 任务清单 ---------------- */
+/* ---------------- 队列 ---------------- */
 const STATUS_CN = {pending:'等待', armed:'布防', running:'运行中',
                    done:'完成', failed:'失败', skipped:'跳过'};
 const WORKFLOW_CN = {countdown:'倒计时', list:'列表', detail:'详情页'};
@@ -614,23 +647,23 @@ function renderTasks(tasks){
   const tb = $('#taskRows');
   $('#taskCnt').textContent = (tasks||[]).length;
   if(!tasks || !tasks.length){
-    tb.innerHTML = '<tr class="empty-row"><td colspan="6">清单是空的 —— 在市场页选好目标后点「把当前目标加进清单」</td></tr>';
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">队列是空的 —— 在抢购页点「开始抢购」会自动建一条</td></tr>';
     return;
   }
   tb.innerHTML = tasks.map((t,i) => {
-    const on = t.enabled !== false;
-    const st = STATUS_CN[t.status] || t.status || '';
-    const stColor = t.status === 'done' ? 'var(--green)'
-                  : t.status === 'failed' ? 'var(--red)'
-                  : t.status === 'running' ? 'var(--blue)' : 'var(--muted)';
+    const st = t.status || 'pending';
+    const cls = st === 'done' ? 'hit' : (st === 'failed' ? 'bad' : '');
+    const prog = '已抢 ' + (t.bought||0) + '/' + (t.quota||1) +
+                 (Number(t.spent||0) ? ' · 花 ' + t.spent : '');
     return '<tr data-id="' + esc(t.id) + '">' +
-      '<td><input type="checkbox" class="taskOn" ' + (on ? 'checked' : '') + '></td>' +
-      '<td class="muted">' + (i+1) + '</td>' +
+      '<td><input type="checkbox" class="taskOn" ' + (t.enabled === false ? '' : 'checked') + '></td>' +
       '<td class="name">' + esc(t.name || '所有皮肤') + '</td>' +
-      '<td class="muted">' + esc(condText(t)) +
-        (isDry() ? '<span class="drybadge">演练</span>' : '') + '</td>' +
-      '<td style="color:' + stColor + '">' + esc(st) + '</td>' +
-      '<td><button class="taskDel" title="删除" style="color:var(--dim)">✕</button></td>' +
+      '<td class="muted">' + esc(condText(t)) + '</td>' +
+      '<td class="muted">' + esc(prog) + '</td>' +
+      '<td><span class="tag ' + cls + '">' + (STATUS_CN[st] || st) + '</span>' +
+        '<span class="muted" title="' + esc(t.result || '') + '">' +
+        esc(String(t.result || '').slice(0, 24)) + '</span></td>' +
+      '<td><button class="btn sm taskDel">删</button></td>' +
     '</tr>';
   }).join('');
 }
@@ -657,69 +690,24 @@ document.addEventListener('click', async (ev) => {
   }
 });
 
-$('#btnAddTask').addEventListener('click', async () => {
-  const name = STATE.target || '';
-  const body = Object.assign({name: name, mode: 'list'}, condPayload());
-  try{
-    const r = await api('/api/tasks/add', body);
-    if(r.ok === false) $('#taskHint').textContent = r.msg || '加不进去';
-    else $('#taskHint').textContent = '已加入：' + (name || '所有皮肤');
-    loadTasks();
-  }catch(e){ $('#taskHint').textContent = '加不进去：' + e.message; }
-});
-
 $('#btnClearDone').addEventListener('click', async () => {
   try{
-    await api('/api/tasks/clear');
+    await api('/api/tasks/clear', {});
     $('#taskHint').textContent = '已清空完成的任务';
     loadTasks();
-  }catch(e){}
+  }catch(e){ $('#taskHint').textContent = cleanErr(e); }
 });
 
-$('#btnRunQueue').addEventListener('click', async () => {
-  try{
-    const r = await api('/api/scheduler/start', {dry_run: isDry()});
-    $('#taskHint').textContent = r.ok ? '开始按顺序执行' : (r.msg || '启动失败');
-  }catch(e){ $('#taskHint').textContent = '启动失败：' + e.message; }
-});
-
-/* ---------------- 环境状态 ---------------- */
-async function loadPreflight(){
-  try{
-    const r = await api('/api/preflight', {mode:'list'});
-    const items = r.checks || [];
-    const ocr = items.find(i => i.id === 'ocr');
-    setPill($('#pillOcr'), ocr ? (ocr.ok ? 'ok' : 'bad') : '',
-            ocr ? (ocr.ok ? 'OCR 正常' : 'OCR 不可用') : 'OCR');
-    const game = items.find(i => i.id === 'game' || i.id === 'window');
-    if(game) setPill($('#pillGame'), game.ok ? 'ok' : 'warn',
-                      game.ok ? '游戏已就绪' : '未检测到游戏');
-    const clock = items.find(i => i.id === 'clock');
-    if(clock){
-      const ms = (String(clock.detail || '').match(/[\d.]+/) || ['—'])[0];
-      setPill($('#pillClock'), clock.ok ? 'ok' : 'warn',
-              clock.ok ? ('校准 ' + ms + 'ms') : '未校准');
-      $('#sbClock').textContent = clock.ok ? '已校准' : '未校准';
-    }
-    $('#sbOcr').textContent = (ocr && ocr.ok) ? '正常' : '不可用';
-    $('#preflightOut').textContent = items.map(i =>
-      (i.ok ? '✓ ' : '✗ ') + i.label + '：' + (i.detail || '')).join('\n');
-  }catch(e){ /* 页面照常用 */ }
-}
-
-/* ---------------- 目录 / 目标 ---------------- */
+/* ---------------- 目标 ---------------- */
 async function loadCatalog(){
   const r = await api('/api/skins');
   STATE.catalog = r.seasons || [];
-  const sel = $('#skinSeason'), fsel = $('#fSeason');
+  const sel = $('#skinSeason');
   STATE.catalog.forEach(s => {
-    const label = (s.season + ' ' + (s.season_name || '')).trim();
     const o = document.createElement('option');
-    o.value = s.season; o.textContent = label;
+    o.value = s.season;
+    o.textContent = (s.season + ' ' + (s.season_name || '')).trim();
     sel.appendChild(o);
-    const o2 = document.createElement('option');
-    o2.value = s.season; o2.textContent = label;
-    fsel.appendChild(o2);
   });
 }
 
@@ -728,7 +716,7 @@ function fillSkinPick(){
   const sel = $('#skinPick');
   const s = (STATE.catalog || []).find(x => x.season === season);
   if(!s){ sel.innerHTML = '<option value="">— 先选赛季 —</option>'; return; }
-  let html = '<option value="">— 选择皮肤 —</option>';
+  let html = '<option value="">— 选皮肤 —</option>';
   Object.keys(s.tiers || {}).forEach(tier => {
     (s.tiers[tier] || []).forEach(it => {
       html += '<option value="' + esc(it.name) + '">[' + esc(tier) + '] ' +
@@ -739,146 +727,146 @@ function fillSkinPick(){
 }
 $('#skinSeason').addEventListener('change', fillSkinPick);
 
-$('#btnPick').addEventListener('click', async () => {
+function setTargetLabel(name){
+  const el = $('#targetName');
+  el.textContent = name || '未选择 · 抢所有挂单';
+  el.classList.toggle('empty', !name);
+}
+
+/* 选皮肤即设为目标 —— 不再需要单独的「设为目标」按钮 */
+$('#skinPick').addEventListener('change', async () => {
   const name = $('#skinPick').value;
-  if(!name){ $('#pickHint').textContent = '先选一件皮肤'; return; }
+  if(!name) return;
   try{
     await api('/api/skins/target', {name});
     STATE.target = name;
-    $('#targetName').textContent = name;
-    $('#targetName').classList.remove('empty');
-    $('#pickHint').textContent = '已设为目标：' + name;
-  }catch(e){ $('#pickHint').textContent = '设置失败：' + e.message; }
+    setTargetLabel(name);
+    notice('目标：' + name, 'ok', 4000);
+  }catch(e){ notice('设置目标失败：' + cleanErr(e), 'err', 10000); }
 });
 
 $('#btnClearPick').addEventListener('click', async () => {
   try{ await api('/api/skins/target', {name:''}); }catch(e){}
   STATE.target = null;
-  $('#targetName').textContent = '未选择皮肤（抢所有挂单）';
-  $('#targetName').classList.add('empty');
+  $('#skinPick').value = '';
+  setTargetLabel('');
 });
 
 /* ---------------- 条件 ---------------- */
 function condPayload(){
-  const lo = Number($('#fMin').value || $('#pMin').value || 0);
-  const hi = Number($('#fMax').value || $('#pMax').value || 0);
-  const quota = Number($('#fQuota').value || $('#pQuota').value || 1);
-  const budget = Number($('#pBudget').value || 0);
-  const wear = Array.from(STATE.wear)[0] || '';
-  const out = {min_price:lo, max_price:hi, quota:quota, budget:budget,
-               workflow:$('#fWorkflow').value};
+  const out = {
+    min_price: Number($('#fMin').value || 0),
+    max_price: Number($('#fMax').value || 0),
+    quota: Number($('#fQuota').value || 1),
+    budget: Number($('#pBudget').value || 0),
+    workflow: $('#fWorkflow').value,
+  };
+  const wear = $('#fWear').value;
   if(wear) out.wear = wear;
   const tier = $('#fTier').value;
   if(tier) out.craft = tier;
   return out;
 }
 
-$('#btnApply').addEventListener('click', async () => {
-  try{
-    await api('/api/config', {console: condPayload()});
-    $('#stState').textContent = '条件已应用';
-  }catch(e){ $('#stState').textContent = '保存失败'; }
+/* 条件改了自动存（防抖 600ms）。以前要专门点一次「应用条件」，
+   而「开始抢购」里又存了一遍 —— 两个入口做同一件事。 */
+let saveTimer = null;
+function saveConditions(){
+  return api('/api/config', {console: condPayload()});
+}
+['#fMin','#fMax','#fQuota','#pBudget'].forEach(sel => {
+  $(sel).addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveConditions().catch(() => {}), 600);
+  });
+});
+['#fWear','#fTier','#fWorkflow'].forEach(sel => {
+  $(sel).addEventListener('change', () => saveConditions().catch(() => {}));
 });
 
-/* 成色：chip 和筛选行里的下拉是同一个值，双向同步 */
-function syncWear(w){
-  STATE.wear.clear();
-  if(w) STATE.wear.add(w);
-  $$('#wearChips .chip').forEach(x => x.classList.toggle('on', STATE.wear.has(x.dataset.wear)));
-  $('#fWear').value = w || '';
-}
-$$('#wearChips .chip').forEach(b => b.addEventListener('click', () => {
-  const w = b.dataset.wear;
-  syncWear(STATE.wear.has(w) ? '' : w);
-}));
-$('#fWear').addEventListener('change', () => syncWear($('#fWear').value));
-
-/* 价格：筛选行和右侧面板是同一个值，改哪边都同步过去 */
-function bindPair(a, b){
-  $(a).addEventListener('input', () => { if($(a).value !== $(b).value) $(b).value = $(a).value; });
-  $(b).addEventListener('input', () => { if($(b).value !== $(a).value) $(a).value = $(b).value; });
-}
-bindPair('#fMin', '#pMin');
-bindPair('#fMax', '#pMax');
-bindPair('#fQuota', '#pQuota');
-
-$$('#segMode button').forEach(b => b.addEventListener('click', () => {
-  STATE.mode = b.dataset.mode;
-  $$('#segMode button').forEach(x => x.classList.toggle('on', x === b));
-}));
-
-/* ---------------- 关注 ---------------- */
-async function follow(want){
-  const btn = want ? $('#btnFollow') : $('#btnUnfollow');
-  btn.disabled = true;
-  $('#followHint').textContent = want ? '正在点关注…' : '正在取消…';
-  try{
-    const r = await api('/api/follow', {want: want});
-    $('#followHint').textContent = r.ok
-      ? ('已' + (r.after ? '关注' : '取消关注'))
-      : (r.msg || '没点动');
-  }catch(e){ $('#followHint').textContent = '失败：' + e.message; }
-  btn.disabled = false;
-}
-$('#btnFollow').addEventListener('click', () => follow(true));
-$('#btnUnfollow').addEventListener('click', () => follow(false));
-
-/* ---------------- 启停 ---------------- */
+/* ---------------- 启停（唯一入口） ---------------- */
 async function syncTask(){
-  /* 把界面上的目标和条件写进任务队列。
-     引擎跑的是队列里的任务，不写进去的话「开始抢购」跑的还是默认那条
-     「所有皮肤」—— 界面选了半天目标等于没选。 */
+  /* 把界面上的目标和条件写进队列。引擎跑的是队列里的任务，
+     不写进去的话「开始抢购」跑的还是上一次的条件。
+     status:'pending' 是**重新排队**：上一次跑完的任务停在 done/failed，
+     不重置的话调度器挑不到它，start 会立刻回「队列跑完了」——
+     表现就是「第二次点开始没反应」。 */
   const name = STATE.target || '';
-  const cond = condPayload();
-  const body = Object.assign({name: name, mode: 'list'}, cond);
+  const body = Object.assign({name: name, mode: 'list', status: 'pending'}, condPayload());
   const tasks = (await api('/api/tasks')).tasks || [];
   const mine = tasks.filter(t => (t.name || '') === name);
-  if(mine.length) await api('/api/tasks/update', Object.assign({id: mine[0].id}, body));
-  else await api('/api/tasks/add', body);
+  let r;
+  if(mine.length) r = await api('/api/tasks/update', Object.assign({id: mine[0].id}, body));
+  else r = await api('/api/tasks/add', body);
+  if(r && r.ok === false) throw new Error(r.msg || '写任务失败');
 }
 
 async function startRun(){
+  const btn = $('#btnStart');
+  btn.disabled = true;
+  notice('正在启动…', '', 3000);
   try{
-    await api('/api/config', {console: condPayload()});
+    await saveConditions();
     await syncTask();
     const r = await api('/api/scheduler/start', {dry_run: isDry()});
-    if(!r.ok) $('#stState').textContent = r.msg || '启动失败';
-  }catch(e){ $('#stState').textContent = '启动失败：' + e.message; }
-  poll();
+    if(!r || r.ok === false){
+      notice('启动失败：' + ((r && r.msg) || '未知原因'), 'err', 15000);
+      return;
+    }
+    notice(isDry() ? '已开始（演练模式，不会真买）' : '已开始抢购', 'ok', 6000);
+  }catch(e){
+    notice('启动失败：' + cleanErr(e), 'err', 15000);
+  }finally{
+    btn.disabled = false;
+    poll();
+  }
 }
+
 $('#btnStart').addEventListener('click', startRun);
-$('#btnBuy').addEventListener('click', startRun);
 $('#btnStop').addEventListener('click', async () => {
-  try{ await api('/api/scheduler/stop'); }catch(e){}
+  try{
+    await api('/api/scheduler/stop', {});
+    notice('已停止', 'warn', 6000);
+  }catch(e){ notice('停止失败：' + cleanErr(e), 'err', 10000); }
   poll();
 });
 
-/* 演练状态要显眼：开关藏在设置页，按钮上不写出来，用户会以为
-   「点了没反应 = 程序坏了」。 */
-function syncDryBadge(){
-  const dry = isDry();
-  const run = $('#btnRunQueue');
-  const buy = $('#btnBuy');
-  const start = $('#btnStart');
-  if(run){
-    run.textContent = dry ? '开始执行（演练）' : '开始执行';
-    run.classList.toggle('dry', dry);
-  }
-  if(buy){
-    buy.textContent = dry ? '开始抢购（演练）' : '开始抢购';
-    buy.classList.toggle('dry', dry);
-  }
-  if(start){
-    start.textContent = dry ? '开始抢购（演练）' : '开始抢购';
-    start.classList.toggle('dry', dry);
-  }
+/* ---------------- 窗口按钮 ----------------
+   窗口是无边框的（desktop.py 里 frameless=True），没有系统标题栏，也就没有
+   那个「×」—— 关程序只能靠这里。以前这两个按钮压根不存在，WinCtl 的
+   destroy() 从来没被调用过，用户只能去任务管理器杀 pythonw。 */
+function wvApi(){
+  return (window.pywebview && window.pywebview.api) || null;
 }
+/* pywebview 的 api 是页面加载完之后才注入的，所以靠事件把按钮显示出来；
+   浏览器模式下永远收不到这个事件，按钮就一直藏着（那儿的窗口归浏览器管）。 */
+if(wvApi()) document.body.classList.add('has-wv');
+window.addEventListener('pywebviewready', () => document.body.classList.add('has-wv'));
 
-/* ---------------- 开关面板 ---------------- */
-/* 全部开关从 /api/switches 拉：分组、名字、说明、类型都是后端给的。
-   前端只负责画和回传 —— 新增一个开关不用改这里。 */
-STATE.switches = {};
+$('#btnMin').addEventListener('click', () => {
+  const a = wvApi();
+  if(a && a.minimize) a.minimize();
+});
 
+$('#btnClose').addEventListener('click', async () => {
+  const a = wvApi();
+  if(!a || !a.destroy) return;
+  const running = !!(STATE.sched && STATE.sched.engine && STATE.sched.engine.running);
+  if(running && !window.confirm('正在抢购中，关掉程序会立刻停下。确定关闭？')) return;
+  // 先停调度器再关窗：引擎线程可能正卡在连点里，直接 destroy 的话进程
+  // 要等它自己跑完才退得掉 —— 用户看到的就是「窗口没了、进程还在」。
+  if(running){
+    try{ await api('/api/scheduler/stop', {}); }catch(e){}
+  }
+  a.destroy();
+});
+
+/* 日志区收起 / 展开 */
+$('#logToggle').addEventListener('click', () => {
+  $('#logpane').classList.toggle('closed');
+});
+
+/* ---------------- 开关 ---------------- */
 function isDry(){
   const v = STATE.switches['env.dry_run'];
   return v === undefined ? true : !!v;
@@ -925,17 +913,16 @@ async function loadSwitches(){
     STATE.switches = {};
     (r.groups || []).forEach(g => g.items.forEach(it => { STATE.switches[it.key] = it.value; }));
     renderSwitches(r.groups || []);
-    syncDryBadge();
   }catch(e){ /* 后端没起时静默 */ }
 }
 
 async function saveSwitch(key, value){
   try{
     const r = await api('/api/switches', {values: {[key]: value}});
-    if(r.ok === false){ $('#preflightOut').textContent = r.msg || '保存失败'; return; }
+    if(r.ok === false){ notice('保存开关失败：' + (r.msg || ''), 'err', 10000); return; }
     STATE.switches[key] = (r.applied || {})[key];
-    if(key === 'env.dry_run'){ syncDryBadge(); loadTasks(); }
-  }catch(e){ $('#preflightOut').textContent = '保存失败：' + e.message; }
+    if(key === 'env.dry_run') poll();
+  }catch(e){ notice('保存开关失败：' + cleanErr(e), 'err', 10000); }
 }
 
 document.addEventListener('click', (ev) => {
@@ -958,40 +945,82 @@ document.addEventListener('change', (ev) => {
   saveSwitch(el.dataset.key, kind === 'select' ? raw : Number(raw));
 });
 
-/* ---------------- 设置页 ---------------- */
+/* ---------------- 关注（高级，从主界面挪走） ---------------- */
+async function follow(want){
+  const btn = want ? $('#btnFollow') : $('#btnUnfollow');
+  btn.disabled = true;
+  $('#followHint').textContent = want ? '正在点关注…' : '正在取消…';
+  try{
+    const r = await api('/api/follow', {want: want});
+    $('#followHint').textContent = r.ok
+      ? ('已' + (r.after ? '关注' : '取消关注'))
+      : (r.msg || '没点动');
+  }catch(e){ $('#followHint').textContent = '失败：' + cleanErr(e); }
+  btn.disabled = false;
+}
+$('#btnFollow').addEventListener('click', () => follow(true));
+$('#btnUnfollow').addEventListener('click', () => follow(false));
+
+/* ---------------- 环境检查 ---------------- */
+async function loadPreflight(){
+  try{
+    const r = await api('/api/preflight', {mode:'list'});
+    const items = r.checks || [];
+    $('#preflightList').innerHTML = items.map(i => {
+      const cls = i.ok ? 'ok' : (i.warn ? 'warn' : 'bad');
+      return '<span class="check ' + cls + '" title="' + esc(i.detail || '') + '">' +
+        (i.ok ? '✓' : (i.warn ? '!' : '✗')) + ' ' + esc(i.label) +
+        '<span class="m">' + esc(String(i.detail || '').slice(0, 26)) + '</span></span>';
+    }).join('');
+
+    const byId = {};
+    items.forEach(i => byId[i.id] = i);
+    if(byId.page) setPill($('#pillGame'), byId.page.ok ? 'ok' : 'bad',
+                          byId.page.ok ? '游戏已就绪' : '游戏未就绪');
+    if(byId.ocr) setPill($('#pillOcr'), byId.ocr.ok ? 'ok' : 'bad',
+                         byId.ocr.ok ? 'OCR 正常' : 'OCR 不可用');
+    if(byId.integrity){
+      const bad = !byId.integrity.ok && !byId.integrity.warn;
+      setPill($('#pillClock'), bad ? 'bad' : (byId.integrity.ok ? 'ok' : 'warn'),
+              bad ? '需要管理员' : (byId.integrity.ok ? '权限正常' : '权限存疑'));
+    }
+    $('#sbOcr').textContent = (byId.ocr && byId.ocr.ok) ? '正常' : '不可用';
+    const clock = byId.clock;
+    $('#sbClock').textContent = clock
+      ? (clock.ok ? '已校准' : (clock.warn ? '未校准（不影响）' : '未校准')) : '—';
+    $('#preflightOut').textContent = items
+      .filter(i => !i.ok)
+      .map(i => '· ' + i.label + '：' + (i.detail || '')).join('\n');
+  }catch(e){ /* 页面照常用 */ }
+}
+
+/* ---------------- 配置回填 ---------------- */
 async function loadConfig(){
   const cfg = await api('/api/config');
   STATE.cfg = cfg;
   const c = cfg.console || {};
-  if(c.workflow){ $('#fWorkflow').value = c.workflow; }
-  if(c.min_price){ $('#fMin').value = c.min_price; $('#pMin').value = c.min_price; }
-  if(c.max_price){ $('#fMax').value = c.max_price; $('#pMax').value = c.max_price; }
-  if(c.quota){ $('#fQuota').value = c.quota; $('#pQuota').value = c.quota; }
+  if(c.workflow) $('#fWorkflow').value = c.workflow;
+  if(c.min_price) $('#fMin').value = c.min_price;
+  if(c.max_price) $('#fMax').value = c.max_price;
+  if(c.quota) $('#fQuota').value = c.quota;
   if(c.budget) $('#pBudget').value = c.budget;
   if(c.craft) $('#fTier').value = c.craft;
-  if(c.wear) syncWear(c.wear);
-  const name = (c.target && c.target.name) || c.name || '';
-  if(name){
-    STATE.target = name;
-    $('#targetName').textContent = name;
-    $('#targetName').classList.remove('empty');
-  }
+  if(c.wear) $('#fWear').value = c.wear;
+  const name = (c.target && c.target.name) || '';
+  STATE.target = name || null;
+  setTargetLabel(name);
 }
-
-$('#btnSave').addEventListener('click', async () => {
-  const body = {console: condPayload()};
-  try{
-    await api('/api/config', body);
-    $('#preflightOut').textContent = '设置已保存';
-  }catch(e){ $('#preflightOut').textContent = '保存失败：' + e.message; }
-});
 
 $('#btnPreflight').addEventListener('click', loadPreflight);
 $('#btnTimesync').addEventListener('click', async () => {
+  $('#preflightOut').textContent = '正在校准…';
   try{
     const r = await api('/api/timesync', {});
-    $('#preflightOut').textContent = '时间校准：' + JSON.stringify(r);
-  }catch(e){ $('#preflightOut').textContent = '校准失败'; }
+    $('#preflightOut').textContent = r.ok
+      ? ('校准完成：' + (r.server || 'NTP') + ' ' + (r.offset * 1000).toFixed(0) + 'ms')
+      : ('校准失败：' + (r.error || '原因未知'));
+    loadPreflight();
+  }catch(e){ $('#preflightOut').textContent = '校准失败：' + cleanErr(e); }
 });
 
 /* ---------------- 启动 ---------------- */
@@ -1001,8 +1030,12 @@ $('#btnTimesync').addEventListener('click', async () => {
   try{ await loadConfig(); }catch(e){}
   await loadPreflight();
   await poll();
-  setInterval(poll, 1000);
-  setInterval(loadPreflight, 15000);
+  // ?frozen=1：只跑一轮，不开定时轮询。截图/自动化探测用 ——
+  // 有 setInterval 时虚拟时钟永远走不完，无头浏览器会一直等到超时。
+  if(!new URLSearchParams(location.search).has('frozen')){
+    setInterval(poll, 1000);
+    setInterval(loadPreflight, 20000);
+  }
 })();
 </script>
 </body>

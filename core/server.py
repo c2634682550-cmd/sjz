@@ -33,7 +33,7 @@ from . import preflight, timesync
 from .config import Config, DATA_DIR
 from . import records
 from . import switches
-from .hotkey import Hotkey
+from .hotkey import HookHotkey, Hotkey
 from .pagewatch import PageWatcher
 from .scheduler import Scheduler
 
@@ -45,9 +45,35 @@ _scheduler = Scheduler()
 # 所以几乎不花钱（见 core/pagewatch.py）。
 _watcher = PageWatcher()
 _sync_lock = threading.Lock()
+
+# 最近一次 HTTP 请求的时刻。浏览器兜底模式（WebView2 起不来）没有窗口可关，
+# 用户把标签一关，进程就没人管了 —— 它继续占着端口和单实例闸，下次双击
+# 只会看到「已经有一个实例在跑」，而屏幕上什么都没有。desktop.py 那边靠
+# 这个时间戳判断「页面还在不在」。
+_last_hit = time.time()
+
 _hotkey = None          # 停止热键
 _hotkey_start = None    # 开抢热键
 _hotkey_pre = None      # 休市截前热键
+
+
+def touch():
+    """记一次请求。每个 HTTP 请求都会调它。"""
+    global _last_hit
+    _last_hit = time.time()
+
+
+def idle_seconds():
+    """多久没有页面连过来了。"""
+    return time.time() - _last_hit
+
+
+def busy():
+    """现在是不是正在跑一轮抢购（看门狗别在抢购中途把进程干掉）。"""
+    try:
+        return _scheduler.busy()
+    except Exception:                        # noqa: BLE001
+        return False
 
 
 def _as_list(value):
@@ -88,7 +114,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # 浏览器/WebView 提前关连接是常态（刷新、关窗口、预加载取消）。
+            # 不接住的话 socketserver 会打一段 "Exception occurred during
+            # processing of request" 的 traceback，看着像程序崩了。
+            pass
 
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False))
@@ -105,6 +137,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- 路由 ----------
 
     def do_GET(self):
+        touch()
         u = urlparse(self.path)
         path, query = u.path, parse_qs(u.query)
         return self._guard(lambda: self._get(path, query), path)
@@ -169,6 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, "not found", "text/plain; charset=utf-8")
 
     def do_POST(self):
+        touch()
         path = urlparse(self.path).path
         data = self._body()
         routes = {
@@ -188,6 +222,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/follow": lambda: self._follow(data),
             "/api/switches": lambda: self._set_switches(data),
             "/api/skins/target": lambda: self._skin_target(data),
+            "/api/quit": lambda: self._quit(),
         }
         fn = routes.get(path)
         if fn:
@@ -204,7 +239,7 @@ class Handler(BaseHTTPRequestHandler):
         """
         try:
             return fn()
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             return None                       # 浏览器提前关了，不算错
         except Exception as e:                # noqa: BLE001
             import traceback
@@ -474,6 +509,13 @@ class Handler(BaseHTTPRequestHandler):
         for key in ("materials", "colors", "categories"):
             if key in data:
                 fields[key] = _as_list(data[key])
+        # 「重新排队」。界面上的「开始抢购」是改**同一条**任务再启动，
+        # 而调度器只挑 pending/armed 的任务跑 —— 上一次跑完（done/failed）
+        # 的状态不重置的话，start 会立刻打出「队列跑完了」，用户看到的就是
+        # 「点了开始没反应」，只能删任务或重启程序才能再抢一次。
+        # 只接受 pending：界面不能借这个口子把任务直接标成 done。
+        if str(data.get("status") or "") == "pending":
+            fields["status"] = "pending"
         if not fields:
             return self._json({"ok": False, "msg": "没有要改的字段"}, 400)
         ok = _scheduler.update(tid, **fields)
@@ -527,6 +569,38 @@ class Handler(BaseHTTPRequestHandler):
     def _sched_stop(self):
         ok, msg = _scheduler.stop()
         return self._json({"ok": ok, "msg": msg})
+
+    def _quit(self):
+        """让程序自己退出。
+
+        无边框窗口没有系统标题栏。页面万一没加载出来（前端脚本挂了、WebView2
+        抽风），用户就**没有任何办法**关掉它，只能去任务管理器 —— 而任务管理器
+        杀管理员进程还得先以管理员身份打开。这个接口是最后的兜底：
+
+            curl -X POST http://127.0.0.1:8777/api/quit
+
+        只收本机请求：控制台默认绑 127.0.0.1，但万一有人改成 0.0.0.0 对外，
+        局域网里谁都能把正在抢购的程序关掉。
+        """
+        host = (self.client_address[0] or "").split("%")[0]
+        if host not in ("127.0.0.1", "::1", "localhost"):
+            return self._json({"ok": False, "msg": "只接受本机请求"}, 403)
+
+        def _bye():
+            time.sleep(0.3)              # 先把响应发出去，别让 curl 报连接中断
+            try:
+                _scheduler.stop()        # 正在抢的话先停下来，别点一半
+            except Exception:            # noqa: BLE001
+                pass
+            try:
+                from .single_instance import release
+                release()                # 放掉闸，下一个实例才能起来
+            except Exception:            # noqa: BLE001
+                pass
+            os._exit(0)                  # 硬退：可能还有 daemon 线程卡在 IO 里
+
+        threading.Thread(target=_bye, name="quit", daemon=True).start()
+        return self._json({"ok": True, "msg": "正在退出"})
 
     # ---------- 校时 / 热键 ----------
 
@@ -625,6 +699,23 @@ def _preflight_gate(mode="list"):
     return True, ""
 
 
+def _hotkey_stop():
+    """停止热键的回调。
+
+    **必须立刻返回。** 以前直接 `_scheduler.stop()`：它要 join 引擎 2 秒、
+    再 join 调度器 3 秒 —— 这 5 秒全卡在热键的消息循环里，用户连按几下
+    都没反应，看起来就是「按了不停」。改成丢给后台线程，热键线程马上回去
+    收消息；同时记一条「正在停止」，让界面上有个交代。
+    """
+    try:
+        # 先留一条「收到了」，不然钩子没触发时完全看不出是没收到还是停不掉
+        _scheduler.note("收到停止热键", "info")
+        threading.Thread(target=_scheduler.stop, name="hotkey-stop",
+                         daemon=True).start()
+    except Exception as e:                    # noqa: BLE001
+        _scheduler.note(f"热键停止失败：{type(e).__name__}: {e}", "error")
+
+
 def _hotkey_toggle():
     """开抢热键：没在跑就开抢，在跑就停。
 
@@ -632,8 +723,12 @@ def _hotkey_toggle():
     写进日志（界面上那五项，热键这条路一样要过）。
     """
     try:
-        if _scheduler.status().get("running"):
-            _scheduler.stop()
+        _scheduler.note("收到 F7（开抢/停止）", "info")
+        st = _scheduler.status()
+        # 线程活着 **或者** 引擎还在跑，都算「在跑」。只看线程会漏掉
+        # 「任务已结束、引擎线程还在收尾」那一小段，那时候按热键会又开一次。
+        if st.get("running") or (st.get("engine") or {}).get("running"):
+            _hotkey_stop()
             return
         cfg = Config.load()
         tasks = [t for t in cfg["queue"] if t.get("enabled", True)]
@@ -684,6 +779,22 @@ def _premarket_fire():
         _scheduler.note(f"截前热键点不动：{type(e).__name__}: {e}", "warn")
 
 
+def _make_hotkey(spec, callback):
+    """建一个热键：**优先低级键盘钩子**，装不上才退回 RegisterHotKey。
+
+    为什么换：RegisterHotKey 在游戏全屏独占键盘时经常收不到 —— 注册是
+    成功的（日志「F7 已就绪」），按下去毫无反应。用户反复踩到这个坑。
+    低级钩子在输入栈更底层，游戏吃键盘也照样能看见，而且只监听不拦截。
+    """
+    h = HookHotkey(spec, callback, log=lambda m: _scheduler.note(m, "info"))
+    ok, msg = h.start()
+    if ok:
+        return h, ok, msg
+    h2 = Hotkey(spec, callback)
+    ok2, msg2 = h2.start()
+    return h2, ok2, f"{msg}；改用 RegisterHotKey：{msg2}"
+
+
 def _start_hotkeys(hk=None):
     """按配置（重）注册两个热键，返回 {标签: (ok, msg)}。
 
@@ -700,14 +811,15 @@ def _start_hotkeys(hk=None):
 
     out = {}
     if hk.get("enabled", True):
-        _hotkey = Hotkey(hk.get("spec") or "F8", callback=lambda: _scheduler.stop())
-        out["停止"] = _hotkey.start()
+        _hotkey, ok, msg = _make_hotkey(hk.get("spec") or "F8", _hotkey_stop)
+        out["停止"] = (ok, msg)
     else:
         out["停止"] = (True, "热键已关闭")
 
     if hk.get("start_enabled", True):
-        _hotkey_start = Hotkey(hk.get("start_spec") or "F7", callback=_hotkey_toggle)
-        out["开抢"] = _hotkey_start.start()
+        _hotkey_start, ok, msg = _make_hotkey(hk.get("start_spec") or "F7",
+                                              _hotkey_toggle)
+        out["开抢"] = (ok, msg)
     else:
         out["开抢"] = (True, "开抢热键已关闭")
 
@@ -721,18 +833,24 @@ def _start_hotkeys(hk=None):
 
 
 def _seed_default_task():
-    """队列空着就先放一条「所有皮肤」任务。
+    """队列空着就先放一条任务。
 
     顾客可能一次界面都没点过就直接按 F7 开抢 —— 热键那条路读的是队列，
     空队列就只能记一句「队列是空的」。条件取配置里的 active_task（价格
     区间），界面上的抢购条件卡之后会按顾客填的值重同步这条任务。
+
+    **名字要用界面上选的那件皮肤**（console.target.name），不能一律给空：
+    空名 = 「抢所有挂单」，配上 max_price=0（不限价）就是「看到就买」。
+    顾客明明选了 ASH-12，按一下 F7 却买了列表里第一件 —— 这是真金白银的事。
+    只有他压根没选皮肤时，才是「抢所有」。
     """
     cfg = Config.load()
     if cfg["queue"]:
         return
     task = cfg.get("active_task") or {}
+    target = ((cfg.get("console") or {}).get("target") or {}).get("name") or ""
     _scheduler.add(
-        "",
+        target,
         mode="list",
         min_price=task.get("min_price") or 0,
         max_price=task.get("max_price") or 0,
@@ -761,8 +879,28 @@ def _start_ocr_service():
     return svc
 
 
+class _Server(ThreadingHTTPServer):
+    """控制台的 HTTP 服务。
+
+    **必须关掉 allow_reuse_address。** Windows 上 SO_REUSEADDR 的语义是
+    「可以绑一个别人正在监听的端口」（跟 Unix 的「复用 TIME_WAIT」完全不同），
+    而 http.server 默认开着它 —— 于是第二个控制台能"成功"绑上同一个端口：
+    两个实例都在 LISTENING，连接随机落到其中一个。表现出来就是「一个在抢，
+    另一个界面上什么都不动」，而且 `_seed_default_task()` / `gc_task_dirs()`
+    还会被两个实例各跑一遍（实测队列里凭空多出 4 条一模一样的任务）。
+    关掉之后第二个实例当场报「地址被占用」，一眼就能看出是重复启动。
+    """
+
+    allow_reuse_address = False
+    daemon_threads = True
+
+
 def serve(host="127.0.0.1", port=8777):
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    try:
+        httpd = _Server((host, port), Handler)
+    except OSError as e:
+        print(f"  !! 端口 {port} 起不来（多半是另一个控制台还在跑）：{e}")
+        raise
     httpd.daemon_threads = True
     print(f"  SJZ 控制台已启动 -> http://{host}:{port}")
     _seed_default_task()
@@ -778,6 +916,9 @@ def serve(host="127.0.0.1", port=8777):
     # 启动时就把热键注册上：以前只在用户改设置时才注册，重启后热键是死的
     for label, (ok, msg) in _start_hotkeys().items():
         print(f"  热键 {label}：{msg}")
+        # 也写进调度器日志：pythonw 没有控制台，print 出去就没了 ——
+        # 用户按 F7 没反应时，界面上至少能看到「注册失败：被别的程序占了」
+        _scheduler.note(f"热键 {label}：{msg}", "info" if ok else "warn")
     print("  Ctrl+C 退出")
     try:
         httpd.serve_forever()
