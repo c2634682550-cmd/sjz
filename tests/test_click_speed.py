@@ -90,32 +90,41 @@ def _quiet(eng, monkeypatch, match):
 
 # ---------------------------------------------------------------- 解锁检测
 
-def test_unlock_is_detected_promptly(monkeypatch):
-    """倒计时归零后要**立刻**返回，不再固定等 0.6s。
+def test_unlock_waits_for_the_real_zero(monkeypatch):
+    """读到「0秒」**不能**立刻返回 —— 显示值是 floor，那一刻真实还剩 0~1 秒。
 
-    以前：轮询间隔 250ms + 归零后无条件 sleep(0.6) —— 最坏 850ms 才去点确认。
-    现在：按读表成本（约 25ms）轮询，归零即返回。
+    以前读到 0 就返回，点下去游戏直接忽略：用户当场抓过「你抢早了」，
+    连续三单没抢到（2026-11-03）。现在按相位估计等到真正的零点
+    （零点 = 读到时 + 秒数 + 1），既不能早、也不能晚太多。
     """
     eng = engine_mod.Engine()
     eng._dry_run = False
     eng._say = lambda *a, **k: None
-    unlock_at = 0.30
+    shown_zero_at = 0.30          # 屏幕开始显示「0秒」
+    real_zero_at = shown_zero_at + 1.0   # 真正解锁（显示 0 的那一整秒）
     t0 = [None]
 
     def fake_clock(screen, px):
         now = time.perf_counter()
         if t0[0] is None:
             t0[0] = now
-        left = unlock_at - (now - t0[0])
-        return [{"text": ("0秒" if left <= 0 else "1秒"), "x": 0, "y": 0}]
+        elapsed = now - t0[0]
+        left = real_zero_at - elapsed
+        # 屏幕显示的是 floor：真实剩 0.4 秒时显示「0秒」
+        text = "0秒" if left < 1.0 else "1秒"
+        return [{"text": text, "x": 0, "y": 0}]
 
     monkeypatch.setattr(eng, "_ocr_clock", fake_clock)
     t_start = time.perf_counter()
     assert eng._wait_dialog_unlock(_Screen()) is True
-    late = (time.perf_counter() - t_start) - unlock_at
+    elapsed = time.perf_counter() - t_start
 
-    # 旧实现光固定等待就有 0.6s；给 150ms 的宽松上限，够挡住回退又不抖
-    assert late < 0.15, f"归零后 {late * 1000:.0f}ms 才返回（旧实现是 850ms 级）"
+    # 不能早：早于真零点就是白点（游戏会忽略，那一下也就废了）
+    assert elapsed >= real_zero_at - 0.05, \
+        f"提前 {((real_zero_at - elapsed) * 1000):.0f}ms 就返回了 —— 这是「抢早了」"
+    # 也不能晚太多：真零点之后 150ms 内必须返回
+    late = elapsed - real_zero_at
+    assert late < 0.15, f"真归零后 {late * 1000:.0f}ms 才返回"
 
 
 # ---------------------------------------------------------------- 确认闭环

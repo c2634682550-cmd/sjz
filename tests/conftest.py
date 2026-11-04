@@ -58,6 +58,29 @@ NEEDS_REAL_OCR = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _keep_user_data_clean(tmp_path_factory, monkeypatch):
+    """测试**绝不**往用户真实的 data/ 里写东西。
+
+    为什么必须放在这里：`engine.DATA_DIR`（成交截图）和 `records.PATH`
+    （成交记录）都是 **import 时就算死**的常量 —— 只 monkeypatch
+    `config.DATA_DIR` 对它们无效。于是任何走到成功分支的用例都会在
+    `data/records.jsonl` 里留下一条「成交」、在 `data/shots/` 里留一张
+    100×100 的黑图。实测真实记录里混着 `elapsed=200350`（那是开机秒数，
+    因为用例传了 `t_start=0.0`）、名字为空的假成交 —— 和真成交混在一起，
+    事后根本分不清哪条是真的。
+
+    放在 conftest 里而不是每个用例各写一遍：漏一个就会重新开始污染。
+    """
+    from core import engine as engine_mod
+    from core import records
+
+    d = tmp_path_factory.mktemp("userdata")
+    monkeypatch.setattr(engine_mod, "DATA_DIR", str(d))
+    monkeypatch.setattr(records, "PATH", str(d / "records.jsonl"))
+    yield
+
+
 def pytest_collection_modifyitems(config, items):
     from core import ocr
 

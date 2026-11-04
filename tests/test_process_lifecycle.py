@@ -166,6 +166,46 @@ def test_removing_a_task_deletes_its_template_dir(sandbox):
     assert not (sandbox / "data" / tid).exists(), "任务目录没跟着删"
 
 
+def test_task_without_own_template_falls_back_instead_of_crashing(sandbox):
+    """任务目录里没有模板时回退到全局那份，不能抛 SameFileError。
+
+    这台机器上就是这么死的：任务启动即失败（队列里那条的 result 就是
+    SameFileError），而 /api/scheduler/start 已经回了「已启动」——
+    界面上看起来就是「点了没反应」。
+    """
+    from core import scheduler as scheduler_mod
+
+    tpl = sandbox / "templates"
+    tpl.mkdir(parents=True, exist_ok=True)
+    (tpl / "buy.png").write_bytes(b"x")
+    (tpl / "confirm.png").write_bytes(b"x")
+    (sandbox / "data" / "deadbeef").mkdir(parents=True, exist_ok=True)
+
+    cfg = config.Config.load()
+    assert scheduler_mod.sync_template(cfg, "confirm", "deadbeef") is True
+    assert scheduler_mod.sync_template(cfg, "buy", "deadbeef") is True
+    # 真缺的模板要判 False（而不是抛异常），调用方才能给出人话
+    assert scheduler_mod.sync_template(cfg, "不存在的模板", "deadbeef") is False
+
+
+def test_start_refuses_before_spawning_when_template_is_missing(sandbox):
+    """缺模板时要在**启动接口里**就失败，别让任务在后台线程里秒死。
+
+    后台线程里死掉的话，接口已经回了 ok，用户看不到任何东西。
+    """
+    from core import scheduler as scheduler_mod
+
+    with config.Config.transaction() as cfg:
+        cfg["queue"] = [{"id": "deadbeef", "name": "", "status": "pending",
+                         "enabled": True, "fire_at": 0, "mode": "list",
+                         "regions": {}, "keywords": []}]
+
+    s = scheduler_mod.Scheduler()
+    ok, msg = s.start(dry_run=True)
+    assert ok is False, "缺模板也让它跑起来了"
+    assert "模板" in msg, msg
+
+
 def test_task_regions_are_borrowed_then_returned(sandbox):
     """跑任务时临时借用全局框选，跑完必须还回去。
 
@@ -193,6 +233,62 @@ def test_task_regions_are_borrowed_then_returned(sandbox):
     back = config.Config.load()["regions"]
     assert back["list"] == mine, "跑完没把框选还回去"
     assert back["buy"] == mine, "没借的键也被还原操作动了"
+
+
+def test_start_reruns_a_failed_task(sandbox, monkeypatch):
+    """上一次失败的任务，再点一次「开始」要能重跑，而且**只跑一遍**。
+
+    实测这台机器上就是这条：任务因为 SameFileError 失败后状态停在 failed，
+    而调度器只挑 pending/armed —— 于是之后每次点「开始抢购」都立刻
+    「队列跑完了」，界面上完全没反应。
+
+    「只跑一遍」也要守住：引擎跑两次就是下两单。
+    """
+    from core import scheduler as sch
+
+    tpl = sandbox / "templates"
+    tpl.mkdir(parents=True, exist_ok=True)
+    (tpl / "buy.png").write_bytes(b"x")
+    (tpl / "confirm.png").write_bytes(b"x")
+    with config.Config.transaction() as cfg:
+        cfg["queue"] = [{"id": "deadbeef", "name": "", "status": "failed",
+                         "enabled": True, "fire_at": 0, "mode": "list",
+                         "regions": {}, "keywords": [], "quota": 1,
+                         "budget": 0, "bought": 0, "spent": 0.0,
+                         "result": "SameFileError: ..."}]
+
+    started = []
+
+    class FakeEngine:
+        def __init__(self):
+            self.on_hit = None
+
+        def start(self, **kw):
+            started.append(kw)
+            return True, "已启动"
+
+        def status(self):
+            return {"state": "done", "running": False, "stats": {"clicks": 0},
+                    "log": [], "error": None, "rows": []}
+
+        def stop(self):
+            return True, ""
+
+    monkeypatch.setattr(sch, "Engine", FakeEngine)
+    s = sch.Scheduler()
+    ok, msg = s.start(dry_run=True)
+    assert ok is True, msg
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if any("队列跑完了" in e["msg"] for e in list(s._log)):
+            break
+        time.sleep(0.02)
+    s.stop()
+
+    msgs = [e["msg"] for e in list(s._log)]
+    assert any("开始执行" in m for m in msgs), f"失败的任务没被重跑：{msgs}"
+    assert len(started) == 1, f"引擎被启动了 {len(started)} 次（会重复下单）"
 
 
 # ---------------------------------------------------------------- 后台动作

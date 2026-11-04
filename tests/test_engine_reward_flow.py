@@ -6,6 +6,7 @@
 检测会把没解锁的按钮误判成可点，所以解锁信号只认分秒文本归零。
 """
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -61,8 +62,9 @@ def _engine():
 def test_dialog_unlock_waits_for_the_text_to_hit_zero(monkeypatch):
     """前四帧都还有 4 秒 —— 一下都不能早，更不能第一帧就当解锁。
 
-    这就是用户当场抓到的「你点早了」：旧探针把弹窗绿色边框当成可点信号，
-    cd=4s 就点了。钉住：只在读到 0 之后才放行。
+    而且**读到 0 之后还要等**：显示值是 floor，那一整秒里真实还剩 0~1 秒。
+    用户当场抓到的「你点早了」就是旧实现读到 0 立刻点 —— 游戏直接忽略，
+    连续三单没抢到（2026-11-03）。现在按相位估计等到真正的零点。
     """
     e, _said = _engine()
     calls = {"n": 0}
@@ -72,11 +74,14 @@ def test_dialog_unlock_waits_for_the_text_to_hit_zero(monkeypatch):
         return _cd_words(4 if calls["n"] < 5 else 0)
 
     monkeypatch.setattr(e, "_ocr_clock", fake_clock)
-    monkeypatch.setattr(engine_mod.time, "sleep", lambda s: None)
 
+    t0 = time.perf_counter()
     assert e._wait_dialog_unlock(FakeScreen(), timeout=5.0) is True
-    # 前 4 次轮询都在等，第 5 次读到 0 才放行 —— 早一次都是「点早了」
-    assert calls["n"] == 5, f"读了 {calls['n']} 次就放行，应当等读到 0"
+    elapsed = time.perf_counter() - t0
+
+    assert calls["n"] > 5, "读到 0 之后还应该继续读，不能立刻放行"
+    # 读到 0 的那一刻算零点在 1 秒后，所以至少要等这么久
+    assert elapsed >= 0.9, f"读到 0 后 {elapsed:.2f}s 就放行了 —— 这是「点早了」"
 
 
 def test_dialog_unlock_accepts_the_text_vanishing_after_being_seen(monkeypatch):
@@ -95,13 +100,21 @@ def test_dialog_unlock_does_not_mistake_an_unread_first_frame_for_zero(monkeypat
     没有这条，开场一次 OCR 失误就会早点点出去，正是要防的事。
     """
     e, _said = _engine()
-    # 前 3 次读不出（弹窗刚开的过渡帧），第 4 次起才读到 1 秒，再归零
-    seq = iter([[], [], [], _cd_words(1), _cd_words(0)])
-    monkeypatch.setattr(e, "_ocr_clock", lambda scr, px: next(seq))
-    monkeypatch.setattr(engine_mod.time, "sleep", lambda s: None)
+    # 前 3 次读不出（弹窗刚开的过渡帧），第 4 次读到 1 秒，之后归零
+    calls = {"n": 0}
+
+    def fake_clock(scr, px):
+        calls["n"] += 1
+        if calls["n"] <= 3:
+            return []
+        if calls["n"] <= 4:
+            return _cd_words(1)
+        return _cd_words(0)
+
+    monkeypatch.setattr(e, "_ocr_clock", fake_clock)
 
     assert e._wait_dialog_unlock(FakeScreen(), timeout=5.0) is True
-    assert list(seq) == [], "没读到倒计时的那几帧不该被当成解锁"
+    assert calls["n"] > 4, "没读到倒计时的那几帧不该被当成解锁"
 
 
 def test_dialog_unlock_gives_up_on_timeout_without_raising(monkeypatch):

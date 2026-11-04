@@ -260,27 +260,35 @@ def test_fire_lag_is_measured(monkeypatch):
 
 
 def test_follow_before_buy_calls_the_navigator(monkeypatch):
-    """「抢前先关注」打开时，进详情后要真的去点星标。"""
+    """「抢前先关注」打开时，进详情后要真的去点星标；关掉时一次都不点。
+
+    默认值是**关**（2026-11-03 改）：进购买界面多一次点击就多一次抢不到
+    的机会，而且星标在详情面板顶部，点到别处会切走页面。
+    """
     eng, _ = _engine(monkeypatch)
     called = []
     eng._follow = lambda nav, cfg, want: called.append(want)
-    # 直接测开关分支：关掉时不调用
-    eng2, _ = _engine(monkeypatch)
-    called2 = []
-    eng2._follow = lambda nav, cfg, want: called2.append(want)
 
     class Nav:
         def set_follow(self, want=True, wait=0.45):
             return want
 
     # 开：调一次
-    if switches.get(_Cfg(), "follow.before_buy"):
-        eng._follow(Nav(), _Cfg(), True)
-    assert called == [True]
+    on = _Cfg(follow_before_buy=True)
+    if switches.get(on, "follow.before_buy"):
+        eng._follow(Nav(), on, True)
+    assert called == [True], "开关打开时没去点星标"
+
     # 关：不调
-    if not switches.get(_Cfg(follow_before_buy=False), "follow.before_buy"):
+    eng2, _ = _engine(monkeypatch)
+    called2 = []
+    eng2._follow = lambda nav, cfg, want: called2.append(want)
+    off = _Cfg(follow_before_buy=False)
+    if not switches.get(off, "follow.before_buy"):
         pass
     assert called2 == []
+    assert switches.get(_Cfg(), "follow.before_buy") is False, \
+        "默认应该是关（不要在购买界面多点那一下）"
 
 
 # ---------------------------------------------------------------- 任务 ↔ 全局开关

@@ -200,7 +200,32 @@ def test_game_behind_console_warns_instead_of_blocking():
 
 
 def test_all_ok_is_false_when_any_single_check_fails():
-    """一条没过就不能启动 —— 这正是竞品「还有 1 项未通过」的做法。"""
-    checks = preflight.evaluate(_facts(clock={"offset": 5.0, "at": 1700000000.0}), "list")
-    assert not preflight.all_ok(checks), "clock 没过必须拦"
+    """一条「真拦」的没过就不能启动 —— 这正是竞品「还有 1 项未通过」的做法。
+
+    注意：**校时不再属于「真拦」的那一类**（偏差是被补偿掉的，倒计时路线
+    也不看挂钟），所以这里用「认不出页面」来验，别拿 clock 当拦路虎 ——
+    见 test_clock_drift_is_warn_only。
+    """
+    checks = preflight.evaluate(_facts(page="unknown", game_fore=True), "list")
+    assert not _by_id(checks, "page")["ok"], "认不出页面必须拦"
+    assert not preflight.all_ok(checks), "有一条没过就必须拦"
     # warn 项（驱动未就绪）单独验证，见 test_driver_not_ready_is_warn_only
+
+
+def test_clock_drift_is_warn_only():
+    """校时偏差只警告、不拦启动。
+
+    偏差是**补偿**掉的（timesync.true_now 会加上 offset），而且倒计时那条
+    路线盯的是按钮状态跃迁、根本不看挂钟。以前这里判 False 且不标 warn，
+    等于「NTP 一次没通就永远开不了工」—— 用户看到的就是点了没反应。
+    """
+    checks = preflight.evaluate(_facts(clock={"offset": 5.0, "at": 1700000000.0}), "list")
+    c = _by_id(checks, "clock")
+    assert not c["ok"], "偏差大要亮出来，不能报绿"
+    assert c.get("warn"), "只警告，不拦启动"
+    assert preflight.all_ok(checks), "校时不过不能拦住开抢"
+
+    never = preflight.evaluate(_facts(clock={"offset": 0.0, "at": None}), "list")
+    c2 = _by_id(never, "clock")
+    assert not c2["ok"] and c2.get("warn"), "从没校过时也要能开抢，但要提示"
+    assert "不影响" in c2["detail"], c2["detail"]

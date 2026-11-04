@@ -90,6 +90,10 @@ def _engine():
     e = Engine()
     e._stop = threading.Event()
     e._target_hwnd = 1
+    # 这些用例测的是**实战**流程（重试、放弃、用户停止），不是演练。
+    # Engine() 默认 _dry_run=True，而演练会在选中后直接收工、不去等倒计时，
+    # 那样「换下一件」「连续失败就停」这些分支根本走不到。
+    e._dry_run = False
     e._said = []
     e._say = lambda msg, level="info": e._said.append((level, msg))
     return e
@@ -114,7 +118,7 @@ def test_retries_next_item_after_a_miss(monkeypatch):
         calls["prep"] += 1
         return TARGETS[i] if i < len(TARGETS) else None
 
-    def watch(cfg, screen):
+    def watch(cfg, screen, **kw):      # **kw: already_unlocked
         calls["watch"] += 1
 
     def fire(*a, **k):
@@ -142,7 +146,7 @@ def test_retries_when_the_item_disappears_before_unlock(monkeypatch):
         calls["prep"] += 1
         return TARGETS[i] if i < len(TARGETS) else None
 
-    def watch(cfg, screen):
+    def watch(cfg, screen, **kw):      # **kw: already_unlocked
         calls["watch"] += 1
         if calls["watch"] == 1:
             raise Aborted("显示值 5 秒已经 2.5 秒没再跳 —— 倒计时停了")
@@ -167,7 +171,7 @@ def test_gives_up_after_the_attempt_limit(monkeypatch):
         return TARGETS[i % len(TARGETS)]
 
     monkeypatch.setattr(e, "_countdown_prepare", prep)
-    monkeypatch.setattr(e, "_watch_countdown", lambda cfg, screen: None)
+    monkeypatch.setattr(e, "_watch_countdown", lambda cfg, screen, **kw: None)
     monkeypatch.setattr(e, "_fire_and_confirm", lambda *a, **k: False)
 
     with pytest.raises(Aborted):
@@ -414,7 +418,7 @@ def test_user_stop_is_not_swallowed(monkeypatch):
     e = _engine()
     calls = {"watch": 0}
 
-    def watch(cfg, screen):
+    def watch(cfg, screen, **kw):      # **kw: already_unlocked
         calls["watch"] += 1
         e._stop.set()
         raise Aborted("用户停止")

@@ -207,28 +207,50 @@ def test_navigate_accepts_a_lower_bound_the_game_raised():
     assert any("已生效" in m for m in said), said
 
 
-def test_navigate_aborts_when_the_filter_is_looser_than_asked():
-    """下限被放宽（要 1000 框里 500）→ 中止：等于没筛，会买到更贵的货。"""
-    from core.engine import Aborted
+def test_navigate_warns_when_the_filter_is_looser_than_asked():
+    """下限被放宽（要 1000 框里 500）→ 告警但继续，不中止。
 
+    为什么不再中止：价格框是深色底 + 细字，OCR 经常整个读空或读串，
+    一中止整单就废了。而 `market.check` 后面会按 min/max 逐行再过滤一遍，
+    区间外的货根本进不了购买那一步 —— 游戏内没筛窄不等于会买错。
+    """
     e = Engine()
     e._dry_run = False
-    e._say = lambda msg, level="info": None
+    said = []
+    e._say = lambda msg, level="info": said.append((msg, level))
     nav = FakeNav()
     nav.price_returns = (500, 3000)
-    with pytest.raises(Aborted):
-        e._apply_price_filter(nav, _cfg(min_price=1000, max_price=3000))
+    e._apply_price_filter(nav, _cfg(min_price=1000, max_price=3000))
+    assert nav.calls == ["filter", "price", "confirm"], nav.calls
+    warns = [m for m, lvl in said if lvl == "warn"]
+    assert any("最低价被放宽" in m for m in warns), said
 
 
-def test_navigate_aborts_when_the_upper_bound_is_looser_than_asked():
-    """上限被放宽（要 3000 框里 99999）→ 中止。"""
-    from core.engine import Aborted
+def test_navigate_warns_when_the_upper_bound_is_looser_than_asked():
+    """上限被放宽（要 3000 框里 99999）→ 告警但继续，不中止。"""
+    e = Engine()
+    e._dry_run = False
+    said = []
+    e._say = lambda msg, level="info": said.append((msg, level))
+    nav = FakeNav()
+    nav.price_returns = (2050, 99999)
+    e._apply_price_filter(nav, _cfg(min_price=1000, max_price=3000))
+    assert nav.calls == ["filter", "price", "confirm"], nav.calls
+    warns = [m for m, lvl in said if lvl == "warn"]
+    assert any("最高价被放宽" in m for m in warns), said
 
+
+def test_navigate_aborts_when_the_price_range_is_empty():
+    """区间是空的（框里 3000~1000）→ 中止。
+
+    这条底线跟上面两条不一样：放宽只是「没筛窄」，后面逐行比对能兜住；
+    空区间是「输入根本没进去」，游戏内筛出来的东西全是废的，没法兜。
+    """
     e = Engine()
     e._dry_run = False
     e._say = lambda msg, level="info": None
     nav = FakeNav()
-    nav.price_returns = (2050, 99999)
+    nav.price_returns = (3000, 1000)
     with pytest.raises(Aborted):
         e._apply_price_filter(nav, _cfg(min_price=1000, max_price=3000))
 
