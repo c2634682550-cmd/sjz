@@ -86,22 +86,6 @@ def records():
     return _flatten()
 
 
-def knowledge():
-    """整份知识库 + 当期赛季，给前端渲染用。"""
-    data = _load()
-    cur = current_season() or {}
-    return {
-        "updated": data.get("updated", ""),
-        "note": data.get("note", ""),
-        "current": cur.get("season"),
-        "current_name": cur.get("name"),
-        "seasons": data.get("seasons", []),
-        "tiers": data.get("tiers", []),
-        "craft": data.get("craft", []),
-        "wear": data.get("wear", []),
-    }
-
-
 def seasons():
     return _load().get("seasons", [])
 
@@ -194,7 +178,6 @@ def candidates():
     return uniq
 
 
-_GRADE = re.compile(r"(极品|优品)\s*[-－]?\s*([SABC])?", re.I)
 _WEAR_ONLY = re.compile(r"成色\s*[-－:：]?\s*([SABC])", re.I)
 # 行文本里的成色字母：渲染是 `极品丨成色 A`，做工和字母之间常隔着杂字符，
 # 所以允许中间有少量任意非字母字符（早期只允许一个连字符，实测 6/6 张卡片
@@ -246,25 +229,6 @@ def parse_grade(text):
     if not text:
         return {"craft": None, "wear": None}
     return {"craft": parse_craft(text), "wear": parse_wear(text)}
-
-
-def summary(text):
-    """一句话结论，给日志/前端直接用。"""
-    r = identify(text)
-    if not r["ok"]:
-        return None
-    o = r["options"][0]
-    g = r["grade"]
-    bits = [f"{o['season']} {o['season_name']}", f"{o['weapon']} - {o['skin']}"]
-    if o["current"]:
-        bits.append("当期")
-    else:
-        bits.append("往期")
-    if g["craft"]:
-        bits.append(g["craft"] + (g["wear"] or ""))
-    elif g["wear"]:
-        bits.append(g["wear"] + " 成色")
-    return "，".join(bits)
 
 
 # ---------------- 品阶目录（每个赛季 × 四个品阶） ----------------

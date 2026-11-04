@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import vision  # noqa: E402
 from core.nav import Navigator  # noqa: E402
-from core.nav_coords import NavError  # noqa: E402
 
 SHOTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                      "_shots")
@@ -179,51 +178,3 @@ def test_market_filter_options_read_the_whole_panel():
                      "不限", "速度线", "镭射贵金属", "贵金属", "镭射", "其他"]
     on = [o["name"] for o in opts if o["on"]]
     assert on == ["所有稀有度", "所有成色", "不限"], f"默认勾选态不对：{on}"
-
-
-# ---------------------------------------------------------------- 滚动找皮肤
-
-def test_select_skin_scrolls_until_the_target_shows_up(monkeypatch):
-    """目标不在第一屏时，select_skin 要滚下去找到它并停在它上面。
-
-    用两帧假列表模拟「滚一屏」：第一屏七张都不是目标，第二屏第三张才是。
-    断言：滚轮确实发了、点的是目标那张、返回的 y 是目标卡片的 y。
-
-    真机上这条链路 2026-10-23 踩过两个坑，都在这里钉住：
-      · 滚轮符号没翻 → 在列表顶部滚了 12 屏全在原地
-      · 只按名字包含判断 → 七张同名不同枪种的卡全算命中
-    """
-    nav = _nav("drv_sel.png")
-    first = [("AS Val突击步枪-夜穹", 300), ("M16A4突击步枪-夜穹", 414),
-             ("腾龙突击步枪-夜穹", 528)]
-    second = [("AKM突击步枪-群星", 300), ("M7战斗步枪-棱镜攻势S2", 414),
-              ("M250通用机枪-电玩高手S2", 528)]
-    frames = [first, second]
-    calls = {"n": 0}
-
-    def fake_items():
-        return frames[min(calls["n"], len(frames) - 1)]
-
-    def fake_scroll(notches):
-        calls["n"] += 1          # 每滚一屏，换下一帧列表
-
-    monkeypatch.setattr(nav, "skin_items", fake_items)
-    monkeypatch.setattr(nav, "skin_scroll", fake_scroll)
-    monkeypatch.setattr(nav, "skin_scroll_top", lambda *a, **k: None)
-    monkeypatch.setattr(nav, "skin_title", lambda: "M250通用机枪-电玩高手S2")
-
-    y = nav.select_skin(name="M250通用机枪-电玩高手S2")
-    assert y == 528, f"点到了 y={y}，不是目标卡片"
-    assert nav.mouse.clicks[-1] == (150, 528)
-    assert calls["n"] >= 1, "根本没滚动就找到了，说明第一屏就命中了（不该）"
-
-
-def test_select_skin_raises_when_never_found(monkeypatch):
-    """滚到底也找不到要报错，不能返回一个「差不多」的位置。"""
-    nav = _nav("drv_sel.png")
-    monkeypatch.setattr(nav, "skin_items", lambda: [("AS Val突击步枪-夜穹", 300)])
-    monkeypatch.setattr(nav, "skin_scroll", lambda n: None)
-    monkeypatch.setattr(nav, "skin_scroll_top", lambda *a, **k: None)
-    monkeypatch.setattr(nav, "skin_title", lambda: "AS Val突击步枪-夜穹")
-    with pytest.raises(NavError):
-        nav.select_skin(name="QBZ95-1突击步枪-叠锋")

@@ -29,7 +29,7 @@ from collections import deque
 
 from . import timesync
 from .config import (Config, ConfigLoadError, drop_task_dir, mode_for_workflow,
-                     normalize_workflow, task_workflow)
+                     normalize_workflow, resolve_dry_run, task_workflow)
 from .engine import Engine
 
 PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
@@ -39,7 +39,6 @@ PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
 WORKFLOW_CN = {"countdown": "公示期倒计时", "list": "在售列表", "detail": "商品页按钮"}
 
 ARM_LEAD = 20.0      # 提前 20 秒装载模板、进入布防
-POLL_IDLE = 0.25
 
 
 def _same_file(a, b):
@@ -95,6 +94,11 @@ class Scheduler:
         self._engine = Engine()
         self._log = deque(maxlen=400)
         self._active_id = None
+        # 最后一次**读成功的**队列快照。config.json 读不出来时用它顶住 ——
+        # 以前读失败会拿到默认空队列，_run_step 立刻判「跑完了」收工。
+        self._queue_cache = []
+        self._cfg_error = None
+        self._cfg_error_said = None
         self._recover_stale_tasks()
 
     def _recover_stale_tasks(self):
@@ -110,7 +114,14 @@ class Scheduler:
         """
         # 先只读判断：没有卡住的任务就**不写盘**。以前这里无条件 save，
         # 结果光 import core.server（构造 Scheduler）就会重写一遍 config.json。
-        stale = [t for t in Config.load()["queue"]
+        cfg = Config.load()
+        if not getattr(cfg, "load_ok", True):
+            # 配置读不出来时手上是默认空队列：既不能据此判定「没有卡住的
+            # 任务」，更不能进事务（会覆盖原文件）。跳过本次恢复。
+            self._say(f"队列恢复跳过：{getattr(cfg, 'last_error', None) or '配置读不出来'}"
+                      "（不写盘，下次启动再试）", "warn")
+            return
+        stale = [t for t in cfg["queue"]
                  if t.get("status") in (ARMED, RUNNING)]
         if not stale:
             return
@@ -145,12 +156,44 @@ class Scheduler:
 
     # ---------------- 队列管理 ----------------
 
+    def _read_queue(self):
+        """读队列，成功时更新快照。返回 `(队列, 读盘是否成功, 错误说明)`。
+
+        读失败时返回**上一次成功读到的**队列（不是空列表）：空列表会被
+        `_run_step` 当成「跑完了」，整轮直接收工，而用户的任务其实还排着
+        （review R1）。
+        """
+        try:
+            cfg = Config.load()
+        except Exception as e:               # noqa: BLE001
+            err = f"{type(e).__name__}: {e}"
+            self._cfg_error = err
+            return [dict(t) for t in self._queue_cache], False, err
+        if getattr(cfg, "load_ok", True):
+            q = [dict(t) for t in (cfg["queue"] or [])]
+            self._queue_cache = q
+            self._cfg_error = None
+            return q, True, None
+        err = getattr(cfg, "last_error", None) or "config.json 读不出来"
+        self._cfg_error = err
+        return [dict(t) for t in self._queue_cache], False, err
+
     def tasks(self):
         with self._lock:
-            return [dict(t) for t in Config.load()["queue"]]
+            queue, _ok, _err = self._read_queue()
+            return queue
+
+    def tasks_status(self):
+        """队列 + 读盘状态。给 /api/tasks 用：界面能看出「配置读失败」。
+
+        只有 `config_ok=False` 时 `tasks` 才是上一次的快照，可能比盘上旧。
+        """
+        with self._lock:
+            queue, ok, err = self._read_queue()
+            return {"tasks": queue, "config_ok": ok, "config_error": err}
 
     def add(self, name, keywords=None, fire_at=0, note="", regions=None, template_from=None,
-            mode="detail", min_price=0, max_price=0, max_wear=0,
+            mode=None, min_price=0, max_price=0, max_wear=0,
             craft="", wear="", season="", sort="price", quota=1, budget=0,
             workflow=None, materials=None, colors=None, categories=None):
         """加一条任务。
@@ -177,9 +220,12 @@ class Scheduler:
             if not wf:
                 return None, f"不认识的抢购方式：{workflow}"
         else:
-            # 调用方没指定时：全局默认；再退一步才看旧 mode 参数
-            wf = normalize_workflow(Config.load().get("workflow"),
-                                    "list" if mode == "list" else "countdown")
+            # 调用方没指定路线时，**唯一真源**是全局默认 workflow；
+            # 只有老调用方还在传 mode 时才按它迁移（task_workflow 的 legacy 分支）。
+            # 以前这里的入参默认值是 "detail"，和全局默认 workflow 是两个
+            # 真源，调用方漏传时结论全看哪一边先说话（review R2）。
+            default_wf = normalize_workflow(Config.load().get("workflow"), "countdown")
+            wf = task_workflow({"mode": mode}, default_wf)
         mode = mode_for_workflow(wf)
         with self._lock:
             cfg = Config.load()
@@ -331,7 +377,12 @@ class Scheduler:
 
     # ---------------- 运行 ----------------
 
-    def start(self, dry_run=True):
+    def start(self, dry_run=None):
+        """启动一轮。`dry_run=None` = 没显式指定，按 `config.resolve_dry_run` 判。
+
+        以前这里是 `dry_run=True` 默认值 + 又单独读 `run.mode`，HTTP 那边
+        还另有一套（env.dry_run）—— 三个入口三种判定（review R3）。
+        """
         if self._thread and self._thread.is_alive():
             if not self._stop.is_set():
                 return False, "调度器已在运行"
@@ -343,6 +394,11 @@ class Scheduler:
                 return False, "上一轮还在收尾，稍等两秒再开始"
         with self._lock:
             cfg = Config.load()
+            if not getattr(cfg, "load_ok", True):
+                # 读失败时这份 cfg 是默认值：queue 是空的、区域也没了。
+                # 直接报错比「按默认配置点鼠标」安全，也不写盘。
+                return False, (f"{getattr(cfg, 'last_error', None) or '配置读不出来'}"
+                               "，先别开抢（关掉占着 config.json 的程序后重试）")
             if not cfg["queue"]:
                 return False, "队列是空的"
             # 开跑前先把「模板在不在」查一遍。缺模板的话任务会在后台线程里
@@ -380,12 +436,12 @@ class Scheduler:
                 if missing:
                     return False, (f"缺少模板：{'、'.join(missing)}"
                                    "（先在游戏里重新截一次再开始）")
-        # 执行模式是全局开关：dry 一定不点，semi 走到购买键前停手，
-        # auto 才真点。界面上的「演练模式」也是这条。
-        from . import switches
-        mode = switches.get(cfg, "run.mode")
-        if mode == "dry":
-            dry_run = True
+        # 演练判定走**唯一真源** `resolve_dry_run`（请求显式 > run_mode >
+        # env.dry_run 默认）。调度器、HTTP、F7 热键、界面都读这一个函数，
+        # 日志里把最终结论和来源打出来（review R3）。
+        dry_run, dry_src = resolve_dry_run(cfg, dry_run)
+        self._say(f"执行模式：{'演练（只识别不点击）' if dry_run else '实战（会真实点击）'}"
+                  f"，判定来源：{dry_src}")
         self._stop.clear()
         self._engine = Engine()
         # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器。
@@ -445,13 +501,17 @@ class Scheduler:
 
     def status(self):
         with self._lock:
-            tasks = [dict(t) for t in Config.load()["queue"]]
+            tasks, cfg_ok, cfg_err = self._read_queue()
             active = self._active_id
             log = list(self._log)[-80:]
         return {
             "running": bool(self._thread and self._thread.is_alive()),
             "active": active,
             "tasks": tasks,
+            # 读盘状态：`config_ok=False` 时界面/接口要显示「配置读不出来」，
+            # 别把这份快照当成用户真的把任务删光了（review R1）。
+            "config_ok": cfg_ok,
+            "config_error": cfg_err,
             "log": log,
             "engine": self._engine.status(),
             "clock": timesync.info(),
@@ -513,7 +573,19 @@ class Scheduler:
 
     def _run_step(self, dry_run):
         """挑一条任务、布防、执行。返回 False = 队列空了，可以收工。"""
-        pending = [t for t in self.tasks()
+        # 先看读盘状态：配置读不出来时**不能**推进状态机 ——
+        # 以前这里直接拿默认空队列判「队列跑完了」，盘上的任务还在排着，
+        # 调度线程却收工了（review R1）。保持队列、记录 error、等下一轮。
+        queue, cfg_ok, cfg_err = self._read_queue()
+        if not cfg_ok:
+            if cfg_err != self._cfg_error_said:
+                self._say(f"配置读不出来：{cfg_err}；本轮不推进，"
+                          f"保持队列 {len(queue)} 条", "error")
+                self._cfg_error_said = cfg_err
+            self._stop.wait(0.5)
+            return True
+        self._cfg_error_said = None
+        pending = [t for t in queue
                    if t.get("status") in (PENDING, ARMED) and t.get("enabled", True)]
         if not pending:
             self._say("队列跑完了")

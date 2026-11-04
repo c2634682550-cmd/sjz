@@ -32,7 +32,6 @@ import threading
 
 MAX_KEYBOARD = 10
 MAX_MOUSE = 10
-MAX_DEVICE = MAX_KEYBOARD + MAX_MOUSE
 
 KEYBOARD = lambda index: index + 1                    # noqa: E731
 MOUSE = lambda index: MAX_KEYBOARD + index + 1        # noqa: E731
@@ -51,10 +50,6 @@ MOUSE_WHEEL = 0x400
 MOUSE_MOVE_RELATIVE = 0x000
 MOUSE_MOVE_ABSOLUTE = 0x001
 MOUSE_VIRTUAL_DESKTOP = 0x002
-
-# filter：只收我们关心的（本程序只发不收，filter 仍要设 NONE 才能 send？
-# 不 —— 官方样例 send 前不需要 filter；filter 只影响 receive。设 0 即可。）
-FILTER_NONE = 0x0000
 
 
 class MouseStroke(ctypes.Structure):
@@ -81,10 +76,6 @@ class KeyStroke(ctypes.Structure):
         ("state", ctypes.c_ushort),
         ("information", ctypes.c_uint),
     ]
-
-
-# Predicate 回调：set_filter 用，这里只发不收，给个永假就行
-_PRED = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_int)
 
 
 def _dll_candidates():

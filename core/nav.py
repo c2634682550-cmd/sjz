@@ -109,18 +109,6 @@ _PAGE_ANCHORS = [
 ]
 
 
-def click_px(host, point, label="", **kw):
-    """点真实像素坐标。Navigator 走 click_px；只有 click 的测试替身退回 click。
-
-    测试替身（FakeOCRHost 之类）把 Navigator 的方法绑在自己身上，没有
-    click_px；1920x1080 下 click 的缩放本来就是恒等，退回去结果一样。
-    """
-    fn = getattr(host, "click_px", None)
-    if fn is None:
-        return host.click(point, label, **kw)
-    return fn(point, label, **kw)
-
-
 def classify(text):
     """从 OCR 拼串判断当前在哪一页。认不出返回 "unknown"。
 

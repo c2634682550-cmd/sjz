@@ -121,10 +121,3 @@ def set_follow(want=True, log=None):
         return {"ok": after == bool(want), "before": before, "after": after}
     finally:
         screen.close()
-
-
-def preflight_now(mode="list"):
-    """跑一遍启动前检查，返回检查项列表。慢（约 1 秒，要抓屏认页面）。"""
-    from . import preflight
-    cfg = Config.load()
-    return preflight.evaluate(preflight.collect(cfg, mode), mode)

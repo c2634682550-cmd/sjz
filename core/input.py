@@ -10,11 +10,6 @@ from ctypes import wintypes
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
-_MOVE = 0x0001
-_LEFTDOWN = 0x0002
-_LEFTUP = 0x0004
-_ABSOLUTE = 0x8000
-
 _WM_MOUSEMOVE = 0x0200
 _WM_LBUTTONDOWN, _WM_LBUTTONUP = 0x0201, 0x0202
 _MK_LBUTTON = 0x0001
@@ -158,10 +153,6 @@ class Mouse:
         """驱动不可用时的原因（mode 退成 legacy 才非空）。"""
         return self._drv_warn
 
-    def move(self, x, y):
-        dx, dy = self._abs(x, y)
-        self._send(_MOVE | _ABSOLUTE, dx, dy)
-
     def click(self, x, y, verify=False, expect_foreground=None):
         """移动 + 按下 + 抬起，走 Interception 驱动（2026-10-30 起）。
 
@@ -207,16 +198,23 @@ class Mouse:
         drv = shared()
         # 按下与抬起必须成对：down 抛异常（驱动被卸、坐标越界）时如果不补
         # up，驱动侧就留着一个按住的左键 —— 之后所有点击都变成拖拽。
+        #
+        # 但**只在 down 成功之后**才补 up（review R4）：
+        #   · 以前 finally 无条件发 UP：down 根本没按下去却补一个抬起，
+        #     原始的 down 异常还会被 finally 里的 MouseStolen 覆盖掉；
+        #   · 现在 down 用 `raise ... from` 保留原因，UP 只在 pressed 时发。
+        pressed = False
         try:
             drv.send_mouse(0, x=dx, y=dy, flags=flags)       # 光标到位
             drv.send_mouse(MOUSE_LEFT_DOWN, x=dx, y=dy, flags=flags)
+            pressed = True
         except InterceptionError as e:
-            raise MouseStolen(f"Interception 驱动点击失败：{e}")
-        finally:
+            raise MouseStolen(f"Interception 驱动点击失败：{e}") from e
+        if pressed:
             try:
                 drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags)
             except InterceptionError as e:
-                raise MouseStolen(f"Interception 驱动抬起失败：{e}")
+                raise MouseStolen(f"Interception 驱动抬起失败：{e}") from e
 
     def _click_messages(self, x, y, verify=True):
         """旧的 PostMessage 点击路径。留着：驱动不可用时的兜底。
@@ -415,11 +413,7 @@ _EXTENDED = {
 }
 
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
-_WM_MOUSEMOVE = 0x0200
-_WM_LBUTTONDOWN, _WM_LBUTTONUP = 0x0201, 0x0202
 _WM_RBUTTONDOWN, _WM_RBUTTONUP = 0x0204, 0x0205
-_WM_MOUSEWHEEL = 0x020A
-MK_LBUTTON = 0x0001
 
 
 class Keyboard:
@@ -489,7 +483,7 @@ class Keyboard:
         self._stroke(scan, up=True, e0=bool(e0))
         return True
 
-    def click(self, x, y, hold=0.06):
+    def click(self, x, y):
         """键盘类上的「点击」是旧接口遗留（nav 曾把鼠标点击放这里）。
 
         现在驱动注入后 Mouse 自己就能点，这个方法按**鼠标左键**处理 ——

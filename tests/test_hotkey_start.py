@@ -35,7 +35,7 @@ class FakeSched:
     def note(self, msg, level="info"):
         self.notes.append((level, msg))
 
-    def start(self, dry_run=True):
+    def start(self, dry_run=None):
         self.started.append(dry_run)
         self._running = True
         return True, "调度器已启动"
@@ -115,10 +115,12 @@ def test_blocked_by_preflight_does_not_start(env):
     assert any("OCR" in m for _, m in sched.notes), "没说是哪一项没过"
 
 
-def test_all_checks_green_starts_live(env):
+def test_all_checks_green_starts_the_scheduler(env):
     sched, _ = env
     server._hotkey_toggle()
-    assert sched.started == [False], "热键开抢必须是正式模式（dry_run=False）"
+    # 热键不再替用户做「演练/实战」判定（以前硬塞 bool，日志来源永远写
+    # 「请求指定」）—— 传 None 给调度器，由 resolve_dry_run 统一判定。
+    assert sched.started == [None], "热键不该把演练开关定死成 bool"
     assert any("热键开抢" in m for _, m in sched.notes)
 
 

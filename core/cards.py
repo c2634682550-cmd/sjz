@@ -21,13 +21,6 @@ import numpy as np
 
 from . import vision
 
-# 卡片内部的分块比例（相对卡片矩形，0~1）。
-# 实测 1920x1080 在售页：图标占左 70%，名字在顶部一行，成色左下，价格右下。
-ICON_BOX = (0.04, 0.05, 0.74, 0.72)
-NAME_BOX = (0.02, 0.02, 0.98, 0.28)
-GRADE_BOX = (0.02, 0.70, 0.56, 0.98)
-PRICE_BOX = (0.54, 0.70, 0.99, 0.98)
-
 # 相邻帧「变了」的判据：卡片平均灰度差超过这个值才算变。
 # 3 以下基本都是游戏自己的光照闪烁和粒子特效，不是换货。
 CHANGE_DELTA = 6.0
@@ -84,48 +77,6 @@ def _price_token_in(text):
         if best_val is None or val > best_val:
             best_tok, best_val = tok, val
     return best_tok
-
-
-def _peaks(profile, ratio=0.35, min_gap=40):
-    """在一维边缘强度里找「边框线」的位置。
-
-    profile: 每行/每列的边缘强度之和
-    返回: 合并后、按位置升序的中心坐标
-    """
-    p = np.asarray(profile, dtype=np.float32)
-    if p.size == 0:
-        return []
-    thr = max(float(p.max()) * ratio, float(p.mean()) * 1.5)
-    idx = np.where(p >= thr)[0]
-    if idx.size == 0:
-        return []
-    groups, cur = [], [int(idx[0])]
-    for i in idx[1:]:
-        if int(i) - cur[-1] <= 6:          # 相邻几行算同一条线（线有 2~3px 粗）
-            cur.append(int(i))
-        else:
-            groups.append(cur)
-            cur = [int(i)]
-    groups.append(cur)
-
-    out = []
-    for g in groups:
-        c = int(round(float(np.mean(g))))
-        if out and c - out[-1] < min_gap:  # 太近的两条线是同一个边框的内外沿
-            continue
-        out.append(c)
-    return sorted(out)
-
-
-def _edges(img):
-    """灰度 + Sobel，返回 (行强度, 列强度)。"""
-    if img is None or getattr(img, "size", 0) == 0:
-        return None, None
-    gray = vision.to_gray(img).astype(np.float32)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    sy = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)).sum(axis=1)
-    sx = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)).sum(axis=0)
-    return sy, sx
 
 
 def _long_lines(img, axis, frac=0.25, need_frac=0.5, edges=None):
@@ -199,7 +150,7 @@ def _uniform(spans, tol=0.15):
     return med > 0 and all(abs(x - med) <= med * tol for x in widths)
 
 
-def _tile_from(spans, w, pitch, min_w):
+def _tile_from(w, pitch, min_w):
     """按列宽从**右边界**往回铺。
 
     为什么从右边铺：列表 ROI 的右边界就是面板的右边框，位置是准的；
@@ -262,7 +213,7 @@ def locate_cards(img, min_w=220, min_h=110, max_cards=16):
         # 实测滚半屏后得到 (28,670)(670,912)(912,1340) 三列，中间那列
         # 只有 242px 宽 —— 商品卡片是等宽网格，宽度不齐就是误检。
         pw = _col_pitch(edges, w, min_w)
-        alt = _tile_from(cols, w, pw, min_w) if pw else []
+        alt = _tile_from(w, pw, min_w) if pw else []
         if _uniform(alt):
             cols = alt
     if not cols:

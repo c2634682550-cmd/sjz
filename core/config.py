@@ -119,6 +119,13 @@ DEFAULTS = {
     },
     # 队列
     "queue": [],            # [{id, name, regions, templates_dir, fire_at, status, note}]
+    # 在售页筛选面板的几何（1920×1080 基准坐标）。
+    # 两列复选框的列心不再写死在 nav_ons 里：由面板左右边界 + 列宽推导；
+    # 这里只放边界，以及推导不出时的兜底标定（review R5）。
+    "nav": {
+        "ons_panel": [1360, 1900],      # 面板左右边界
+        "ons_columns": [1396, 1641],    # 兜底列心
+    },
 
     # OCR（见 core/ocr.py）。2026-11-01 起只剩 PP-OCRv6 一个后端：
     # 真截图评测里它是唯一「准确率满分 + 延迟可接受」的，其它方案全删。
@@ -200,9 +207,44 @@ def task_workflow(task, fallback="countdown"):
     return normalize_workflow(fallback)
 
 
+def resolve_dry_run(cfg, requested=None):
+    """这次到底是不是演练 —— 全程序唯一判定点。
+
+    以前 HTTP（`_dry_run_requested`）、热键、调度器各自读一套：
+    调度器看 `run.mode == "dry"` 才强制演练，其余看 `env.dry_run`；
+    结果是「全自动 + 勾了演练」仍走演练、反过来又说不清谁说了算。
+
+    优先级（review R3）：
+        1. requested —— 本次请求显式给的（HTTP body / F7 调用方）
+        2. run_mode  —— 显式选择：dry 演练 / semi 半自动（不演练，
+                     到购买键前停手）/ auto 实战
+        3. dry_run   —— 只有 run_mode 缺失或非法时才当默认值
+
+    返回 `(dry_run, 来源)`，来源进日志，排查时一眼看出是谁定的。
+    """
+    if requested is not None:
+        return bool(requested), "请求指定"
+    cfg = cfg or {}
+    run_mode = str(cfg.get("run_mode") or "").strip().lower()
+    if run_mode == "dry":
+        return True, "run_mode=dry"
+    if run_mode in ("auto", "semi"):
+        return False, f"run_mode={run_mode}"
+    val = cfg.get("dry_run")
+    if val is None:
+        # 精简过的配置对象（测试替身）不带这个键：按正式跑处理，
+        # 和热键以前的行为一致。
+        return False, "缺省"
+    return bool(val), "env.dry_run"
+
+
 class Config:
     def __init__(self, data=None):
         self.data = json.loads(json.dumps(DEFAULTS))
+        # 读盘失败时这里记一句原因；正常读出来的配置永远是 None。
+        # `load_ok` / `last_error` 就是靠它区分「用户配置就是空队列」
+        # 和「config.json 根本没读出来」——以前两者长得一模一样。
+        self._load_error = None
         if data:
             self._merge(data)
         self._normalize()
@@ -285,6 +327,21 @@ class Config:
 
     def get(self, key, default=None):
         return self.data.get(key, default)
+
+    @property
+    def load_ok(self):
+        """这份配置是不是**真的从盘上读出来的**。
+
+        False = config.json 被占用/权限不足，手上这份是 DEFAULTS。
+        调度器必须按「读失败」处理：保持队列、别推进状态机 ——
+        否则空队列会被当成「跑完了」直接收工（review R1）。
+        """
+        return self._load_error is None
+
+    @property
+    def last_error(self):
+        """读盘失败的原因（没失败时是 None）。"""
+        return self._load_error
 
     def region(self, name):
         return self.data["regions"].get(name)
@@ -428,7 +485,10 @@ class Config:
                     continue
                 print(f"[config] config.json 暂时读不了（被占用？），"
                       f"本次用默认值，不覆盖原文件：{CONFIG_PATH}")
-                return cls(), False
+                cfg = cls()
+                cfg._load_error = ("config.json 读不出来（被占用或权限不足），"
+                                   "本次只能用默认值")
+                return cfg, False
 
     @staticmethod
     def _quarantine(err):
@@ -448,6 +508,13 @@ class Config:
     def public(self):
         out = json.loads(json.dumps(self.data))
         out["templates_ready"] = {n: self.has_template(n) for n in ("buy", "confirm")}
+        # 读盘状态：界面据此显示「配置读不出来」，而不是把默认空队列
+        # 当成「队列是空的」（review R1）。
+        out["config_ok"] = self.load_ok
+        out["config_error"] = self._load_error
+        # 演练判定：唯一真源在这里（resolve_dry_run），界面直接显示结论，
+        # 不用自己再拼 run_mode / env.dry_run（review R3）。
+        out["dry_run"], out["dry_run_source"] = resolve_dry_run(self)
         return out
 
     # ---------- 模板 ----------

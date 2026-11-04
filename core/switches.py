@@ -408,7 +408,14 @@ def apply_all(cfg, values):
 
 
 def snapshot(cfg):
-    """给界面用的完整表：定义 + 当前值，按分组排好。"""
+    """给界面用的完整表：定义 + 当前值，按分组排好。
+
+    演练这一项额外带 `effective` / `source`：显示口径取 `config.resolve_dry_run`
+    的结论（run_mode 会覆盖环境开关），否则界面会把「实战」显示成「演练」。
+    """
+    from .config import resolve_dry_run
+
+    dry, source = resolve_dry_run(cfg)
     groups = []
     for g in GROUPS:
         items = []
@@ -417,15 +424,10 @@ def snapshot(cfg):
                 continue
             item = {k: v for k, v in s.items() if k != "group"}
             item["value"] = get(cfg, s["key"])
+            if s["key"] == "env.dry_run":
+                item["effective"] = dry
+                item["source"] = source
             items.append(item)
         if items:
             groups.append({"name": g, "items": items})
     return groups
-
-
-def defaults():
-    """默认值字典（点路径 → 值），给 config.DEFAULTS 用。"""
-    out = {}
-    for s in SWITCHES:
-        _plant(out, s["path"], s["default"])
-    return out

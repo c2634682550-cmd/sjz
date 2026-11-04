@@ -21,6 +21,29 @@ from .nav_coords import (COL_FOLLOW, ONS_CONFIRM, ONS_FILTER, ONS_GRID,
                          NavError, _ONS_ALIAS, _scaled)
 
 
+# 筛选面板两列复选框的**兜底**列心（1920×1080 基准坐标）。
+# 正常运行用不到它：列心由面板几何推导（见 Navigator._ons_columns），
+# 几何或配置都算不出时才回落到这里（review R5）。
+ONS_COLUMN_FALLBACK = (1396.0, 1641.0)
+# 列心相对**面板宽度**的比例，由真机标定反推：
+#   面板 1360-1900（宽 540），首列内缩 36px、列距 245px。
+# 用比例不用像素：分辨率/面板宽度一变，列心跟着面板走。
+ONS_COL_INSET_RATIO = 36.0 / 540.0
+ONS_COL_PITCH_RATIO = 245.0 / 540.0
+# 面板左右边界读不到时的兜底（基准坐标）。
+ONS_PANEL_FALLBACK = (1360.0, 1900.0)
+
+
+def _ons_nav_cfg():
+    """读 config 的 nav 段；读不到/被改坏时返回 {}。"""
+    try:
+        from .config import Config
+        nav = Config.load().get("nav")
+        return nav if isinstance(nav, dict) else {}
+    except Exception:                        # noqa: BLE001
+        return {}
+
+
 def _host_size(host):
     """取分辨率。测试替身只借方法、不带 size，按 1080p 处理（恒等换算）。"""
     return getattr(host, "size", (1920, 1080))
@@ -60,36 +83,6 @@ def _words(host, img, strict=False):
     except (TypeError, ValueError):
         takes = False
     return fn(img, strict=strict) if takes else fn(img)
-
-
-def _ons_block_at(y, anchors=None):
-    """判断方框属于哪个区块。
-
-    **面板会滚动，绝对 y 完全不可靠** —— 滚 4 格材质就从 y745 到 y219。
-
-    所以优先用 OCR 读到的区块标题当锚点：锚点是「标题文字的 y」，
-    取「该框落在哪两个标题之间」。
-
-    但标题可能滚出屏幕（实测滚 4 格后「材质」标题就不见了），此时
-    锚点表会缺项。缺失的区块用**区块间的固定行距**从相邻锚点推：
-    rarity 首行 → condition 首行 = 175px ≈ 3.1 行，condition → material
-    = 230px ≈ 4.1 行，material → color = 174px ≈ 3.1 行。
-
-    都推不出来时返回 None（宁可跳过，不猜）。
-    """
-    if not anchors:
-        return None
-    anchors = sorted(anchors)
-    # 该框在锚点序列里的位置：最后一个「标题 y <= 框 y」的区块
-    pick = None
-    for ay, block in anchors:
-        if y >= ay - 10:
-            pick = block
-        else:
-            break
-    if pick is None:
-        return None
-    return pick
 
 
 def _ons_grid_name(block, row, col):
@@ -132,10 +125,6 @@ class NavOnsPanel:
         if page == "filter_onsale":
             raise NavError("点「确定」没关掉筛选面板")
         return True
-
-    def ons_filter_reset(self):
-        """在售页筛选面板点「重置」。"""
-        return self.click(ONS_RESET, "筛选·重置", expect_change=False)
 
     # 在售页右上角的刷新图标（模板匹配 1.000，63x72 图标中心）。
     ONS_REFRESH = (1377, 195)
@@ -399,49 +388,6 @@ class NavOnsPanel:
         self._ons_wheel(max_notches)
         return True
 
-    def ons_scroll_bottom(self, max_notches=25):
-        """把筛选面板滚到底部。"""
-        self._ons_wheel(-max_notches)
-        return True
-
-    def ons_ensure_block(self, block, max_notches=25, step=3):
-        """滚动面板直到指定区块可见。返回是否找到。
-
-        block 是 ONS_GRID 的键（rarity / condition / material / color / more）。
-
-        **踩过的坑**：循环里如果用 `ons_options()`（默认 scroll_top=True），
-        每次读都会先把面板滚回顶部，于是 `_ons_wheel(-3)` 的进度被立刻
-        抹掉，永远滚不下去，函数返回 False。所以循环内必须传
-        scroll_top=False。
-
-        先看当前屏 —— 已经在视野里就不滚，避免无谓地打乱面板位置。
-        用「滚动后可见项签名有没有变」判断到底，比数滚动格数可靠。
-        """
-        order = ["rarity", "condition", "material", "color", "more"]
-        if block not in order:
-            raise NavError(f"未知区块 {block!r}，可用：{order}")
-
-        def visible_blocks():
-            opts = self.ons_options(scroll_top=False)
-            return ({o["block"] for o in opts if o["block"]}, opts)
-
-        blocks, _ = visible_blocks()
-        if block in blocks:
-            return True
-
-        self.ons_scroll_top(max_notches)
-        prev_sig = None
-        for _ in range(max(1, max_notches // step + 1)):
-            blocks, opts = visible_blocks()
-            if block in blocks:
-                return True
-            sig = tuple(sorted((o["name"], o["text_pt"][1]) for o in opts))
-            if sig == prev_sig:
-                break       # 滚不动了 = 到底
-            prev_sig = sig
-            self._ons_wheel(-step)
-        return False
-
     def ons_find(self, name, max_notches=25, step=3):
         """在整个面板里找某个选项，必要时滚动。找到返回该项，否则 None。
 
@@ -704,9 +650,11 @@ class NavOnsPanel:
         if img is None:
             return []
         boxes = [b for b in self._ons_find_boxes(img)
-                 if b["cy"] >= 120 and not self._ons_is_decoration(b, img)]
-        # 面板区域是 1080p 基准坐标，先换算成实际像素再切（review V02）
-        px0, py0, pw, ph = _px_box(self, (1360, 30, 540, 1050))
+                 if b["cy"] >= 120 and not self._ons_is_decoration(b)]
+        # 面板区域是 1080p 基准坐标，先换算成实际像素再切（review V02）。
+        # 左右边界走 nav.ons_panel，和 _ons_columns 推导用的是同一份几何（R5）。
+        pl, pr = self._ons_panel_base()
+        px0, py0, pw, ph = _px_box(self, (pl, 30, pr - pl, 1050))
         words = _words(self, img[py0:py0 + ph, px0:px0 + pw], strict=True)
         # 低置信度的碎块不当名字用：OCR 在 14px 小字上会吐 0.2~0.4 分的
         # 猜测，拿来当选项名就是「点了个名字像的错选项」（review V07）
@@ -720,7 +668,10 @@ class NavOnsPanel:
         # 面板在顶部时的区块首行坐标（真实像素），用于锚点缺失时的几何自证
         tops = {k: int(_pt(self, (0, y))[1]) for k, y in ONS_GRID_TOP_Y.items()}
         tol = max(4, int(10 * _host_size(self)[1] / 1080.0))
-        grid = self._ons_assign_grid(boxes, anchors, tops, tol)
+        # 左右列的分界 = 两列列心的中点（不要再写死 1520，R5）
+        cols = getattr(self, "_ons_cols", None) or self._ons_columns()[0]
+        grid = self._ons_assign_grid(boxes, anchors, tops, tol,
+                                     col_split=(cols[0] + cols[1]) / 2.0)
         out = []
         for b, (block, row, col) in zip(boxes, grid):
             near = [w for w in words
@@ -758,7 +709,7 @@ class NavOnsPanel:
         return out
 
     @staticmethod
-    def _ons_assign_grid(boxes, anchors=None, tops=None, tol=10):
+    def _ons_assign_grid(boxes, anchors=None, tops=None, tol=10, col_split=None):
         """把方框归到 (block, row, col)。
 
         分三步：
@@ -845,11 +796,13 @@ class NavOnsPanel:
             base = g[0]["cy"]
             for b in g:
                 row = round((b["cy"] - base) / ONS_GRID_ROW_H)
-                col = 0 if b["cx"] < 1520 else 1
+                # 左右列分界由调用方给（两列列心中点）。没给时按单列处理，
+                # 不再写死 1520（review R5）。
+                col = 0 if (col_split is None or b["cx"] < col_split) else 1
                 out[idx_of[id(b)]] = (block, row, col)
         return out
 
-    def _ons_is_decoration(self, b, img):
+    def _ons_is_decoration(self, b):
         """这个「方框」是不是装饰，而不是可勾选的复选框。
 
         真机上会被误检成方框的东西：
@@ -872,6 +825,83 @@ class NavOnsPanel:
             return True
         return False
 
+    def _ons_panel_base(self):
+        """筛选面板左右边界（1920×1080 基准坐标，整数）。
+
+        优先 config `nav.ons_panel`，坏了用 ONS_PANEL_FALLBACK。
+        """
+        panel = _ons_nav_cfg().get("ons_panel")
+        try:
+            a, b = float(panel[0]), float(panel[1])
+            if b > a:
+                return a, b
+        except (TypeError, ValueError, IndexError):
+            pass
+        return ONS_PANEL_FALLBACK
+
+    def _ons_columns(self):
+        """两列复选框的列心（当前分辨率像素）+ 来源标签。
+
+        推导链（review R5）：
+          1. **几何**：列心 = 面板左边界 + 面板宽 × 首列内缩/列距比例。
+             面板边界与宽度都来自 nav.ons_panel，改版后只改这一处。
+          2. 几何算不出（配置缺失、面板宽 ≤ 0、换算后顺序反了）→
+             配置 nav.ons_columns（兜底标定）
+          3. 配置也没有/被改坏 → 代码里的 ONS_COLUMN_FALLBACK
+        """
+        left, right = None, None
+        panel = _ons_nav_cfg().get("ons_panel")
+        try:
+            a, b = float(panel[0]), float(panel[1])
+            if b > a:
+                left, right = a, b
+        except (TypeError, ValueError, IndexError):
+            pass
+        if left is not None:
+            width = right - left
+            ca = left + width * ONS_COL_INSET_RATIO
+            cb = ca + width * ONS_COL_PITCH_RATIO
+            pa = float(_pt(self, (ca, 0))[0])
+            pb = float(_pt(self, (cb, 0))[0])
+            if pb > pa > 0:
+                return (pa, pb), "几何"
+        cols = _ons_nav_cfg().get("ons_columns")
+        try:
+            ca, cb = float(cols[0]), float(cols[1])
+            src = "配置标定"
+        except (TypeError, ValueError, IndexError):
+            ca, cb = ONS_COLUMN_FALLBACK
+            src = "兜底"
+        return (float(_pt(self, (ca, 0))[0]),
+                float(_pt(self, (cb, 0))[0])), src
+
+    def _ons_warn_columns(self, cols, src, off, tol):
+        """列位对不上、过滤后一个框都没剩时留一条可查日志（review R5）。
+
+        真机改版/换分辨率后列会整体偏移，块头全部被列约束丢掉，表面
+        现象是「面板上一项都读不到」。这里把实测列位和判定列位都打出来，
+        并指出改哪个配置。60 秒节流，避免每轮都刷屏。
+        """
+        log = getattr(self, "_log", None)
+        if log is None:
+            return
+        now = time.time()
+        if now - float(getattr(self, "_ons_colwarn_at", 0) or 0) < 60:
+            return
+        try:
+            self._ons_colwarn_at = now
+        except Exception:                    # noqa: BLE001
+            pass
+        seen = sorted({int(cx) for cx in off})[:6]
+        cols_s = "/".join(str(int(c)) for c in cols)
+        try:
+            log(f"筛选面板列位对不上：实测方框 x={seen}（容差 ±{int(tol)}px），"
+                f"判定列心 x={cols_s}（来源：{src}）；块头全被过滤，选项可能"
+                f"一个都读不到。请按实测列位改 config nav.ons_panel / "
+                f"nav.ons_columns", "warn")
+        except Exception:                    # noqa: BLE001
+            pass
+
     def _ons_find_boxes(self, img):
         """在右侧面板找复选框外框（29x29 见方）。
 
@@ -884,15 +914,17 @@ class NavOnsPanel:
 
         另外排除三类误检：
           - x 超出面板右边界：滚动条/头像，不是选项
-          - **列约束**：选项框只出现在两列上（实测 cx=1396 / 1641），
-            离这两列超过 6px 的框一律不是选项 —— 以前只按尺寸筛，面板里
+          - **列约束**：选项框只出现在两列上（列心见 `_ons_columns`，
+            由面板几何推导，不再在这里写死 1396/1641），
+            离两列超过 6px 的框一律不是选项 —— 以前只按尺寸筛，面板里
             任何一处 29x29 的方角（分割线端头、滚动条端头）都会被当成选项
-            （review V06）
+            （review V06 / R5）
           - 同一行最多两个框（左右两列各一个），多出来的丢掉
         """
         import cv2 as _cv
-        x0, y0 = _pt(self, (1360, 30))
-        x1 = int(_pt(self, (1900, 0))[0])
+        pl, pr = self._ons_panel_base()
+        x0, y0 = _pt(self, (pl, 30))
+        x1 = int(_pt(self, (pr, 0))[0])
         x0, y0 = int(x0), int(y0)
         if x1 <= x0:
             return []
@@ -903,8 +935,11 @@ class NavOnsPanel:
                                    _cv.CHAIN_APPROX_SIMPLE)
         sin = _pt(self, (22, 0))[0]
         tol = max(3, int(6 * self.size[0] / 1920.0)) if hasattr(self, "size") else 6
-        cols = (_pt(self, (1396, 0))[0], _pt(self, (1641, 0))[0])
+        cols, cols_src = self._ons_columns()
+        self._ons_cols = cols
+        self._ons_cols_src = cols_src
         found = []
+        off = []        # 尺寸合格但不在列上的框：列位偏移的唯一线索
         for c in cnts:
             x, y, w, h = _cv.boundingRect(c)
             if not (int(sin) <= w <= int(sin * 1.64) and
@@ -915,6 +950,7 @@ class NavOnsPanel:
             cx = x + x0 + w // 2
             cy = y + y0 + h // 2
             if min(abs(cx - cols[0]), abs(cx - cols[1])) > tol:
+                off.append(cx)
                 continue        # 不在两列上，不是选项框
             found.append({"x": x + x0, "y": y + y0, "w": w, "h": h,
                           "cx": cx, "cy": cy})
@@ -941,6 +977,9 @@ class NavOnsPanel:
             grp.sort(key=lambda b: min(abs(b["cx"] - cols[0]),
                                        abs(b["cx"] - cols[1])))
             kept.extend(grp[:2])
+        if not kept and off:
+            # 全被列约束丢掉了：列位偏移/面板改版最典型的现象。
+            self._ons_warn_columns(cols, cols_src, off, tol)
         return sorted(kept, key=lambda b: (b["cy"], b["cx"]))
 
     @staticmethod

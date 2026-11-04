@@ -1113,74 +1113,6 @@ class NavColPanel:
             time.sleep(0.4)
         return False
 
-    def select_skin(self, series=None, tier=None, name=None, gun=None):
-        """按「系列 + 品阶 + 枪种 + 名字」定位并选中一件皮肤。返回点击 y。
-
-        这是「我要抢某一砖」的完整链路：
-          设系列（赛季下拉）→ 只留一个品阶 → 只留一个枪种 → 确定
-          → 在列表里滚着找 → 点它
-
-        **枪种一起筛**是有用的：这一档里同名的皮肤可能有好几个（不同枪种
-        各一件），枪种一筛就只剩一件，不用在列表里猜。
-
-        名字比对用**模糊匹配**：游戏的花体字 OCR 认不准的字很多
-        （「彩」→「采」「白」→「自」），字符串相等永远匹配不上。
-
-        列表里的名字是被游戏截断的（「AK-12突…」），所以先用武器型号
-        粗筛（那一段认得准），点开再读标题做精确比对。
-        """
-        if series or tier is not None or gun:
-            # 先收拾干净：面板开着就关掉、回到典藏外观页、筛选复位成「全要」
-            # （列表空的时候面板会变成居中浮层，赛季下拉的位置跟着变）。
-            self.goto_collection()
-            self.col_filter_reset()
-            self.col_filter()
-            # 记下改筛选之前列表第一件是什么 —— 等列表刷新要用它比对
-            # （光等「非空」不够，旧列表也是非空的）
-            before_items = self.skin_items()
-            before = before_items[0][0] if before_items else None
-            if series:
-                self.col_pick_season(series)
-            if tier is not None:
-                index = ("传说", "史诗", "稀有", "普通").index(tier)
-                self.set_tier(index, only=True)
-            if gun:
-                self.set_gun(gun)
-            self.col_filter_confirm()
-            # 列表要重载才生效，重载期间读到的是旧的（甚至空的）——
-            # 得等它刷出**新内容**再找
-            self._wait_skin_list(before=before)
-
-        if not name:
-            return None
-
-        # 武器型号（名字最前面那段字母数字）用来粗筛
-        self.skin_scroll_top()
-        for step in range(40):
-            items = self.skin_items()
-            if not items:
-                break
-            # 这一屏里所有像目标的卡片，按相似度从高到低试 —— 只试最像的一张
-            # 不够：同一档里常有七张同名不同枪种的卡（「…-夜穹」七连），
-            # 跳过其它候选就会一路滚到底都找不到。
-            for short, y, _score in self.rank_skin_cards(name, items=items):
-                prev_title = self.skin_title()
-                # 卡片 y 是 OCR 读到的**真实像素**，x 按基准坐标换算（V02）
-                x_px = int(self.pt((SKIN_CARD_X, 0))[0])
-                self.click((x_px, y), label="皮肤卡片", raw=True,
-                           expect_change=False)
-                # 点开卡片有过渡动画，立刻读会读到**上一张**的标题 —— 先等
-                # 标题真的换掉再比对（review I5）。
-                title = self._wait_title_change(prev_title, timeout=1.2)
-                if not title:
-                    continue
-                score = ocr.similarity(title, name)
-                if score >= 0.72:
-                    self.say(f"选中「{title}」（相似度 {score:.2f}）y={int(y)}", "hit")
-                    return int(y)
-            self.skin_scroll(1)
-        raise NavError(f"列表里找不到「{name}」（系列={series} 品阶={tier}）")
-
     def rank_skin_cards(self, name, items=None, floor=0.6):
         """把当前列表里的卡片按「像不像目标」排序，返回 [(文字, 点击y, 相似度)]。
 
@@ -1219,7 +1151,7 @@ class NavColPanel:
         """当前这一屏里最像目标的那张卡：(文字, 点击y, 相似度)，没有就 None。
 
         注意它只看**当前可见**的列表 —— 「找不到」不等于「游戏里没有」，
-        完整链路是 select_skin 里那个「滚一屏再找」的循环。
+        完整链路是 skinfind 里那个「滚一屏再找」的循环。
         """
         hits = self.rank_skin_cards(name, items=items, floor=floor)
         return hits[0] if hits else None

@@ -67,7 +67,6 @@ def parse(spec):
 _WH_KEYBOARD_LL = 13
 _WM_KEYDOWN = 0x0100
 _WM_SYSKEYDOWN = 0x0104
-_WM_KEYUP = 0x0101
 
 
 class _KBDLLHOOKSTRUCT(ctypes.Structure):

@@ -36,7 +36,7 @@ from .nav import NavError, Navigator
 from .nav_coords import (CONTINUE_POINT as CONT_CLICK,
                          N_BALANCE as BALANCE_N, N_BAR as BAR_N,
                          N_CLOCK as CLOCK_N, N_LIST as LIST_N,
-                         N_POPUP as POPUP_N, N_POPUP_HINT as POPUP_HINT_N,
+                         N_POPUP_HINT as POPUP_HINT_N,
                          N_REWARD as REWARD_N, N_SERIAL as SERIAL_N,
                          N_SKIP as SKIP_N)
 from .screen import Screen

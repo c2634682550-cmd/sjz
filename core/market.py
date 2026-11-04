@@ -109,15 +109,14 @@ def _is_decimal_token(tok):
     return "." in tok
 
 
-def parse_row(text, words=None):
+def parse_row(text):
     """把一行文字解析成可过滤的字段。
 
     返回 {text, price, craft, wear, wear_value, numbers}
     认不出的就是 None —— 调用方要按「未知」处理，不能当 0。
 
-    words 参数保留是为了兼容旧调用点，当前解析只用文本：放大后的 OCR 会把
-    `15,000` 当成一个词（内部带空格），按词框拼接反而拼不出来，所以统一在
-    文本层用 _squeeze_digits 处理。
+    解析只用文本：放大后的 OCR 会把 `15,000` 当成一个词（内部带空格），
+    按词框拼接反而拼不出来，所以统一在文本层用 _squeeze_digits 处理。
     """
     if not text:
         return {"text": "", "price": None, "craft": None, "wear": None,

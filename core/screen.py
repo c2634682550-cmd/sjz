@@ -122,10 +122,6 @@ class Screen:
         # 前三通道正好是 BGR，省一次 cvtColor
         return arr[:, :, :3].copy()
 
-    def grab_norm(self, box):
-        """box 为归一化 {x,y,w,h}。"""
-        return self.grab(self.norm_to_px(box))
-
     def norm_to_px(self, box):
         w, h = self.size
         return (

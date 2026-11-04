@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import preflight, timesync
 from .config import (Config, DATA_DIR, mode_for_workflow, normalize_workflow,
-                     task_workflow)
+                     resolve_dry_run, task_workflow)
 from . import records
 from . import switches
 from .hotkey import HookHotkey, Hotkey
@@ -61,15 +61,6 @@ _hotkey_pre = None      # 休市截前热键
 # join 引擎 —— 线程越堆越多，还会在日志里刷一屏「已停止」（审查 S26）。
 _stop_hotkey_at = 0.0
 _STOP_HOTKEY_GAP = 0.3
-
-
-def _dry_run_requested_for_hotkey():
-    """F7 是不是演练 —— 和 HTTP 那条路走同一个判定（审查 S8/S20）。
-
-    以前这里硬编码 `dry_run=False`：设置里明明选了「演练」，热键一按
-    却真的去点鼠标。
-    """
-    return _dry_run_requested({})
 
 
 def touch():
@@ -233,7 +224,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "msg": "没有这个任务"}, 404)
             return self._json({"ok": True, "job": st})
         if path == "/api/tasks":
-            return self._json({"tasks": _scheduler.tasks()})
+            # tasks_status 额外带 config_ok / config_error：配置读不出来时
+            # 界面要显示「读失败」，不能把快照当成「队列空了」（review R1）。
+            status = getattr(_scheduler, "tasks_status", None)
+            return self._json(status() if status else {"tasks": _scheduler.tasks()})
         if path == "/api/scheduler":
             st = _scheduler.status()
             st["page"] = _watcher.snapshot()
@@ -416,7 +410,9 @@ class Handler(BaseHTTPRequestHandler):
             fire_at=data.get("fire_at") or 0,
             note=data.get("note", ""),
             template_from=data.get("template_from"),
-            mode=data.get("mode") or "detail",
+            # 不补默认值：路线由 scheduler.add 里的 task_workflow 推导，
+            # 两者都没给时回落到全局 workflow（review R2）。
+            mode=data.get("mode"),
             min_price=data.get("min_price") or 0,
             max_price=data.get("max_price") or 0,
             max_wear=data.get("max_wear") or 0,
@@ -610,14 +606,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _preflight(self, data):
         """启动前检查。慢（约 1 秒，要抓屏认页面），只在进第 3 步和手动重测时调。"""
-        mode = "detail" if (data.get("mode") == "detail") else "list"
-        wf = normalize_workflow(data.get("workflow"), "") or \
-            ("list" if mode == "list" else "detail")
         try:
             cfg = Config.load()
-            # 直接调 preflight（而不是 actions.preflight_now）是为了把 workflow
-            # 带进去：倒计时路线要看 clock 区域，只看 mode 会把倒计时任务
-            # 判成「一切正常」（审查 S7）。
+        except Exception as e:                   # noqa: BLE001
+            return self._json({"ok": False, "msg": f"检查失败：{type(e).__name__}: {e}",
+                               "checks": []}, 500)
+        # 路线口径与 scheduler.add / 调度器完全一致（review R2）：
+        # workflow 显式 > 老 mode 参数 > 全局默认 workflow。
+        # 以前缺省写死 "list"，全局默认是 countdown，同一份配置两处结论不同。
+        wf = _preflight_workflow(data, cfg)
+        mode = mode_for_workflow(wf)
+        try:
+            # 直接调 preflight 是为了把 workflow 带进去：倒计时路线要看 clock
+            # 区域，只看 mode 会把倒计时任务判成「一切正常」（审查 S7）。
             checks = preflight.evaluate(preflight.collect(cfg, mode), mode, wf)
         except Exception as e:
             return self._json({"ok": False, "msg": f"检查失败：{type(e).__name__}: {e}",
@@ -625,6 +626,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": preflight.all_ok(checks), "checks": checks})
 
     def _sched_start(self, data):
+        # 原始请求值（None = 没显式指定）原样交给调度器：那边用同一个
+        # resolve_dry_run 判定，日志里的「判定来源」才准确（review R3）。
+        req = data.get("dry_run") if isinstance(data, dict) else None
         dry_run = _dry_run_requested(data)
         # 权限不够就别开跑：UIPI 会把我们发的鼠标键盘消息全拦掉且不报错，
         # 跑起来是「点了没反应」，最后还可能被记成「没抢到」。
@@ -645,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
         ok_gate, why = _preflight_gate(mode, workflow)
         if not ok_gate:
             return self._json({"ok": False, "msg": f"启动前检查没过：{why}"})
-        ok, msg = _scheduler.start(dry_run=dry_run)
+        ok, msg = _scheduler.start(dry_run=req)
         return self._json({"ok": ok, "msg": msg})
 
     def _sched_stop(self):
@@ -790,25 +794,32 @@ def _next_task_route():
     return mode_for_workflow(workflow), workflow
 
 
-def _dry_run_requested(data):
-    """这次启动是不是演练。
+def _preflight_workflow(data, cfg):
+    """preflight 用哪条路线 —— 和 `Scheduler.add` 同一口径（review R2）。
 
-    优先级：请求里显式给了就用它；没给就听配置（run.mode=dry 或
-    env.dry_run）。以前 `data.get("dry_run", True)` 默认演练，界面上
-    明明没勾「演练」却只点了空气（审查 S20）。
+    workflow 显式 > 老 mode 参数 > 全局默认 workflow。
+    以前这里缺省写死 "list"，而全局默认是 countdown：同一份配置，
+    界面加任务和启动前检查能得出两种结论。
     """
-    if isinstance(data, dict) and data.get("dry_run") is not None:
-        return bool(data["dry_run"])
+    data = data or {}
+    return (normalize_workflow(data.get("workflow"), "")
+            or task_workflow({"mode": data.get("mode")},
+                             (cfg or {}).get("workflow") or "countdown"))
+
+
+def _dry_run_requested(data):
+    """这次启动是不是演练 —— 判定统一在 `config.resolve_dry_run`。
+
+    优先级（review R3）：请求显式 > run_mode > env.dry_run 默认。
+    HTTP 入口与调度器都走同一个判定，日志里会打最终结论和来源。
+    以前这里自己拼「run.mode=dry 或 dry_run」，调度器那边又拼一遍。
+    """
     try:
-        cfg = Config.load()
-        run_mode = str(cfg.get("run_mode") or "").strip().lower()
-        if run_mode == "dry":
-            return True
-        val = cfg.get("dry_run")
-        # 真配置一定带这个键（DEFAULTS 里有，默认 True）。只有在精简过的
-        # 配置对象里才会缺 —— 那种情况按「正式」处理，和以前热键的行为一致。
-        return False if val is None else bool(val)
+        req = data.get("dry_run") if isinstance(data, dict) else None
+        dry, _src = resolve_dry_run(Config.load(), req)
+        return dry
     except Exception:                        # noqa: BLE001
+        # 读配置就炸了：按演练处理（不点鼠标比点错安全）
         return True
 
 
@@ -880,7 +891,9 @@ def _hotkey_toggle():
         if not ok_gate:
             _scheduler.note(f"热键开抢被拦下：{why}", "warn")
             return
-        ok, msg = _scheduler.start(dry_run=_dry_run_requested_for_hotkey())
+        # 不传 dry_run：让 scheduler 内部用 resolve_dry_run 判定，日志的
+        # 「判定来源」才会写 run_mode / env.dry_run，而不是笼统的「请求指定」。
+        ok, msg = _scheduler.start()
         _scheduler.note(f"热键开抢：{msg}", "info" if ok else "warn")
     except Exception as e:
         _scheduler.note(f"热键开抢出错：{type(e).__name__}: {e}", "error")
