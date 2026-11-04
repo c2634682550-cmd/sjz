@@ -29,7 +29,8 @@ import numpy as np
 
 from . import countdown, market, ocr, popup, records, switches, timesync
 from .config import Config, DATA_DIR
-from .input import Keyboard, Mouse, MouseStolen, WindowNotForeground
+from .input import (Keyboard, Mouse, MouseStolen, WindowNotForeground,
+                    find_game_window)
 from .nav import NavError, Navigator
 # ROI 的唯一定义处（绝对像素在 nav_coords，引擎用归一化别名）
 from .nav_coords import (CONTINUE_POINT as CONT_CLICK,
@@ -164,7 +165,11 @@ class Engine:
         self._state = SCAN if mode == "list" else WATCH
         # 演练不点鼠标，也就无所谓前台；实战时把当前前台窗口记成目标，
         # 之后每次点击都要求它仍在前台，否则点击会被投递给别的窗口。
-        self._target_hwnd = None if self._dry_run else Mouse.foreground()
+        # 目标窗口 = **游戏窗口**，按窗口类名（UnrealWindow）找，不是「当前前台」。
+        # 用户点「开始抢购」的那一刻，前台是控制台自己 —— 拿它当目标的话，
+        # 引擎会把整场鼠标点到控制台界面上（`ensure_foreground` 还会殷勤地
+        # 把控制台切到前台）。找不到游戏窗口才退回当前前台。
+        self._target_hwnd = find_game_window() or Mouse.foreground()
         # 游戏独占全屏会把光标锁住，导致后面所有点击静默失效（§4.8）。
         # 实战开始前先清一次；演练不动鼠标，不用管。
         if not self._dry_run:
@@ -484,8 +489,24 @@ class Engine:
             self._say(f"第 {attempt} 件：{target['serial'] or '(编号未读出)'}"
                       f" · {target['text']!r}", "hit")
             t_start = time.perf_counter()
+            if self._dry_run:
+                # 演练只验证「能不能找到、能不能选中」，不去等那几十秒的
+                # 倒计时 —— 等了也不点，纯浪费时间。真正要测的点击动作
+                # 由 _fire_and_confirm 的演练分支兜住（它只说不点）。
+                self._say(f"[演练] 已选中 {target['serial'] or '(编号未读出)'}"
+                          f"（{target['sec']} 秒后解锁）—— 演练到此为止，"
+                          "不等待、不点击", "warn")
+                self._set_state(DONE)
+                return
+            # 列表上写着「0分0秒后解锁购买」= **其实已经解锁了**。点进去
+            # 读到的会是「剩余：X分Y秒」（上架剩余），不是解锁倒计时 ——
+            # 这时候还去等倒计时会当场报错、把一件已经能买的货白白丢掉
+            # （真机日志：「选中 xxx，0 秒后解锁」→「这件没等到解锁就没了」）。
+            already = target.get("sec") == 0
+            if already:
+                self._say("这件已经解锁了，直接买", "hit")
             try:
-                self._watch_countdown(cfg, screen)
+                self._watch_countdown(cfg, screen, already_unlocked=already)
             except Aborted as e:
                 if self._stop.is_set():
                     raise
@@ -557,69 +578,136 @@ class Engine:
             raise RuntimeError("倒计时模式需要先框选「倒计时」区域")
         clock_px = screen.norm_to_px(expand(clock_region, 0.1))
 
-        if self._dry_run:
-            words = self._ocr_clock(screen, clock_px)
-            kind = countdown.kind_words(words)
-            text = " ".join(w["text"] for w in words)
-            self._say(f"[演练] 不点卡片，直接用当前选中的那件：{text!r} [{kind}]",
-                      "warn")
-            if kind != "unlock":
-                return None
-            return {"serial": self._read_serial(screen),
-                    "sec": countdown.parse_words(words), "text": text,
-                    "x": 0, "y": 0}
-
+        # 演练**也要真的找皮肤**：导航、切筛选、点卡片读倒计时，全都照做，
+        # 只在最后「点购买」那一步停手（见 _fire_and_confirm 的 dry_run 分支）。
+        # 以前这里直接拿「当前选中的那件」交差 —— 演练永远不点卡片，于是
+        # 「程序到底能不能自己找到我要的那件」在演练里根本验证不了，用户
+        # 看到的就是「演练跑完了，实战还是抢不到」。演练的全部价值就在于
+        # 提前把这一步跑通。
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台 —— 先手动点一下游戏窗口再开始")
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
                         snap=screen.grab, dry_run=False, log=self._say)
         page, _ = nav.where()
+        target = self._target_skin(cfg)
+        # 这一轮是不是已经「重新定位过」了。定位过一次就别再来一次 ——
+        # 下面扫不到目标时还会兜底定位，重复跑等于把筛选流程走两遍。
+        located = [False]
+
+        def locate():
+            """把界面筛到目标皮肤那一档，并点开它。
+
+            筛不到会逐级放宽（枪种/品阶/赛季），最后一档全库扫 —— 只要
+            这件皮肤在库里就一定翻得到。这是「程序自己找到皮肤」的正主：
+            用户不用先手动选皮肤、也不用先把界面停在正确的页上。
+            """
+            located[0] = True
+            self._say(f"目标：{target['name']}"
+                      f"（{target['season']} {target['series']} · "
+                      f"{target['tier']} · {target['gun']}）")
+            from .skinfind import SkinFinder
+            got = SkinFinder(nav, say=self._say).find(
+                target["name"],
+                season=target.get("brick") or target.get("series"),
+                tier=target.get("tier"), gun=target.get("gun"))
+            if not got.get("ok"):
+                raise Aborted(f"找不到「{target['name']}」："
+                              f"{got.get('msg') or '翻遍列表没有'}")
+            nav.buy()               # 典藏外观页的「购买」= 进挂单列表，不花钱
+            # 这里**不要再 sleep**：nav.buy() 自己已经等过 1.5 秒并用
+            # require() 确认落到 detail/onsale 了。以前外面又 sleep(1.5)，
+            # 等于每件白等 1.5 秒 —— 抢购里 1.5 秒足够别人把货买走。
+            self._say(f"已进到「{nav.where()[0]}」")
+            if switches.get(cfg, "follow.before_buy"):
+                self._follow(nav, cfg, True)
+
         if page != "onsale":
             self._say(f"当前在「{page}」，先走到在售页")
-            # 任务点名要某一砖时：先用知识库定出「系列 + 品阶」，筛到那一档
-            # 再点中它 —— 不点的话只能抢列表里的第一件。
-            target = self._target_skin(cfg)
             try:
                 if target:
-                    self._say(f"目标：{target['name']}"
-                              f"（{target['season']} {target['series']} · "
-                              f"{target['tier']} · {target['gun']}）")
-                    # 走完整的找皮肤逻辑：筛不到会逐级放宽（枪种/品阶/赛季），
-                    # 最后一档全库扫 —— 只要这件皮肤在库里就一定翻得到。
-                    from .skinfind import SkinFinder
-                    got = SkinFinder(nav, say=self._say).find(
-                        target["name"],
-                        season=target.get("brick") or target.get("series"),
-                        tier=target.get("tier"), gun=target.get("gun"))
-                    if not got.get("ok"):
-                        raise Aborted(f"找不到「{target['name']}」："
-                                      f"{got.get('msg') or '翻遍列表没有'}")
-                    nav.buy()
-                    time.sleep(1.5)
-                    self._say(f"已进到「{nav.where()[0]}」")
-                    if switches.get(cfg, "follow.before_buy"):
-                        self._follow(nav, cfg, True)
+                    locate()
                 else:
                     nav.go_to_onsale()
             except NavError as e:
                 raise Aborted(f"界面导航失败：{e}")
-        # 必须切到「只显示公示期」：切成「不显示」的话列表里全是已解锁的挂单，
-        # 根本没有「X分Y秒后解锁购买」可以等（真机踩过，白跑一整轮）。
-        nav.pub_filter("只显示公示期")
-        if refresh:
-            nav.ons_refresh()
-        # 上一轮试完会停在后面的页；不先翻回去，这一轮就是从中间页开扫。
-        # 页码读不出（None）或点了一步没变小就停手 —— 盲翻只会更错。
-        page_no = nav.ons_page()
-        while page_no is not None and page_no > 1:
-            nav.ons_prev_page()
-            now_page = nav.ons_page()
-            if now_page is None or now_page >= page_no:
-                break
-            page_no = now_page
+        elif target:
+            # **已经在在售页，但可能是上一件皮肤的列表。**
+            # 换皮肤之后直接点「开始抢购」，界面上停的还是旧那件：右侧
+            # 详情面板写着旧皮肤名，列表里也全是旧皮肤的挂单。这时候
+            # 直接扫列表，扫到天亮也扫不到新目标（真机就是这么白跑一轮）。
+            # 所以先读一眼右侧标题，不是目标就**退回上一级重新筛选**。
+            try:
+                cur = nav.skin_title()
+            except Exception:                    # noqa: BLE001
+                cur = ""
+            # 只有读到「像皮肤名」的文字才敢下结论：控制台压在游戏上、
+            # 或者面板还没渲染出来时，OCR 会读出「默认排序」这种无关文字，
+            # 拿它去比对会误判成「换了皮肤」，白白重筛一遍。
+            gun_words = ("冲锋枪", "步枪", "手枪", "霰弹枪", "轻机枪",
+                         "狙击", "射手", "机枪")
+            if cur and any(w in cur for w in gun_words) \
+                    and ocr.similarity(cur, target["name"]) < 0.72:
+                self._say(f"当前选中的是「{cur}」，不是「{target['name']}」"
+                          f"—— 退回上一级重新筛选", "warn")
+                try:
+                    locate()                     # 内部第一步就是 goto_collection
+                except NavError as e:
+                    raise Aborted(f"界面导航失败：{e}")
+
+        def scan_first_page():
+            """切公示期筛选 + 排序 + 翻回第 1 页 + 扫一页。
+
+            公示期筛选走界面上的开关（不限 / 只显示 / 不显示）：倒计时模式
+            必须「只显示公示期」—— 切成「不显示」的话列表里全是已解锁的挂单，
+            根本没有「X分Y秒后解锁购买」可以等（真机踩过，白跑一整轮）。
+            排序同理：默认排序里最便宜的那件可能排在后面几页，而抢购只看
+            第一页，「按价格升序」才是捡漏该用的顺序。
+
+            上一轮试完会停在后面的页；不先翻回去，这一轮就是从中间页开扫。
+            页码读不出（None）或点了一步没变小就停手 —— 盲翻只会更错。
+            """
+            nav.pub_filter(switches.get(cfg, "filter.pub") or "只显示公示期")
+            # **价格/成色区间也要真设进游戏**。以前只有 list 模式的
+            # `_ons_ready` 会调这个，倒计时模式从来没设过 —— 任务里写的
+            # 「价 1000~999999」只出现在日志的 `_describe` 里，游戏那边
+            # 一件没筛，全靠扫到之后逐行比对，列表一多就白扫。
+            # 设不进去只记警告：那是锦上添花，逐行比对还能兜住；
+            # AttributeError 是演练用的 FakeNav 没有这些方法。
+            # **一轮任务只做一次**：这个输入框逐位敲、还要失焦才显示，
+            # 实测一次要 18 秒，每件都来一遍纯属烧时间（区间又不会变）。
+            if not getattr(self, "_price_filter_tried", False):
+                self._price_filter_tried = True
+                try:
+                    self._apply_price_filter(nav, cfg)
+                except (NavError, AttributeError) as e:
+                    self._say(f"价格筛选没设成（继续，靠逐行比对）：{e}", "warn")
+            # 排序切不动不拦：顺序不同而已，不该为它整场罢工。
+            # **一轮任务只试一次**：切不进去的时候每次都重试，每件白烧
+            # 一次 OCR + 一条警告日志，列表刷得越勤越亏。
+            # getattr 兜底：测试里的 FakeNav 没有这个方法。
+            if not getattr(self, "_sort_tried", False):
+                self._sort_tried = True
+                sort_by = getattr(nav, "sort_by", None)
+                if sort_by is not None:
+                    try:
+                        sort_by(switches.get(cfg, "filter.ons_sort") or "默认排序")
+                    except NavError as e:
+                        self._say(f"排序没切成（不影响抢购）：{e}", "warn")
+            if refresh:
+                nav.ons_refresh()
+            page_no = nav.ons_page()
+            while page_no is not None and page_no > 1:
+                nav.ons_prev_page()
+                now_page = nav.ons_page()
+                if now_page is None or now_page >= page_no:
+                    break
+                page_no = now_page
+            return sweep()
 
         list_px = screen.norm_to_px(cfg.region("list") or LIST_N)
         task = dict(cfg.get("active_task") or {})
+        # 最短倒计时（秒）：比它短的直接跳过，0 = 不限制
+        min_lead = float(switches.get(cfg, "countdown.min_lead") or 0)
 
         def sweep():
             """扫当前页，逐件点开读倒计时。返回 (候选, 跳过原因)。
@@ -657,15 +745,36 @@ class Engine:
                         continue
                 words = self._ocr_clock(screen, clock_px)
                 text = " ".join(w["text"] for w in words)
-                cands.append({"serial": None, "sec": countdown.parse_words(words),
-                              "kind": countdown.kind_words(words), "text": text,
+                sec = countdown.parse_words(words)
+                kind = countdown.kind_words(words)
+                # **倒计时太短的别买**：来不及把确认框弹出来，等到了也
+                # 多半被别人先买走，白耗一次尝试。0 秒是「已经解锁」，
+                # 不需要等，照买不误（那种经常 4 秒就成交）。
+                if kind == "unlock" and sec is not None and 0 < sec < min_lead:
+                    skips.append(f"只剩 {sec} 秒，来不及")
+                    self._say(f"  价 {self._fmt(price)} · {text!r}"
+                              f" —— 只剩 {sec} 秒，跳过", "warn")
+                    continue
+                cands.append({"serial": None, "sec": sec,
+                              "kind": kind, "text": text,
                               "x": x, "y": y, "price": price})
-                self._say(f"  价 {self._fmt(price)} · {text!r} "
-                          f"[{countdown.kind_words(words)}]")
+                self._say(f"  价 {self._fmt(price)} · {text!r} [{kind}]")
             return cands, skips
 
-        cands, skips = sweep()
+        cands, skips = scan_first_page()
         best = choose_countdown_target(cands, tried)
+        if best is None and target and page == "onsale" and not located[0]:
+            # 第一页里没有目标 → 用知识库把筛选切到它那一档，再扫一遍。
+            # 「自己找到皮肤」不能只靠第一页碰运气：目标排在后面的页时，
+            # 不切筛选就永远扫不到它。只在「本来就停在在售页」时补这一步
+            # —— 别的页面进来时上面已经定位过了，别重复折腾界面。
+            self._say("第一页没有目标皮肤，先筛到它那一档再扫", "warn")
+            try:
+                locate()
+            except NavError as e:
+                raise Aborted(f"界面导航失败：{e}")
+            cands, skips = scan_first_page()
+            best = choose_countdown_target(cands, tried)
         if best is None and not refresh:
             # 一件都没挑到才补刷一次。用户定的「没抢到再去点刷新」——
             # 每轮都刷会一直闪，刷新期间那件还可能正好解锁，刷完就错过了。
@@ -742,8 +851,13 @@ class Engine:
         m = re.search(r"\d{6,}", ocr.read_text(big))
         return m.group(0) if m else ""
 
-    def _watch_countdown(self, cfg, screen):
+    def _watch_countdown(self, cfg, screen, already_unlocked=False):
         """循环读倒计时，归零即返回；界面切走或停更则中止。
+
+        `already_unlocked`：进弹窗时列表上就写着「0分0秒后解锁购买」，
+        也就是**已经解锁了**。这种情况下弹窗里显示的是「剩余：X分Y秒」
+        （上架剩余时间），不是解锁倒计时 —— 那是正常的，直接放行去点购买，
+        不能按「框错了区域」报错（那样会白丢一件已经能买的货）。
 
         **每一帧都 OCR，不做像素差预筛。** 曾经用「画面变了才 OCR」省开销，
         真机上栽了：单个数字变化只改十几个像素，`mean(absdiff)` 在 0.017~0.7
@@ -764,6 +878,13 @@ class Engine:
 
         while not self._stop.is_set():
             self._failsafe(bool(cfg["failsafe"]))
+            # **等倒计时的几十秒里也要盯着前台。** 这段时间用户切出去看别
+            # 的东西、或者别的窗口抢了焦点，截图抓到的就是那个窗口 ——
+            # 倒计时读数一直停在同一个值，2.5 秒后就被判成「停更」而放弃
+            # 一件明明能买的货（实测 63 秒卡住 2.5 秒就退出了）。
+            if self._target_hwnd and Mouse.foreground() != self._target_hwnd:
+                if not Mouse.ensure_foreground(self._target_hwnd, screen=screen):
+                    raise Aborted("游戏窗口抢不到前台 —— 别切走，或者手动点一下游戏")
             crop = screen.grab(px)
             if getattr(crop, "size", 0) == 0:
                 time.sleep(0.005)
@@ -781,6 +902,10 @@ class Engine:
             if target_kind is None and k is not None:
                 target_kind = k
                 if k == "remain":
+                    if already_unlocked:
+                        self._say("已经解锁了（弹窗里显示的是上架剩余时间），"
+                                  "直接买", "hit")
+                        return
                     raise Aborted(
                         "读到的是「剩余：X分Y秒」—— 上架剩余时间，归零时"
                         "商品下架、按钮变灰，不是开卖倒计时。要抢购请把顶部"
@@ -832,8 +957,33 @@ class Engine:
             self._say("[演练] 实战时会先走：F4 → 典藏外观 → 选皮肤 → 购买 → 筛选",
                       "warn")
             return
+        # **先把游戏抢到前台**。list 模式以前少了这一步：用户点完「开始抢购」
+        # 控制台自己在前台，F4 就发给了控制台（日志「F4 打开市场 变化 5.4%
+        # （无响应）」），接着 OCR 抓到的全是控制台画面，页面一直 unknown，
+        # 整个任务以「复位失败」告终。倒计时那条路有这一步，列表这条漏了。
+        # getattr 兜底：测试里的 FakeMouse 没有这个方法。
+        ensure_fg = getattr(mouse, "ensure_foreground", None)
+        if ensure_fg is not None and not ensure_fg(self._target_hwnd, screen=screen):
+            raise Aborted("游戏窗口抢不到前台 —— 先手动点一下游戏窗口再开始")
+        # 任务点名了具体皮肤时，**先自己定位过去**（筛选 → 点开 → 进在售页）。
+        # 以前 list 模式只做 go_to_onsale，不碰左侧筛选：换皮肤之后界面还停在
+        # 上一件的列表上，扫到天亮也扫不到目标，甚至会按「不限名」把别的
+        # 赛季的货买回来。
+        target = self._target_skin(cfg)
         try:
-            page = nav.go_to_onsale()
+            if target:
+                from .skinfind import SkinFinder
+                got = SkinFinder(nav, say=self._say).find(
+                    target["name"],
+                    season=target.get("brick") or target.get("series"),
+                    tier=target.get("tier"), gun=target.get("gun"))
+                if not got.get("ok"):
+                    raise Aborted(f"找不到「{target['name']}」："
+                                  f"{got.get('msg') or '翻遍列表没有'}")
+                nav.buy()            # 典藏外观页的「购买」= 进挂单列表，不花钱
+                page = nav.where()[0]
+            else:
+                page = nav.go_to_onsale()
         except NavError as e:
             raise Aborted(f"界面导航失败：{e}")
         self._say(f"已到在售页（{page}）", "hit")
@@ -885,20 +1035,27 @@ class Engine:
         档位外的货。读回 (1000, 2) 这种空区间也是坏的：上限 2 什么货都没有。
         """
         g_lo, g_hi = got
-        if lo:
-            if g_lo is None:
-                raise Aborted(f"最低价没读出来（要 {lo}）—— 筛选没设进去")
-            if g_lo < lo:
-                raise Aborted(f"最低价被放宽了：要 {lo}，框里是 {g_lo}")
-        if hi:
-            if g_hi is None:
-                raise Aborted(f"最高价没读出来（要 {hi}）—— 筛选没设进去")
-            if g_hi > hi:
-                raise Aborted(f"最高价被放宽了：要 {hi}，框里是 {g_hi}")
+        # **读不回不再中止。** 价格框是深色底 + 细字，OCR 经常整个读空
+        # （真机日志：「价格框读回 (None, None)」），一中止整单就废了。
+        # 而 `market.check` 后面还会按 min/max 逐行再过滤一遍 —— 最坏情况
+        # 只是「游戏内没筛窄」，不会买到区间外的货。
+        # 只有「区间本身是空的」才真没救，那种才中止。
+        if lo and g_lo is None:
+            self._say(f"最低价没读回来（要 {lo}）—— 按未设处理，"
+                      "后面逐行比对兜底", "warn")
+        elif lo and g_lo < lo:
+            self._say(f"最低价被放宽了：要 {lo}，框里是 {g_lo} —— "
+                      "逐行比对会拦住，继续", "warn")
+        if hi and g_hi is None:
+            self._say(f"最高价没读回来（要 {hi}）—— 按未设处理，"
+                      "后面逐行比对兜底", "warn")
+        elif hi and g_hi > hi:
+            self._say(f"最高价被放宽了：要 {hi}，框里是 {g_hi} —— "
+                      "逐行比对会拦住，继续", "warn")
         if g_lo is not None and g_hi is not None and g_lo > g_hi:
             raise Aborted(f"价格区间是空的：框里 {g_lo}~{g_hi}"
                           " —— 输入没进去，先手动确认筛选面板能正常输入")
-        self._say(f"  价格区间已生效：{g_lo or ''}~{g_hi or ''}", "hit")
+        self._say(f"  价格区间：{g_lo or ''}~{g_hi or ''}", "hit")
 
     def _ons_ready(self, cfg, screen, mouse):
         """把在售列表带到「不显示公示期 + 任务的价格/材质筛选」，并刷新一次。
@@ -920,6 +1077,14 @@ class Engine:
             self._say(f"当前是 {page} 页，切到「在售」")
             if not nav.to_onsale():
                 raise Aborted("切不到「在售」页 —— 先手动切过去再开始")
+        # 列表模式**只买已经解锁的**，所以这里固定切「不显示公示期」——
+        # 这是模式语义，不是漏读开关（真机实测：公示期那批到解锁那一刻基本
+        # 已经被抢光，盯着它们纯属浪费时间）。
+        # 界面上那个「公示期筛选」开关只对**倒计时路线**生效；想盯公示期
+        # 解锁购买，请把「抢购路线」改成「公示期倒计时」。
+        # 这里必须说一句，否则用户会以为开关没生效（真机上就是这么误解的）。
+        self._say("列表模式只买已解锁的货（公示期那批解锁时基本已被抢光）；"
+                  "要抢公示期解锁，把「抢购路线」改成「公示期倒计时」", "info")
         nav.pub_filter("不显示公示期")
         self._apply_price_filter(nav, cfg)     # 价格/材质/颜色/分类
         nav.ons_refresh()
@@ -971,6 +1136,14 @@ class Engine:
 
         while not self._stop.is_set():
             self._failsafe(failsafe)
+            # **每一轮都确认游戏还在前台**。截图抓的是整块屏幕，游戏一旦被
+            # 别的窗口盖住（用户切出去看控制台/浏览器，或者别的程序抢焦点），
+            # OCR 读到的就是那个窗口的内容 —— 实测读到「WorkBuddy AI 新建」
+            # 这种文字，然后拿它当挂单去点，当然点不中，还会一直空转到超时。
+            if self._target_hwnd and Mouse.foreground() != self._target_hwnd:
+                if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
+                    raise Aborted("游戏窗口抢不到前台 —— 别切走，或者手动点一下游戏")
+                self._say("前台被别的窗口抢走了，已切回游戏", "warn")
             now = time.perf_counter()
             frames += 1
             # 每隔几秒把盘上的配置合并进来：用户在界面上改价格区间 / 做工 /
@@ -1434,6 +1607,18 @@ class Engine:
         else:
             self._say(f"点了 {confirm_clicks} 下确认，但没看到结算弹窗 —— "
                       "按没抢到记（多半是被人先买走了）", "warn")
+            # **把残留的提示收掉**。没抢到的时候屏幕上通常留着一个
+            # 「该商品已被购买」之类的弹窗，它挡住整个界面 —— 下一个任务
+            # 连页面都切不过去（实测连报三次「点 collection 标签 0.0%
+            # 无响应」，三个任务连环失败）。按 Esc 收掉，再继续。
+            if not self._dry_run:
+                try:
+                    Keyboard(self._target_hwnd,
+                             mode=getattr(self, "_input_mode", "interception")
+                             ).tap("ESC")
+                    time.sleep(0.4)
+                except Exception as e:            # noqa: BLE001
+                    self._say(f"收残留弹窗失败：{type(e).__name__}", "warn")
         # 只有真成交才留图 + 记账 + 收奖励弹窗；没抢到也记一条 miss，好复盘
         if not self._dry_run:
             self._record(cfg, screen, item=item, price=price,
@@ -1504,6 +1689,13 @@ class Engine:
         px = screen.norm_to_px(CLOCK_N)
         t0 = time.perf_counter()
         seen = False
+        # **用跳秒相位估计判归零，不能看「读到 0」。**
+        # 显示值是 floor（见 countdown.observe 的注释）：读到「0分0秒」的
+        # 那一刻真实剩余还有 0~1 秒，这一下点确认游戏直接忽略 —— 连续三次
+        # 没抢到、用户一眼看出「点太早了」就是这么来的。上次只加了 150ms
+        # 复核，远不够那 1 秒，所以还是早。
+        # 估计公式：零点 = 读到 S 的时刻 + S + 1。
+        cd = countdown.Clock()
         # 轮询间隔按实测的读表成本自适应：读一次 240x65 的倒计时约 25ms
         # （截屏 2ms + 放大 + 一次 OCR）。以前写死 250ms，等于「解锁了还要
         # 再等最多 250ms 才发现」—— 抢购里 250ms 是能决定成败的量级。
@@ -1512,20 +1704,35 @@ class Engine:
             if self._stop.is_set():
                 raise Aborted("用户停止")
             t_read = time.perf_counter()
+            now = t_read
             words = self._ocr_clock(screen, px)
             sec = countdown.parse_words(words)
             if sec is not None:
                 seen = True
-                if sec == 0:
-                    # **不再固定等 0.6s。** 以前这里无条件 sleep(0.6)，
-                    # 意思是「等按钮真正亮起来」；可弹窗倒计时归零后按钮
-                    # 通常几十毫秒内就能点，白等 600ms 纯粹送分。
-                    # 现在直接返回，由 _confirm_clicks 的闭环去试探：
-                    # 点不动就继续点，点得动弹窗立刻消失。
-                    self._say("弹窗倒计时归零，开点", "hit")
+                cd.observe(sec, now)
+                if cd.due(now, 0.0):
+                    self._say("弹窗倒计时真归零了，开点", "hit")
                     return True
-            elif seen or time.perf_counter() - t0 >= 2.0:
-                self._say("弹窗倒计时文本已消失，视为解锁", "hit")
+            elif seen:
+                # 文本消失：有相位估计就等估计的零点，没有就只能信它
+                z = cd.zero_at()
+                if z is None:
+                    self._say("弹窗倒计时文本已消失，视为解锁", "hit")
+                    return True
+                left = z - time.perf_counter()
+                if left <= 0:
+                    self._say("弹窗倒计时文本消失且已到零点，开点", "hit")
+                    return True
+                if left > 0.3:
+                    # 离零点还远文本就没了 —— 不是归零，是界面变了
+                    # （被别人买走、切页、弹窗被关）。干等下去没意义。
+                    self._say(f"弹窗倒计时提前消失（距零点还有 {left:.1f}s），"
+                              "按界面变化处理", "warn")
+                    return True
+                # 0 < left <= 0.3：马上就归零了，等它
+            elif time.perf_counter() - t0 >= 2.0:
+                # 开场 2 秒从没见过分秒结构：点进来时本来就已经解锁了
+                self._say("弹窗里一直没有倒计时，按已解锁处理", "hit")
                 return True
             # 睡「间隔 - 本次读表耗时」，保证轮询频率而不是被 IO 拖慢
             cost = time.perf_counter() - t_read

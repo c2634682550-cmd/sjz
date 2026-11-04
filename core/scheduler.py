@@ -41,6 +41,32 @@ ARM_LEAD = 20.0      # 提前 20 秒装载模板、进入布防
 POLL_IDLE = 0.25
 
 
+def _same_file(a, b):
+    """两个路径是不是同一个文件。Windows 大小写不敏感，samefile 还可能抛。"""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def sync_template(cfg, name, tid):
+    """把任务自己的模板同步到全局位置；没有就跳过（引擎直接读全局那份）。
+
+    返回 False = 任务和全局都没有这个模板，调用方该判失败。
+
+    以前这里无条件 `shutil.copyfile(src, dst)`：任务目录里没有模板时会退回
+    全局路径，src 和 dst 就成了同一个文件 → SameFileError → 任务启动即死。
+    而 /api/scheduler/start 早就回了 ok，界面上看起来就是「点了没反应」。
+    实测这台机器上就是这么死的（队列里那条任务的 result 就是 SameFileError）。
+    """
+    dst = cfg.template_path(name)
+    src = cfg.template_path(name, tid)
+    if os.path.isfile(src) and not _same_file(src, dst):
+        shutil.copyfile(src, dst)
+        return True
+    return os.path.isfile(dst)
+
+
 class Scheduler:
     """任务队列 + 调度器。
 
@@ -274,6 +300,35 @@ class Scheduler:
             cfg = Config.load()
             if not cfg["queue"]:
                 return False, "队列是空的"
+            # 开跑前先把「模板在不在」查一遍。缺模板的话任务会在后台线程里
+            # 立刻失败，而接口已经回了「已启动」—— 用户看到的就是点了没反应。
+            first = [t for t in cfg["queue"]
+                     if t.get("status") in (PENDING, ARMED) and t.get("enabled", True)]
+            if not first:
+                # 队列里只剩「完成 / 失败 / 跳过」的：用户又点了一次开始，
+                # 意思就是「再跑一遍」。不重置的话下面 _run 会立刻说
+                # 「队列跑完了」，界面上还是没反应（实测这台机器上就是这条：
+                # 上一次因为 SameFileError 失败，之后每次点开始都毫无动静）。
+                with Config.transaction() as cur:
+                    for t in cur["queue"]:
+                        if (t.get("enabled", True)
+                                and t.get("status") in (DONE, FAILED, SKIPPED)):
+                            t["status"] = PENDING
+                            t["result"] = None
+                cfg = Config.load()
+                first = [t for t in cfg["queue"]
+                         if t.get("status") in (PENDING, ARMED)
+                         and t.get("enabled", True)]
+            if first:
+                task = first[0]
+                need = ("confirm",) if (task.get("mode") or "detail") == "list" \
+                    else ("buy", "confirm")
+                missing = [n for n in need
+                           if not (os.path.isfile(cfg.template_path(n, task.get("id")))
+                                   or os.path.isfile(cfg.template_path(n)))]
+                if missing:
+                    return False, (f"缺少模板：{'、'.join(missing)}"
+                                   "（先在游戏里重新截一次再开始）")
         # 执行模式是全局开关：dry 一定不点，semi 走到购买键前停手，
         # auto 才真点。界面上的「演练模式」也是这条。
         from . import switches
@@ -513,26 +568,17 @@ class Scheduler:
         tid = task["id"]
         cfg = Config.load()
 
-        # 任务自己的模板复制到全局位置，引擎从那儿读。任务没模板就退回全局的
-        # ——加任务时是快照的，正常都有；全局的也缺才是真缺。
+        # 任务自己的模板同步到全局位置，引擎从那儿读。
         # 列表模式只强依赖确认模板；购买模板只在点进详情页后用到，缺了也能扫。
         need = ("confirm",) if mode == "list" else ("buy", "confirm")
         for name in need:
-            src = cfg.template_path(name, tid)
-            if not os.path.isfile(src):
-                src = cfg.template_path(name)
-            if not os.path.isfile(src):
+            if not sync_template(cfg, name, tid):
                 self._set_status(tid, FAILED, f"缺少 {name} 模板")
                 self._say(f"{self._label(task)}：缺少 {name} 模板，重新截一次", "error")
                 return
-            shutil.copyfile(src, cfg.template_path(name))
         if mode == "list":
-            # 有就带上，没有就不带——引擎在点进详情页时才读它
-            src = cfg.template_path("buy", tid)
-            if not os.path.isfile(src):
-                src = cfg.template_path("buy")
-            if os.path.isfile(src):
-                shutil.copyfile(src, cfg.template_path("buy"))
+            # 有就带上，没有也不拦 —— 引擎在点进详情页时才读它
+            sync_template(cfg, "buy", tid)
 
         ok, msg = self._engine.start(dry_run=dry_run, deadline=task["fire_at"] or None,
                                      mode=mode, workflow=workflow)

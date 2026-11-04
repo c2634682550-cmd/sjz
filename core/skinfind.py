@@ -32,6 +32,20 @@ TITLE_FLOOR = 0.72
 CAND_FLOOR = 0.6
 
 
+def _name_part(s):
+    """取「·」后面那截 —— 具体皮肤名。
+
+    「AS Val突击步枪·夜穹」→「夜穹」；「AS Val突击步枪-夜穹」也一样。
+    同型号同枪种的两件只差这一截，整体相似度区分不开（0.85 左右），
+    拿它单独比才能一刀切开（夜穹 vs 地平线 = 0.00）。
+    """
+    s = (s or "").strip()
+    for sep in ("·", "・", "-", "－", "_"):
+        if sep in s:
+            return s.split(sep)[-1].strip()
+    return s
+
+
 class SkinFinder:
     """在典藏外观页找到并选中一件皮肤。"""
 
@@ -74,12 +88,21 @@ class SkinFinder:
         #    抢购前用户通常已经把这件选好了，这时候只需要确认一眼 ——
         #    实测走完整流程（复位 + 选赛季 + 扫）要一两分钟，而这一步
         #    只要几百毫秒。找不到再走下面的筛选流程。
-        hit = self._scan_current(name)
-        if hit:
-            hit.update(ok=True, plan="当前屏", screens=1, tried=self.tried,
-                       elapsed_s=round(time.time() - t0, 1), quick=True)
-            self._say(f"当前屏就有「{hit['title']}」", "hit")
-            return hit
+        #
+        #    **只在典藏外观页做这一步**：在售页/详情页的右侧面板是挂单详情，
+        #    `_TITLE_BOX` 那个位置落在列表卡片上，读到的是「默认」这类无关
+        #    文字 —— 白白点开一张卡再否定它，既慢又容易乱。
+        try:
+            page = self.nav.where()[0]
+        except Exception:                        # noqa: BLE001
+            page = None
+        if page not in ("onsale", "detail"):
+            hit = self._scan_current(name)
+            if hit:
+                hit.update(ok=True, plan="当前屏", screens=1, tried=self.tried,
+                           elapsed_s=round(time.time() - t0, 1), quick=True)
+                self._say(f"当前屏就有「{hit['title']}」", "hit")
+                return hit
 
         for i, plan in enumerate(plans):
             t_filter = time.time()
@@ -99,7 +122,7 @@ class SkinFinder:
                                "面板已变成居中浮层，请手动把筛选复位后再试"}
 
             t_scan = time.time()
-            hit = self._scan(name)
+            hit = self._scan(name, assume_top=True)
             if hit:
                 hit.update(ok=True, plan=plan["label"],
                            elapsed_s=round(time.time() - t0, 1),
@@ -155,15 +178,20 @@ class SkinFinder:
     def _apply(self, plan, baseline=False):
         """把筛选面板调成 plan 指定的样子。
 
-        baseline=True 时先做一次全复位（品阶/枪种/拥有全勾上）—— 只做一次，
-        因为它要点十几个框，一次就够。之后每档只改赛季。
+        baseline=True 时**只在列表是空的时候**才做全复位。全复位的唯一
+        目的是防「空列表让面板变成居中浮层、坐标全变」；列表本来就有货时
+        它纯属浪费 —— 要把 14 个框点一遍（约 3 秒），然后下一行又按目标
+        改回来。连续抢同一个赛季时，这一来一回就是白烧 3 秒。
         """
         nav = self.nav
         nav.goto_collection()
-        if baseline:
+        # 先读一眼列表：非空就直接设目标状态（col_apply 本来就只点不一致的）
+        items = nav.skin_items()
+        if baseline and not items:
+            self._say("列表是空的，先全复位一次（否则面板会变居中浮层）", "info")
             nav.col_filter_reset()
-        before_items = nav.skin_items()
-        before = before_items[0][0] if before_items else None
+            items = nav.skin_items()
+        before = items[0][0] if items else None
 
         nav.col_filter()
         nav.col_pick_season(plan.get("season") or "全部赛季")
@@ -203,10 +231,16 @@ class SkinFinder:
                 return got
         return None
 
-    def _scan(self, name):
-        """从列表顶部往下翻，边翻边认。找到返回结果，翻完没有返回 None。"""
+    def _scan(self, name, assume_top=False):
+        """从列表顶部往下翻，边翻边认。找到返回结果，翻完没有返回 None。
+
+        `assume_top=True`：调用方刚改完筛选，游戏会把列表重置到顶部 ——
+        这时候再滚一次「到顶」纯属白花 1.5 秒（实测筛完到点中卡片要 8 秒，
+        其中一大截耗在这）。
+        """
         nav = self.nav
-        nav.skin_scroll_top()
+        if not assume_top:
+            nav.skin_scroll_top()
         seen = set()
         tried = set()
         empty_streak = 0
@@ -245,13 +279,31 @@ class SkinFinder:
         """点开一张卡，读标题确认。对上了返回结果，没对上返回 None。"""
         nav = self.nav
         nav.click((150, y), label="皮肤卡片", expect_change=False)
-        time.sleep(0.35)
-        title = nav.skin_title()
+        # 点开后右侧详情面板要渲染一会儿。**轮询**读标题，读到「像皮肤名」
+        # 的文字就走，最多等 0.9 秒。
+        # 以前是固定 sleep(0.35) 读一次：面板还没换过来，读到的是上一张卡
+        # 的残留标题（或者「默认」这种无关文字），于是把对的卡片判成
+        # 「不是它」，接着去点下一张 —— 这就是「频繁选错 + 慢」的来源。
+        title, t0 = "", time.perf_counter()
+        while time.perf_counter() - t0 < 0.9:
+            title = nav.skin_title()
+            if title:
+                break
+            time.sleep(0.1)
         if not title:
+            self._say(f"「{text}」点开后读不到标题，跳过这张", "warn")
             return None
         score = ocr.similarity(title, name)
-        if score < TITLE_FLOOR:
-            self._say(f"「{text}」点开是「{title}」（{score:.2f}），不是它", "info")
+        # **光看整体相似度会选错。** 皮肤名是「型号 + 枪种 + · + 皮肤名」，
+        # 同枪种同型号的两件差在最后那几个字上：
+        #   「AS Val突击步枪·夜穹」 vs 「AS Val突击步枪·地平线」
+        # 整体相似度约 0.85，远高于 TITLE_FLOOR(0.72) —— 判成同一件，
+        # 于是点开的是地平线、买到的也是地平线（真机「频繁选错」就是它）。
+        # 所以再比一次「·」后面那截：夜穹 vs 地平线 = 0.00，一刀切开。
+        part = ocr.similarity(_name_part(title), _name_part(name))
+        if score < TITLE_FLOOR or part < 0.45:
+            self._say(f"「{text}」点开是「{title}」（整体 {score:.2f} / "
+                      f"皮肤名 {part:.2f}），不是它", "info")
             return None
         return {"y": int(y), "title": title, "score": round(score, 3),
                 "list_text": text}

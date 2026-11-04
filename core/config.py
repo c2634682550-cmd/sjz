@@ -77,7 +77,10 @@ DEFAULTS = {
     "active_task": {},
     # 三个「任务没写就用它」的全局默认值。界面上的「做工 / 最大磨损 /
     # 挑单顺序」三个开关写这里，任务自己的字段优先。
-    "filter_defaults": {"craft": "", "max_wear": 0.0, "sort": "price"},
+    "filter_defaults": {"craft": "", "max_wear": 0.0, "sort": "price",
+                        # 在售页顶部那两个下拉（界面上可选，见 switches.py）
+                        "pub": "只显示公示期",
+                        "ons_sort": "默认排序"},
     # ---------------- 开关表（core/switches.py）读的那些 ----------------
     # 每一项都在 switches.SWITCHES 里有对应条目，界面上拨一下就是改这里。
     "run_mode": "auto",           # auto / semi / dry
@@ -86,10 +89,13 @@ DEFAULTS = {
     "force_foreground": True,     # 开点前抢前台并等画面刷新
     "record_enabled": True,       # 写 data/records.jsonl
     "countdown_attempts": 3,      # 倒计时模式最多换几件
+    # 解锁倒计时短于这个秒数的商品直接跳过：来不及弹确认框，等到了也多半
+    # 被别人先买走。0 秒（已经解锁）不受限制，那种可以直接买。
+    "countdown_min_lead_s": 6,
     "stop_after_hit": False,      # 抢到就停整条队列
     "stop_after_fails": 0,        # 连续失败几次停（0=不停）
     # 关注（交易行详情面板顶部的星标，见 说明.txt 第十一节）
-    "follow_before_buy": True,
+    "follow_before_buy": False,
     "follow_after_hit": False,
     "follow_retry": 2,
     "follow_wait_ms": 450,

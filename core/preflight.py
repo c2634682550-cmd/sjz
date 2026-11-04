@@ -77,18 +77,24 @@ def evaluate(facts, mode="list"):
                                 "--port 8081 --device gpu:0"}))
 
     # ③ 时间校准
+    #
+    # **这一项只警告、不拦启动。** 校时的偏差是「补偿」掉的（timesync.true_now
+    # 会加上 offset），没校过时也只是 offset=0 —— 而倒计时那条路线根本不看
+    # 挂钟，它盯的是按钮状态跃迁（FIRE_LEAD_S）。以前这里判 False 且不标
+    # warn，等于「NTP 一次没通就永远开不了工」，用户看到的就是点了没反应
+    # （启动前检查在后台把启动拦掉了，界面上那行字一秒后就被轮询覆盖）。
     clock = facts.get("clock") or {}
     off = clock.get("offset")
     # 没校过时 offset 是 0.0（不是 None），只看 offset 会把「从没校准」当成
-    # 「偏差 0ms」放行 —— 那是拿没校过的钟去掐点。
+    # 「偏差 0ms」放行 —— 所以要看 at。
     if off is None or clock.get("at") is None:
-        out.append(_ck("clock", "时间校准", False, "还没校过时",
-                       {"tab": "run", "hint": "点「重新校时」"}))
+        out.append(_ck("clock", "时间校准", False, "还没校过时（不影响倒计时抢购）",
+                       {"tab": "run", "hint": "点「时间校准」；校不通也能抢"},
+                       warn=True))
     elif abs(off) > CLOCK_TOLERANCE_S:
         out.append(_ck("clock", "时间校准", False,
-                       f"{off * 1000:+.0f} ms（超过 {CLOCK_TOLERANCE_S:.0f} 秒，"
-                       "先把系统时间对一下再校时）",
-                       {"tab": "run", "hint": "重新校时"}))
+                       f"{off * 1000:+.0f} ms（已补偿；定时开卖建议先对一下系统时间）",
+                       {"tab": "run", "hint": "重新校时"}, warn=True))
     else:
         out.append(_ck("clock", "时间校准", True,
                        f"{(clock.get('server') or 'NTP')} {off * 1000:+.0f} ms"

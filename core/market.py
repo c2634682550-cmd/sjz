@@ -457,8 +457,13 @@ def check(row, task):
     craft = (task.get("craft") or "").strip()
     if craft:
         if row["craft"] is None:
-            return False, "做工没读出来"
-        if row["craft"] != craft:
+            # 读不出就**别拦**。在售页的卡片上只写「成色A/B/S」，不写品阶
+            # （传说/史诗/稀有/普通）—— 这一项在列表里根本读不到。而筛选
+            # 面板早把品阶筛成目标那一档了（SkinFinder 干的），所以读不到
+            # 不代表不符合。拦下来的后果是**每一行都被跳过、一件都抢不到**
+            # （真机实测：2 行全被判「做工没读出来」，日志里连倒计时都没读到）。
+            pass
+        elif row["craft"] != craft:
             return False, f"做工是 {row['craft']}，要 {craft}"
 
     wear = (task.get("wear") or "").strip().upper()
