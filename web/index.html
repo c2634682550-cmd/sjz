@@ -451,7 +451,12 @@ async function api(path, body){
   };
   const r = await fetch(path, opt);
   if(!r.ok) throw new Error(await r.text());
-  return r.json();
+  const j = await r.json();
+  // 后端大量接口是「200 + {ok:false,msg}」；以前只判 HTTP 状态，
+  // 勾选/删除失败会被当成成功，界面照旧。统一在这里抛，调用方的
+  // catch 就能把原因显示出来。
+  if(j && j.ok === false) throw new Error(JSON.stringify(j));
+  return j;
 }
 
 /* 后端把错误放在 {"ok":false,"msg":"…"} 里，但非 2xx 时 api() 抛的是整段
@@ -929,7 +934,8 @@ async function startRun(){
     notice('启动失败：' + cleanErr(e), 'err', 15000);
   }finally{
     STATE.starting = false;
-    $('#btnStart').disabled = false;
+    // 不在这里无条件放开按钮：引擎可能已经跑起来了，下一次 poll 会
+    // 按真实 running 状态恢复；请求失败时 poll 也会很快把它放开。
     poll();
   }
 }
