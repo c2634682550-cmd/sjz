@@ -131,7 +131,7 @@ class FakeKeyboard:
 def _nav():
     return Navigator(FakeScreen(), FakeMouse(), FakeKeyboard(),
                      snap=lambda: np.zeros((1080, 1920, 3), np.uint8),
-                     dry_run=False, log=lambda *a, **k: None)
+                     log=lambda *a, **k: None)
 
 
 def test_skin_scroll_down_is_negative_notch():

@@ -4,7 +4,7 @@
   GET  /                      前端页面
   GET  /api/config            读配置
   POST /api/config            改配置（部分字段）
-  POST /api/scheduler/start   {dry_run}
+  POST /api/scheduler/start
   POST /api/scheduler/stop
   POST /api/tasks/add         {name, keywords, min_price, ...} 空名 = 抢所有皮肤
   POST /api/tasks/clear       清掉已完成
@@ -31,7 +31,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import preflight, timesync
 from .config import (Config, DATA_DIR, mode_for_workflow, normalize_workflow,
-                     resolve_dry_run, task_workflow)
+                     task_workflow)
+from .validate import check_conditions
 from . import records
 from . import switches
 from .hotkey import HookHotkey, Hotkey
@@ -257,7 +258,12 @@ class Handler(BaseHTTPRequestHandler):
             # 枪种哪个框。界面拿它显示，排查时也直接看这一条。
             from . import skinfilter
             name = (query.get("name", [""])[0] or "").strip()
-            p = skinfilter.plan(name)
+            try:
+                p = skinfilter.plan(name)
+            except FileNotFoundError:
+                return self._json({"ok": False,
+                                   "msg": "筛选表 core/skins_raw.csv 缺失，"
+                                          "请从仓库恢复后重启"}, 503)
             if not p:
                 return self._json({"ok": False, "msg": f"表里没有「{name}」"}, 404)
             return self._json({"ok": True, "plan": p,
@@ -364,6 +370,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, f.read(), "image/jpeg")
 
     def _save_config(self, data):
+        # 数值先整单校验：错一项就整单拒绝，不能「错一项、其余照存」。
+        # 前端也会拦，这里是独立兜底（不信任前端）。
+        src = data.get("console") if isinstance(data.get("console"), dict) else None
+        cond = None
+        if src:
+            cond, errs = check_conditions(src)
+            if errs:
+                return self._json({"ok": False,
+                                   "msg": "条件不合法：" + "；".join(errs)}, 400)
         # 事务：读盘 → 改 → 落盘 在同一把锁里。以前是 load 出一份全量快照
         # 改完整份写回，调度器那边同时改任务状态时，两边后写的会把先写的
         # 整份盖掉（用户看到「设置改完几秒后自己变回去」）。
@@ -383,10 +398,8 @@ class Handler(BaseHTTPRequestHandler):
                 cur = dict(cfg.get("console") or {})
                 for key in _CONSOLE_NUM:
                     if key in data["console"]:
-                        try:
-                            cur[key] = float(data["console"][key])
-                        except (TypeError, ValueError):
-                            pass
+                        # cond 已在上面校验过，这里只接受 clean 值
+                        cur[key] = cond[key]
                 for key in _CONSOLE_TEXT:
                     if key in data["console"]:
                         cur[key] = str(data["console"][key] or "")
@@ -593,6 +606,17 @@ class Handler(BaseHTTPRequestHandler):
             fields["status"] = "pending"
         if not fields:
             return self._json({"ok": False, "msg": "没有要改的字段"}, 400)
+        num_fields = {k: fields[k] for k in
+                      ("min_price", "max_price", "quota", "budget", "craft")
+                      if k in fields}
+        if num_fields:
+            clean, errs = check_conditions(num_fields)
+            if errs:
+                return self._json({"ok": False,
+                                   "msg": "条件不合法：" + "；".join(errs)}, 400)
+            for k, v in clean.items():
+                if k in fields:
+                    fields[k] = v
         ok = _scheduler.update(tid, **fields)
         if not ok:
             return self._json({"ok": False, "msg": "没有这条任务"}, 404)
@@ -626,17 +650,13 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": preflight.all_ok(checks), "checks": checks})
 
     def _sched_start(self, data):
-        # 原始请求值（None = 没显式指定）原样交给调度器：那边用同一个
-        # resolve_dry_run 判定，日志里的「判定来源」才准确（review R3）。
-        req = data.get("dry_run") if isinstance(data, dict) else None
-        dry_run = _dry_run_requested(data)
+        # 只有实战一条路径：启动即实战，没有可绕过的旁路。
+
         # 权限不够就别开跑：UIPI 会把我们发的鼠标键盘消息全拦掉且不报错，
         # 跑起来是「点了没反应」，最后还可能被记成「没抢到」。
         try:
             from .input import needs_elevation
-            # 演练模式不点鼠标，权限低也能跑 —— 拦它没有意义，反而让人
-            # 以为「连试一下都不行」。只有真点的时候才必须提权。
-            if needs_elevation() and not dry_run:
+            if needs_elevation():
                 return self._json({"ok": False,
                                    "msg": "控制台权限比游戏低，点不动它 —— "
                                           "请以管理员身份重新运行 start.bat"})
@@ -649,7 +669,7 @@ class Handler(BaseHTTPRequestHandler):
         ok_gate, why = _preflight_gate(mode, workflow)
         if not ok_gate:
             return self._json({"ok": False, "msg": f"启动前检查没过：{why}"})
-        ok, msg = _scheduler.start(dry_run=req)
+        ok, msg = _scheduler.start()
         return self._json({"ok": ok, "msg": msg})
 
     def _sched_stop(self):
@@ -807,22 +827,6 @@ def _preflight_workflow(data, cfg):
                              (cfg or {}).get("workflow") or "countdown"))
 
 
-def _dry_run_requested(data):
-    """这次启动是不是演练 —— 判定统一在 `config.resolve_dry_run`。
-
-    优先级（review R3）：请求显式 > run_mode > env.dry_run 默认。
-    HTTP 入口与调度器都走同一个判定，日志里会打最终结论和来源。
-    以前这里自己拼「run.mode=dry 或 dry_run」，调度器那边又拼一遍。
-    """
-    try:
-        req = data.get("dry_run") if isinstance(data, dict) else None
-        dry, _src = resolve_dry_run(Config.load(), req)
-        return dry
-    except Exception:                        # noqa: BLE001
-        # 读配置就炸了：按演练处理（不点鼠标比点错安全）
-        return True
-
-
 def _preflight_gate(mode="list", workflow=None):
     """开抢前的检查闸门。返回 (ok, 说明)。
 
@@ -891,8 +895,6 @@ def _hotkey_toggle():
         if not ok_gate:
             _scheduler.note(f"热键开抢被拦下：{why}", "warn")
             return
-        # 不传 dry_run：让 scheduler 内部用 resolve_dry_run 判定，日志的
-        # 「判定来源」才会写 run_mode / env.dry_run，而不是笼统的「请求指定」。
         ok, msg = _scheduler.start()
         _scheduler.note(f"热键开抢：{msg}", "info" if ok else "warn")
     except Exception as e:
@@ -1045,6 +1047,40 @@ class _Server(ThreadingHTTPServer):
     daemon_threads = True
 
 
+def _startup_checks():
+    """启动期资源自检：缺东西要现在就说，不能等到点开始才 500 / 静默空库。"""
+    problems = []
+    try:
+        from . import bricks
+        prob = bricks.load_problem()
+        if prob:
+            problems.append(prob + "（界面目录会是空的，不是没有皮肤）")
+    except Exception as e:                       # noqa: BLE001
+        problems.append(f"皮肤砖块表检查失败：{type(e).__name__}: {e}")
+
+    raw = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skins_raw.csv")
+    if not os.path.isfile(raw):
+        problems.append(f"筛选表缺失：{raw}（/api/skins/plan 会 503）")
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tpl = os.path.join(root, "templates")
+    if not os.path.isdir(tpl):
+        problems.append("templates/ 没入库也没采集过：购买/确认模板缺失，"
+                        "请在设置页重新框选并截图（说明.txt「模板」一节）")
+
+    venv_vl = os.path.join(root, ".venv-vl")
+    if not os.path.isdir(venv_vl):
+        problems.append("OCR 运行环境 .venv-vl 不在仓内：需要单独安装，"
+                        "首次还要联网下载模型（见 README）")
+
+    for p in problems:
+        print(f"  !! {p}")
+        _scheduler.note(p, "warn")
+    if problems:
+        print("  !! 以上缺失项不会阻止控制台启动，但启动闸门会逐项拦下并说明")
+    return problems
+
+
 def serve(host="127.0.0.1", port=8777):
     try:
         httpd = _Server((host, port), Handler)
@@ -1053,6 +1089,7 @@ def serve(host="127.0.0.1", port=8777):
         raise
     httpd.daemon_threads = True
     print(f"  SJZ 控制台已启动 -> http://{host}:{port}")
+    _startup_checks()
     _seed_default_task()
     # 清掉已删任务留下的模板目录（data/<id>/ 只建不删，实测堆了 799 个）
     _scheduler.gc_task_dirs()

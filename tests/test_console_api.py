@@ -233,7 +233,7 @@ def test_scheduler_status_carries_what_the_console_renders(server, cfg_file):
     assert code == 200
     assert "running" in data and "tasks" in data and "log" in data
     eng = data["engine"]
-    assert "state" in eng and "dry_run" in eng and "stats" in eng
+    assert "state" in eng and "stats" in eng
     for k in ("clicks", "elapsed"):
         assert k in eng["stats"], f"引擎状态里少了 {k}"
 

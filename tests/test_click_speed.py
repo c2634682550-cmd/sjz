@@ -98,7 +98,6 @@ def test_unlock_waits_for_the_real_zero(monkeypatch):
     （零点 = 读到时 + 秒数 + 1），既不能早、也不能晚太多。
     """
     eng = engine_mod.Engine()
-    eng._dry_run = False
     eng._say = lambda *a, **k: None
     shown_zero_at = 0.30          # 屏幕开始显示「0秒」
     real_zero_at = shown_zero_at + 1.0   # 真正解锁（显示 0 的那一整秒）
@@ -136,7 +135,6 @@ def test_confirm_stops_as_soon_as_the_dialog_closes(monkeypatch):
     （那上面有「跳过」），还白等 190ms。
     """
     eng = engine_mod.Engine()
-    eng._dry_run = False
     mouse = _Mouse()
     state = {"open": True}
 
@@ -165,7 +163,6 @@ def test_confirm_stops_as_soon_as_the_dialog_closes(monkeypatch):
 def test_confirm_keeps_clicking_while_the_dialog_is_still_there(monkeypatch):
     """弹窗还开着就一直点（覆盖「按钮比倒计时晚亮」），但不超过兜底时长。"""
     eng = engine_mod.Engine()
-    eng._dry_run = False
     mouse = _Mouse()
     state = {"n": 0}
 
@@ -199,7 +196,6 @@ def test_dialog_appearing_between_clicks_is_seen_within_a_few_ms(monkeypatch):
     现在按 4ms 采样。
     """
     eng = engine_mod.Engine()
-    eng._dry_run = False
     mouse = _Mouse()
     t0 = [0.0]
     appear_at = 0.050
@@ -236,7 +232,6 @@ def test_click_hz_is_actually_reached(monkeypatch):
     以前是「干完活再睡满 interval」，实际只有 44Hz；现在睡「间隔 - 耗时」。
     """
     eng = engine_mod.Engine()
-    eng._dry_run = False
     mouse = _Mouse()
 
     def fake_match(img, tpl, *a, **k):

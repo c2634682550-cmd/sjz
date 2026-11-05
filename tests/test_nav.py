@@ -94,7 +94,7 @@ class FakeKeyboard:
         return True
 
 
-def _nav(size=(1920, 1080), frames=None, dry_run=False, ocr_text="",
+def _nav(size=(1920, 1080), frames=None, ocr_text="",
          logs=None, buy_visible=True):
     screen = FakeScreen(size, frames)
     mouse = FakeMouse()
@@ -104,7 +104,7 @@ def _nav(size=(1920, 1080), frames=None, dry_run=False, ocr_text="",
     def fake_ocr(img):
         return [{"text": ocr_text, "x": 0, "y": 0, "w": 10, "h": 10}]
 
-    n = Navigator(screen, mouse, kb, snap=screen.grab, dry_run=dry_run,
+    n = Navigator(screen, mouse, kb, snap=screen.grab,
                   log=lambda m, level="info": logs.append((level, m)),
                   ocr_read=fake_ocr)
     # buy() 点之前会先确认右侧真的是「购买」；假屏幕读不出字，这里直接给定
@@ -380,25 +380,6 @@ def test_click_reports_zero_when_unchanged():
     assert n.click((100, 100), "测试", timeout=0.5) == 0.0
 
 
-# ---------------------------------------------------------------- 演练模式
-
-def test_dry_run_never_touches_the_mouse():
-    """演练模式一次鼠标都不点。"""
-    n, _, mouse, _, logs = _nav(dry_run=True)
-    n.tab("collection")
-    n.buy()
-    n.ons_filter()
-    assert mouse.clicks == []
-    assert any("演练" in m for _, m in logs)
-
-
-def test_dry_run_does_not_press_f4():
-    """演练模式不按 F4 —— 会真的把游戏切到市场，干扰用户当前操作。"""
-    n, _, _, kb, _ = _nav(dry_run=True)
-    n.open_market()
-    assert kb.taps == []
-
-
 # ---------------------------------------------------------------- 缩放
 
 def test_scaling_is_identity_at_base_resolution():
@@ -457,12 +438,6 @@ def test_go_to_onsale_stops_at_first_wrong_page():
     with pytest.raises(NavError):
         n.go_to_onsale(from_hall=False)
     assert len(mouse.clicks) <= 1
-
-
-def test_dry_run_go_to_onsale_touches_nothing():
-    n, _, mouse, _, _ = _nav(dry_run=True)
-    n.go_to_onsale()
-    assert mouse.clicks == []
 
 
 # ---------------------------------------------------------------- 皮肤卡片

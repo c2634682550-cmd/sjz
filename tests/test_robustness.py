@@ -228,12 +228,12 @@ def test_one_failing_task_does_not_kill_the_queue(tmp_path, monkeypatch):
 
     ran = []
 
-    def fake_run_task(task, dry_run):
+    def fake_run_task(task):
         ran.append(task["id"])
         raise RuntimeError("模拟引擎炸了")
 
     monkeypatch.setattr(s, "_run_task", fake_run_task)
-    s._run(dry_run=True)
+    s._run()
 
     assert ran == ["a", "b"], f"第二条没跑到：{ran}"
     status = {t["id"]: t["status"] for t in config.Config.load()["queue"]}

@@ -88,7 +88,6 @@ class PubNav(Navigator):
 
     def __init__(self, ui):
         self.ui = ui
-        self.dry_run = False
         self.size = (1920, 1080)
         self._snap = ui.snap
         self._ocr_read = ui.ocr_read

@@ -97,7 +97,6 @@
   .btn.sm{padding:5px 12px;font-size:12px}
   .btn.primary{background:linear-gradient(180deg,#2f7ddb,#2566b8);border-color:#3d8be8;color:#fff}
   .btn.primary:hover{filter:brightness(1.1)}
-  .btn.primary.dry{background:linear-gradient(180deg,#e0b44a,#b98c1e);border-color:#c9a136;color:#241a02}
   .btn.danger{background:#3a1f22;border-color:#5c2b30;color:#ff9a94}
   .btn.danger:hover{background:#4a262a}
   .btn:disabled{opacity:.45;cursor:not-allowed}
@@ -283,11 +282,8 @@
             <option value="detail">详情页</option>
           </select>
         </div>
-        <div class="field"><label>品阶</label>
-          <select id="fTier">
-            <option value="">全部</option><option>传说</option><option>史诗</option>
-            <option>稀有</option><option>普通</option>
-          </select>
+        <div class="field"><label>稀有度</label>
+          <select id="fTier" title="取值以后端契约 filter.craft 为准"><option value="">不限</option></select>
         </div>
         <div class="field"><label>成色</label>
           <select id="fWear">
@@ -307,6 +303,7 @@
           <input id="pBudget" type="number" placeholder="不限">
         </div>
       </div>
+      <div class="hint" id="condErr" style="color:var(--bad,#e5484d);min-height:16px"></div>
 
       <div class="notice" id="notice"><span class="txt">待机</span></div>
 
@@ -431,6 +428,7 @@
 
 <footer class="statusbar">
   <span id="sbConn">连接中…</span>
+  <span>模式 <b id="sbMode">实战</b></span>
   <span>OCR <b id="sbOcr">—</b></span>
   <span>校准 <b id="sbClock">—</b></span>
   <span class="sp"></span>
@@ -443,7 +441,9 @@
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const STATE = {sched:null, cfg:null, catalog:null, target:null, notice:null,
-               switches:{}, preflightBad:false};
+               switches:{}, switchSpec:{}, preflightBad:false,
+               starting:false, pollSeq:0, pollGen:0,
+               rowsSig:'', tasksSig:''};
 
 async function api(path, body){
   const opt = body === undefined ? {} : {
@@ -501,15 +501,23 @@ function fmtPrice(v){
 }
 function wearTag(w){
   if(!w) return '<span class="muted">—</span>';
-  return '<span class="tag ' + String(w).toLowerCase() + '">' + w + '</span>';
+  // OCR 回填的 wear 是外部数据：标签属性 + 文本都转义，class 只留安全字符
+  // （这是全页最后一个未转义的 innerHTML 拼接点）。
+  const cls = String(w).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return '<span class="tag ' + esc(cls) + '">' + esc(w) + '</span>';
 }
 function esc(s){
-  return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function renderRows(rows){
   const tb = $('#rows');
+  // 每秒整表重建会把滚动条顶回去；数据没变就不重建。
+  const sig = JSON.stringify(rows || []);
+  if(sig === STATE.rowsSig) return;
+  STATE.rowsSig = sig;
+  const keepTop = tb.parentElement ? tb.parentElement.scrollTop : 0;
   if(!rows || !rows.length){
     tb.innerHTML = '<tr class="empty-row"><td colspan="5">还没有扫描数据 —— 点「开始抢购」后这里会实时显示列表里的挂单</td></tr>';
     $('#cnt').textContent = 0;
@@ -524,6 +532,7 @@ function renderRows(rows){
       '<td class="muted">' + (r.cy ? Math.round(r.cy) : '—') + '</td>' +
     '</tr>').join('');
   $('#cnt').textContent = rows.length;
+  if(tb.parentElement) tb.parentElement.scrollTop = keepTop;
 }
 
 function renderLog(lines){
@@ -591,9 +600,24 @@ async function loadRecords(){
 $('#btnRecRefresh').addEventListener('click', loadRecords);
 
 /* ---------------- 轮询 ---------------- */
+function currentWorkflow(){
+  const tasks = (STATE.sched && STATE.sched.tasks) || [];
+  const live = tasks.find(t => t.enabled !== false &&
+    (t.status === 'pending' || t.status === 'armed'));
+  const any = tasks.find(t => t.enabled !== false);
+  return (live && live.workflow) || (any && any.workflow) ||
+    ((STATE.cfg && STATE.cfg.console && STATE.cfg.console.workflow) ||
+     $('#fWorkflow').value || 'list');
+}
+function modeForWorkflow(w){ return w === 'list' ? 'list' : 'detail'; }
+
 async function poll(){
+  // 轮询序号：慢响应可能在 stop / 新状态之后才回来，直接用会覆盖新状态。
+  STATE.pollSeq += 1;
+  const seq = STATE.pollSeq, gen = STATE.pollGen;
   try{
     const st = await api('/api/scheduler');
+    if(seq !== STATE.pollSeq || gen !== STATE.pollGen) return; // 过期响应，丢弃
     STATE.sched = st;
     const eng = st.engine || {};
     const stats = eng.stats || {};
@@ -604,25 +628,35 @@ async function poll(){
     renderLog(eng.log || st.log || []);
     $('#stScans').textContent = stats.scans || 0;
     $('#stHz').textContent = Number(stats.hz || 0).toFixed(1);
-    $('#stBought').textContent = stats.clicks || 0;
+    // 已买 = 真实成交件数；clicks 是按下鼠标的次数，跑空时也有几十下。
+    $('#stBought').textContent = stats.bought || 0;
 
-    $('#btnStart').disabled = running;
+    // 启动请求在途时不能被轮询按旧的 running 覆写按钮状态。
+    $('#btnStart').disabled = running || STATE.starting;
     $('#btnStop').disabled = !running;
-    $('#btnStart').textContent = running ? '正在抢购…'
-      : (isDry() ? '开始抢购（演练）' : '开始抢购');
-    $('#btnStart').classList.toggle('dry', !running && isDry());
+    $('#btnStart').textContent = running ? '正在抢购…' : '开始抢购';
+    $('#sbMode').textContent = '实战';
 
     renderTasks(st.tasks || []);
 
+    // 配置读盘失败是后端专门返回的字段：不显示的话「队列为空」会被
+    // 当成「跑完了」。
+    const cfgBad = st.config_ok === false;
+    if(cfgBad){
+      $('#taskHint').textContent = '配置读盘失败：' +
+        (st.config_error || '未知原因') + ' —— 队列为空不代表跑完了';
+    }
     const logs = st.log || [];
     const last = logs[logs.length - 1];
     renderNotice(eng.error ? ('出错：' + eng.error)
+      : (cfgBad ? ('配置读盘失败：' + (st.config_error || '未知原因'))
       : (running ? ('运行中 · ' + (eng.state || '') + (last ? ' · ' + last.msg : ''))
-                 : (last ? last.t + ' ' + last.msg : '待机')));
+                 : (last ? last.t + ' ' + last.msg : '待机'))));
 
     $('#sbConn').textContent = '已连接';
     $('#sbClock2').textContent = new Date().toLocaleTimeString('zh-CN');
   }catch(e){
+    if(gen !== STATE.pollGen) return;
     $('#sbConn').textContent = '连接断开';
   }
 }
@@ -646,8 +680,14 @@ function condText(t){
 
 function renderTasks(tasks){
   const tb = $('#taskRows');
+  // 每秒整表重建会让勾选状态回滚、滚动条归零；数据签名没变就不动。
+  const sig = JSON.stringify(tasks || []);
+  if(sig === STATE.tasksSig) return;
+  STATE.tasksSig = sig;
+  const keepTop = tb.parentElement ? tb.parentElement.scrollTop : 0;
   $('#taskCnt').textContent = (tasks||[]).length;
   if(!tasks || !tasks.length){
+    STATE.tasksSig = sig;
     tb.innerHTML = '<tr class="empty-row"><td colspan="6">队列是空的 —— 在抢购页点「开始抢购」会自动建一条</td></tr>';
     return;
   }
@@ -667,13 +707,16 @@ function renderTasks(tasks){
       '<td><button class="btn sm taskDel">删</button></td>' +
     '</tr>';
   }).join('');
+  if(tb.parentElement) tb.parentElement.scrollTop = keepTop;
 }
 
 async function loadTasks(){
   try{
     const r = await api('/api/tasks');
     renderTasks(r.tasks || []);
-  }catch(e){ /* 忽略 */ }
+  }catch(e){
+    $('#taskHint').textContent = '读队列失败：' + cleanErr(e);
+  }
 }
 
 document.addEventListener('click', async (ev) => {
@@ -747,89 +790,164 @@ $('#skinPick').addEventListener('change', async () => {
 });
 
 $('#btnClearPick').addEventListener('click', async () => {
-  try{ await api('/api/skins/target', {name:''}); }catch(e){}
+  try{ await api('/api/skins/target', {name:''}); }
+  catch(e){ notice('清除目标失败：' + cleanErr(e), 'err', 10000); }
   STATE.target = null;
   $('#skinPick').value = '';
   setTargetLabel('');
 });
 
-/* ---------------- 条件 ---------------- */
-function condPayload(){
-  const out = {
-    min_price: Number($('#fMin').value || 0),
-    max_price: Number($('#fMax').value || 0),
-    quota: Number($('#fQuota').value || 1),
-    budget: Number($('#pBudget').value || 0),
-    workflow: $('#fWorkflow').value,
+/* ---------------- 条件 ----------------
+   数字统一在这里校验：有限、整数、上下界、min<=max、quota>=1、budget>=0。
+   后端 core/validate.py 用同一套文案独立兜底，不信任前端。 */
+function parseCondInputs(){
+  const errs = [];
+  const raw = {
+    min_price: $('#fMin').value.trim(),
+    max_price: $('#fMax').value.trim(),
+    quota: $('#fQuota').value.trim(),
+    budget: $('#pBudget').value.trim(),
   };
+  function pick(key, label, def){
+    const s = raw[key];
+    if(!s) return def;                       // 空 = 用默认值（0 / 数量 1）
+    const n = Number(s);
+    if(!Number.isFinite(n)){ errs.push('「' + label + '」必须是有限数字'); return def; }
+    if(!Number.isInteger(n)){ errs.push('「' + label + '」必须是整数'); return def; }
+    if(n < 0){ errs.push('「' + label + '」不能为负数'); return def; }
+    return n;
+  }
+  const min = pick('min_price', '最低价', 0);
+  const max = pick('max_price', '最高价', 0);
+  const quota = pick('quota', '数量', 1);
+  const budget = pick('budget', '预算', 0);
+  if(quota < 1) errs.push('「数量」必须 ≥ 1');
+  if(max && min > max) errs.push('最低价不能高于最高价');
+  return {errors: errs, values:{min_price:min, max_price:max, quota:quota, budget:budget}};
+}
+
+function condPayload(){
+  const {errors, values} = parseCondInputs();
+  const out = Object.assign({}, values, {workflow: $('#fWorkflow').value});
   const wear = $('#fWear').value;
   if(wear) out.wear = wear;
   const tier = $('#fTier').value;
-  if(tier) out.craft = tier;
-  return out;
+  if(tier) out.craft = tier;                 // 稀有度，取自后端 filter.craft 契约
+  return {out, errors};
+}
+function showCondErr(errs){
+  $('#condErr').textContent = errs && errs.length
+    ? ('条件不合法：' + errs.join('；')) : '';
 }
 
 /* 条件改了自动存（防抖 600ms）。以前要专门点一次「应用条件」，
    而「开始抢购」里又存了一遍 —— 两个入口做同一件事。 */
 let saveTimer = null;
-function saveConditions(){
-  return api('/api/config', {console: condPayload()});
+async function saveConditions(){
+  const {out, errors} = condPayload();
+  showCondErr(errors);
+  if(errors.length) throw new Error(errors.join('；'));
+  const r = await api('/api/config', {console: out});
+  if(r && r.ok === false) throw new Error(r.msg || '保存条件失败');
+  return r;
 }
 ['#fMin','#fMax','#fQuota','#pBudget'].forEach(sel => {
   $(sel).addEventListener('input', () => {
+    showCondErr(condPayload().errors);       // 立即标红，不等防抖
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => saveConditions().catch(() => {}), 600);
+    saveTimer = setTimeout(() => {
+      saveConditions().catch(e => showCondErr([cleanErr(e)]));
+    }, 600);
   });
 });
 ['#fWear','#fTier','#fWorkflow'].forEach(sel => {
-  $(sel).addEventListener('change', () => saveConditions().catch(() => {}));
+  $(sel).addEventListener('change', () => {
+    saveConditions().catch(e => showCondErr([cleanErr(e)]));
+  });
 });
 
 /* ---------------- 启停（唯一入口） ---------------- */
 async function syncTask(){
   /* 把界面上的目标和条件写进队列。引擎跑的是队列里的任务，
      不写进去的话「开始抢购」跑的还是上一次的条件。
-     status:'pending' 是**重新排队**：上一次跑完的任务停在 done/failed，
-     不重置的话调度器挑不到它，start 会立刻回「队列跑完了」——
-     表现就是「第二次点开始没反应」。 */
+     条件是**从服务端已保存的值**取的（刚 saveConditions + loadConfig），
+     不用表单旧值；同名 + 同路线做 update，不追加。 */
+  const c = (STATE.cfg && STATE.cfg.console) || {};
+  const wf = c.workflow || $('#fWorkflow').value || 'list';
   const name = STATE.target || '';
-  const body = Object.assign({name: name, mode: 'list', status: 'pending'}, condPayload());
+  const body = {
+    name: name,
+    mode: modeForWorkflow(wf),
+    workflow: wf,
+    status: 'pending',
+    min_price: Number(c.min_price || 0),
+    max_price: Number(c.max_price || 0),
+    quota: Number(c.quota || 1),
+    budget: Number(c.budget || 0),
+  };
+  if(c.craft) body.craft = c.craft;
+  if(c.wear) body.wear = c.wear;
+
   const tasks = (await api('/api/tasks')).tasks || [];
-  const mine = tasks.filter(t => (t.name || '') === name);
-  let r;
-  if(mine.length) r = await api('/api/tasks/update', Object.assign({id: mine[0].id}, body));
-  else r = await api('/api/tasks/add', body);
+  const mine = tasks.filter(t => (t.name || '') === name &&
+                                 (t.workflow || 'list') === wf);
+  if(mine.length){
+    // 已结束的任务要重跑必须由用户二次确认：取消勾选再开始，绝不能
+    // 悄悄把上一个（已完成）目标重新抢一遍。
+    const term = mine.find(t => ['done','failed','skipped'].includes(t.status));
+    if(term && !window.confirm('这个目标上次已结束（' +
+        (STATUS_CN[term.status] || term.status) + '），重跑会再抢一遍。确定？')){
+      return false;
+    }
+  }
+  const r = mine.length
+    ? await api('/api/tasks/update', Object.assign({id: mine[0].id}, body))
+    : await api('/api/tasks/add', body);
   if(r && r.ok === false) throw new Error(r.msg || '写任务失败');
+  return true;
 }
 
 async function startRun(){
-  const btn = $('#btnStart');
-  btn.disabled = true;
+  if(STATE.starting) return;              // 启动请求在途：再点无效
+  STATE.starting = true;
+  $('#btnStart').disabled = true;   // 立刻置灰：别等下一次 poll
   notice('正在启动…', '', 3000);
   try{
     await saveConditions();
-    await syncTask();
+    await loadConfig();                   // 启动用服务端落盘值，不用表单旧值
+    const chk = condPayload();
+    showCondErr(chk.errors);
+    if(chk.errors.length) throw new Error(chk.errors.join('；'));
+    if(!(await syncTask())){ notice('已取消重跑', 'warn', 6000); return; }
     const r = await api('/api/scheduler/start', {});
     if(!r || r.ok === false){
       notice('启动失败：' + ((r && r.msg) || '未知原因'), 'err', 15000);
       return;
     }
-    notice(isDry() ? '已开始（演练模式，不会真买）' : '已开始抢购', 'ok', 6000);
+    notice('已开始抢购（实战）', 'ok', 6000);
   }catch(e){
     notice('启动失败：' + cleanErr(e), 'err', 15000);
   }finally{
-    btn.disabled = false;
+    STATE.starting = false;
+    $('#btnStart').disabled = false;
     poll();
   }
 }
 
 $('#btnStart').addEventListener('click', startRun);
 $('#btnStop').addEventListener('click', async () => {
+  // 作废所有在途轮询响应：stop 之后旧响应不能把「运行中」写回来。
+  STATE.pollGen += 1;
+  $('#btnStop').disabled = true;
   try{
-    await api('/api/scheduler/stop', {});
-    notice('已停止', 'warn', 6000);
+    const r = await api('/api/scheduler/stop', {});
+    if(!r || r.ok === false){
+      notice('停止失败：' + ((r && r.msg) || '未知原因'), 'err', 10000);
+    }else{
+      notice('已停止', 'warn', 6000);
+    }
   }catch(e){ notice('停止失败：' + cleanErr(e), 'err', 10000); }
-  poll();
+  finally{ poll(); }
 });
 
 /* ---------------- 窗口按钮 ----------------
@@ -868,18 +986,25 @@ $('#logToggle').addEventListener('click', () => {
 });
 
 /* ---------------- 开关 ---------------- */
-function isDry(){
-  const c = STATE.cfg;
-  if(c && c.dry_run !== undefined) return !!c.dry_run;
-  const v = STATE.switches['env.dry_run'];
-  return v === undefined ? true : !!v;
+/* 稀有度下拉必须来自后端契约（switches 里 filter.craft 的 options），
+   不再自己编「传说/史诗/稀有/普通」——那几个词后端不认，整行会被拒。 */
+function fillTierOptions(){
+  const sel = $('#fTier');
+  if(!sel) return;
+  const spec = STATE.switchSpec['filter.craft'];
+  const opts = (spec && spec.options) || [['', '不限'], ['极品', '极品'], ['优品', '优品']];
+  const cur = sel.value;
+  sel.innerHTML = opts.map(o =>
+    '<option value="' + esc(String(o[0])) + '">' + esc(o[1]) + '</option>').join('');
+  sel.value = opts.some(o => String(o[0]) === cur) ? cur : '';
 }
 
 function swControl(it){
   const v = it.value;
   if(it.kind === 'bool'){
     return '<div class="swtog' + (v ? ' on' : '') + '" data-key="' + it.key +
-           '" data-kind="bool" role="switch" aria-checked="' + (v ? 'true' : 'false') + '"></div>';
+           '" data-kind="bool" role="switch" tabindex="0" aria-checked="' +
+           (v ? 'true' : 'false') + '"></div>';
   }
   if(it.kind === 'select'){
     const opts = (it.options || []).map(o =>
@@ -901,13 +1026,11 @@ function renderSwitches(groups){
       '<div class="switem">' +
         '<div class="nm">' + esc(it.label) +
           '<span class="ds">' + esc(it.desc || '') + '</span>' +
-          (it.source ? '<span class="ds">当前生效：' +
-             (it.effective ? '演练' : '实战') + '（' + esc(it.source) + '）</span>' : '') +
         '</div>' +
         swControl(it) +
       '</div>').join('');
     return '<div class="swgroup" data-g="' + esc(g.name) + '">' +
-      '<div class="swhead"><span class="arw">▼</span>' + esc(g.name) +
+      '<div class="swhead" role="button" tabindex="0"><span class="arw">▼</span>' + esc(g.name) +
         '<span class="cnt">' + g.items.length + ' 项</span></div>' +
       '<div class="swbody">' + items + '</div></div>';
   }).join('');
@@ -917,9 +1040,17 @@ async function loadSwitches(){
   try{
     const r = await api('/api/switches');
     STATE.switches = {};
-    (r.groups || []).forEach(g => g.items.forEach(it => { STATE.switches[it.key] = it.value; }));
+    STATE.switchSpec = {};
+    (r.groups || []).forEach(g => g.items.forEach(it => {
+      STATE.switches[it.key] = it.value;
+      STATE.switchSpec[it.key] = it;
+    }));
     renderSwitches(r.groups || []);
-  }catch(e){ /* 后端没起时静默 */ }
+    fillTierOptions();
+  }catch(e){
+    // 后端没起时也要写出来：静默吞掉会让设置页永远空白。
+    notice('读取开关失败：' + cleanErr(e), 'err', 10000);
+  }
 }
 
 async function saveSwitch(key, value){
@@ -927,8 +1058,11 @@ async function saveSwitch(key, value){
     const r = await api('/api/switches', {values: {[key]: value}});
     if(r.ok === false){ notice('保存开关失败：' + (r.msg || ''), 'err', 10000); return; }
     STATE.switches[key] = (r.applied || {})[key];
-    if(key === 'env.dry_run' || key === 'run.mode'){
-      loadConfig(); loadSwitches(); poll();
+    // 价格类开关和抢购页表单双写同一组 console 值：改完立刻回填，
+    // 保证两边显示的是同一份真源。
+    if(/^price\./.test(key) || key === 'run.semi'){
+      loadConfig().catch(e => notice('回填配置失败：' + cleanErr(e), 'err', 10000));
+      poll();
     }
   }catch(e){ notice('保存开关失败：' + cleanErr(e), 'err', 10000); }
 }
@@ -945,12 +1079,33 @@ document.addEventListener('click', (ev) => {
   }
 });
 
+/* 键盘可达：折叠头与开关都是 div，必须能 Tab 到、能 Enter/Space 操作。 */
+document.addEventListener('keydown', (ev) => {
+  if(ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+  const head = ev.target.closest('.swhead');
+  const tog = ev.target.closest('.swtog');
+  if(!head && !tog) return;
+  ev.preventDefault();
+  if(head){ head.parentElement.classList.toggle('closed'); return; }
+  const on = !tog.classList.contains('on');
+  tog.classList.toggle('on', on);
+  tog.setAttribute('aria-checked', on ? 'true' : 'false');
+  saveSwitch(tog.dataset.key, on);
+});
+
 document.addEventListener('change', (ev) => {
   const el = ev.target.closest('[data-kind="select"],[data-kind="int"],[data-kind="float"]');
   if(!el) return;
   const kind = el.dataset.kind;
   const raw = el.value;
-  saveSwitch(el.dataset.key, kind === 'select' ? raw : Number(raw));
+  if(kind === 'select'){ saveSwitch(el.dataset.key, raw); return; }
+  const n = Number(raw);
+  if(!Number.isFinite(n) || (kind === 'int' && !Number.isInteger(n))){
+    notice('这个值不合法：需要' + (kind === 'int' ? '整数' : '数字'), 'err', 10000);
+    loadSwitches();                        // 回到服务端的有效值
+    return;
+  }
+  saveSwitch(el.dataset.key, n);
 });
 
 /* ---------------- 关注（高级，从主界面挪走） ---------------- */
@@ -972,7 +1127,9 @@ $('#btnUnfollow').addEventListener('click', () => follow(false));
 /* ---------------- 环境检查 ---------------- */
 async function loadPreflight(){
   try{
-    const r = await api('/api/preflight', {mode:'list'});
+    // 用待启动任务的实际路线，不能写死 list —— 否则结论和启动闸门相反。
+    const wf = currentWorkflow();
+    const r = await api('/api/preflight', {mode: modeForWorkflow(wf), workflow: wf});
     const items = r.checks || [];
     $('#preflightList').innerHTML = items.map(i => {
       const cls = i.ok ? 'ok' : (i.warn ? 'warn' : 'bad');
@@ -1020,14 +1177,21 @@ async function loadPreflight(){
 async function loadConfig(){
   const cfg = await api('/api/config');
   STATE.cfg = cfg;
+  // 配置读不出来时后端会带 config_ok=false：必须显示，否则空队列会被
+  // 当成「跑完了」。
+  if(cfg.config_ok === false){
+    notice('配置读盘失败：' + (cfg.config_error || '未知原因'), 'err', 15000);
+  }
   const c = cfg.console || {};
-  if(c.workflow) $('#fWorkflow').value = c.workflow;
-  if(c.min_price) $('#fMin').value = c.min_price;
-  if(c.max_price) $('#fMax').value = c.max_price;
-  if(c.quota) $('#fQuota').value = c.quota;
-  if(c.budget) $('#pBudget').value = c.budget;
-  if(c.craft) $('#fTier').value = c.craft;
-  if(c.wear) $('#fWear').value = c.wear;
+  // 全部回填（包括 0），不能因为 0 是 falsy 就跳过。
+  $('#fWorkflow').value = c.workflow || 'list';
+  $('#fMin').value = c.min_price == null ? '' : c.min_price;
+  $('#fMax').value = c.max_price == null ? '' : c.max_price;
+  $('#fQuota').value = c.quota == null ? 1 : c.quota;
+  $('#pBudget').value = c.budget == null ? '' : c.budget;
+  fillTierOptions();
+  $('#fTier').value = c.craft || '';
+  $('#fWear').value = c.wear || '';
   const name = (c.target && c.target.name) || '';
   STATE.target = name || null;
   setTargetLabel(name);
@@ -1047,9 +1211,11 @@ $('#btnTimesync').addEventListener('click', async () => {
 
 /* ---------------- 启动 ---------------- */
 (async function boot(){
-  try{ await loadCatalog(); }catch(e){}
+  try{ await loadCatalog(); }
+  catch(e){ notice('读取皮肤目录失败：' + cleanErr(e), 'err', 12000); }
   await loadSwitches();
-  try{ await loadConfig(); }catch(e){}
+  try{ await loadConfig(); }
+  catch(e){ notice('读取配置失败：' + cleanErr(e), 'err', 12000); }
   // 顺序：先 poll（快，一次状态查询）再做 preflight（慢，OCR 冷启动时要
   // 等十几秒）。以前是 `await loadPreflight(); await poll();` 串着的 ——
   // preflight 不返回就一直轮不到 poll，状态栏停在 HTML 里的初始值
@@ -1073,5 +1239,9 @@ function schedulePreflight(){
   }, STATE.preflightBad ? 3000 : 20000);
 }
 </script>
+<style>
+:focus-visible{outline:2px solid var(--acc,#4a9eff);outline-offset:2px}
+.swtog:focus-visible,.swhead:focus-visible{border-radius:6px}
+</style>
 </body>
 </html>

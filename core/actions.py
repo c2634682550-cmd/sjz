@@ -57,7 +57,7 @@ def _open_devices(cfg, log=None):
         if not mouse.ensure_foreground(hwnd, screen=screen):
             raise NavError("抢不到游戏前台 —— 先把游戏切到前台")
         nav = Navigator(screen, mouse, Keyboard(hwnd, mode=mouse.mode),
-                        snap=screen.grab, dry_run=False, log=say)
+                        snap=screen.grab, log=say)
     except Exception:
         screen.close()
         raise

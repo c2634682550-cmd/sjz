@@ -39,7 +39,6 @@ def test_navigate_raises_aborted_when_navigation_fails(monkeypatch):
     引擎会对着错误的列表开扫。
     """
     e = Engine()
-    e._dry_run = False
     e._target_hwnd = 12345
 
     def boom(self, *a, **kw):
@@ -53,7 +52,6 @@ def test_navigate_raises_aborted_when_navigation_fails(monkeypatch):
 def test_navigate_passes_through_on_success(monkeypatch):
     """导航成功就正常返回，并记录到达的页面。"""
     e = Engine()
-    e._dry_run = False
     e._target_hwnd = 12345
     logs = []
     e._say = lambda msg, level="info": logs.append((level, msg))
@@ -64,25 +62,9 @@ def test_navigate_passes_through_on_success(monkeypatch):
     assert any("已到在售页" in m for _, m in logs)
 
 
-def test_navigate_dry_run_does_not_touch_the_game(monkeypatch):
-    """演练模式不导航 —— 会真的把游戏点走，干扰用户当前操作。"""
-    e = Engine()
-    e._dry_run = True
-    logs = []
-    e._say = lambda msg, level="info": logs.append((level, msg))
-
-    def boom(self, *a, **kw):
-        raise AssertionError("演练模式不该调 go_to_onsale")
-
-    monkeypatch.setattr(eng_mod.Navigator, "go_to_onsale", boom)
-    e._navigate(FakeScreen(), FakeMouse(), _cfg())
-    assert any("演练" in m for _, m in logs)
-
-
 def test_navigate_uses_keyboard_for_f4(monkeypatch):
     """导航必须给 Navigator 传 Keyboard，否则按不了 F4。"""
     e = Engine()
-    e._dry_run = False
     e._target_hwnd = 12345
     seen = {}
 
@@ -137,7 +119,6 @@ def test_navigate_types_the_price_range_into_the_game():
     顺序：开面板 → 设价格 → 确定。先确定再设价格游戏会忽略输入。
     """
     e = Engine()
-    e._dry_run = False
     e._say = lambda msg, level="info": None
 
     nav = FakeNav()
@@ -153,7 +134,6 @@ def test_navigate_skips_price_filter_when_task_has_no_range():
     手动设的区间清掉。
     """
     e = Engine()
-    e._dry_run = False
     e._say = lambda msg, level="info": None
     nav = FakeNav()
     e._apply_price_filter(nav, _cfg())
@@ -163,7 +143,6 @@ def test_navigate_skips_price_filter_when_task_has_no_range():
 def test_navigate_sets_only_the_configured_price_side():
     """只配下限时上限传 None —— 不能顺手把上限改成 0（0 等于只买 0 金币）。"""
     e = Engine()
-    e._dry_run = False
     e._say = lambda msg, level="info": None
     nav = FakeNav()
     e._apply_price_filter(nav, _cfg(min_price=8000))
@@ -180,7 +159,6 @@ def test_navigate_aborts_when_the_price_box_comes_back_empty_ranged():
     from core.engine import Aborted
 
     e = Engine()
-    e._dry_run = False
     said = []
     e._say = lambda msg, level="info": said.append(msg)
     nav = FakeNav()
@@ -197,7 +175,6 @@ def test_navigate_accepts_a_lower_bound_the_game_raised():
     自己改回 2050。这不是失败，只是筛得更紧。
     """
     e = Engine()
-    e._dry_run = False
     said = []
     e._say = lambda msg, level="info": said.append(msg)
     nav = FakeNav()
@@ -215,7 +192,6 @@ def test_navigate_warns_when_the_filter_is_looser_than_asked():
     区间外的货根本进不了购买那一步 —— 游戏内没筛窄不等于会买错。
     """
     e = Engine()
-    e._dry_run = False
     said = []
     e._say = lambda msg, level="info": said.append((msg, level))
     nav = FakeNav()
@@ -229,7 +205,6 @@ def test_navigate_warns_when_the_filter_is_looser_than_asked():
 def test_navigate_warns_when_the_upper_bound_is_looser_than_asked():
     """上限被放宽（要 3000 框里 99999）→ 告警但继续，不中止。"""
     e = Engine()
-    e._dry_run = False
     said = []
     e._say = lambda msg, level="info": said.append((msg, level))
     nav = FakeNav()
@@ -247,7 +222,6 @@ def test_navigate_aborts_when_the_price_range_is_empty():
     空区间是「输入根本没进去」，游戏内筛出来的东西全是废的，没法兜。
     """
     e = Engine()
-    e._dry_run = False
     e._say = lambda msg, level="info": None
     nav = FakeNav()
     nav.price_returns = (3000, 1000)

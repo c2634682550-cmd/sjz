@@ -80,7 +80,7 @@ def _pts():
 def _nav(on_boxes=()):
     scr = _Screen(on_boxes)
     m = _Mouse(scr)
-    nav = Navigator(scr, m, _Keyboard(), snap=scr.grab, dry_run=False)
+    nav = Navigator(scr, m, _Keyboard(), snap=scr.grab)
     return nav, scr, m
 
 
@@ -142,9 +142,8 @@ def test_set_tier_only_turns_off_the_other_three():
     assert p["tier3"] not in m.clicks
 
 
-def test_dry_run_sends_no_clicks():
-    """演练模式下什么都不点。"""
+def test_col_apply_actually_clicks_the_boxes():
+    """col_apply 会真的点筛选框（不再有「只说不点」的旁路）。"""
     nav, _scr, m = _nav([])
-    nav.dry_run = True
     nav.col_apply(tier=[True] * 4, guns={n: True for n in nav.GUN_ROWS})
-    assert m.clicks == []
+    assert len(m.clicks) >= 4, f"应该逐项点击：{m.clicks}"

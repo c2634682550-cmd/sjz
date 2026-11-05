@@ -111,7 +111,6 @@ class _Cfg(dict):
 @pytest.fixture
 def eng(rec, monkeypatch):
     e = engine_mod.Engine()
-    e._dry_run = False
     e._target_hwnd = 1
     e._log = []
     e._say = lambda msg, level="info": e._log.append((level, msg))
@@ -148,14 +147,6 @@ def test_no_popup_writes_a_miss_record(eng, rec, monkeypatch):
     rows = rec.load()
     assert len(rows) == 1 and rows[0]["result"] == "miss"
     assert rows[0]["price"] == 1888.0, "没抢到也要留下当时的价格，事后才知道贵在哪"
-
-
-def test_dry_run_writes_nothing(eng, rec, monkeypatch):
-    monkeypatch.setattr(engine_mod, "match", lambda img, tpl, *a, **k: (0.99, (0, 0)))
-    eng._dry_run = True
-    eng._fire_and_confirm(_Cfg(), FakeScreen(), FakeMouse(), np.zeros((10, 10), np.uint8),
-                          (500, 500), __import__("time").perf_counter(), item="X", price=1)
-    assert rec.load() == []
 
 
 def test_confirm_clicks_without_reward_dialog_is_a_miss(eng, rec, monkeypatch):

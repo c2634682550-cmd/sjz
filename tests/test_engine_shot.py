@@ -75,7 +75,6 @@ class _Cfg(dict):
 @pytest.fixture
 def eng():
     e = engine_mod.Engine()
-    e._dry_run = False
     e._target_hwnd = 1
     e._log = deque()
     e._say = lambda msg, level="info": e._log.append((level, msg))
@@ -121,12 +120,6 @@ def test_switch_off_saves_nothing(eng, wired, monkeypatch):
                                  np.zeros((10, 10), np.uint8), (500, 500),
                                  __import__("time").perf_counter()) is True
     assert wired == [], "关掉了还存图"
-
-
-def test_dry_run_saves_nothing(eng, wired):
-    eng._dry_run = True
-    assert _run(eng) is True
-    assert wired == [], "演练没花真钱，不能留成交截图"
 
 
 def test_write_failure_only_warns(eng, wired, monkeypatch):

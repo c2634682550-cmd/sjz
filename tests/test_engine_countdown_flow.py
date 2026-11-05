@@ -90,10 +90,9 @@ def _engine():
     e = Engine()
     e._stop = threading.Event()
     e._target_hwnd = 1
-    # 这些用例测的是**实战**流程（重试、放弃、用户停止），不是演练。
-    # Engine() 默认 _dry_run=True，而演练会在选中后直接收工、不去等倒计时，
+    # 这些用例测的是实战流程（重试、放弃、用户停止）。
+    # 引擎现在只有实战一条路径，会正常等倒计时，
     # 那样「换下一件」「连续失败就停」这些分支根本走不到。
-    e._dry_run = False
     e._said = []
     e._say = lambda msg, level="info": e._said.append((level, msg))
     return e
@@ -259,7 +258,6 @@ def test_prepare_picks_the_earliest_unlock_on_the_first_page(monkeypatch):
     翻页途中解锁，等翻回来那件已经被别人买走了。
     """
     e = _engine()
-    e._dry_run = False
     e._target_hwnd = 1
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
@@ -307,7 +305,6 @@ def test_prepare_picks_the_earliest_unlock_on_the_first_page(monkeypatch):
 def test_prepare_never_pages(monkeypatch):
     """一页都不翻 —— 翻页途中公示期可能就解锁了，抢的就是那一下。"""
     e = _engine()
-    e._dry_run = False
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
@@ -335,7 +332,6 @@ def test_prepare_never_pages(monkeypatch):
 def test_prepare_gives_up_when_the_list_did_not_move(monkeypatch):
     """页码读不出、列表也没变 → 真的没有下一页了，别硬翻。"""
     e = _engine()
-    e._dry_run = False
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
@@ -369,7 +365,6 @@ def test_prepare_refuses_to_click_when_it_cannot_take_focus(monkeypatch):
     报错让用户把游戏点回前台。
     """
     e = _engine()
-    e._dry_run = False
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
@@ -391,7 +386,6 @@ def test_refresh_only_after_a_failed_attempt(monkeypatch):
     每轮都刷会一直闪，而且刷新期间那件可能正好解锁，刷完就错过了。
     """
     e = _engine()
-    e._dry_run = False
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
@@ -439,7 +433,6 @@ def test_prepare_goes_back_to_the_first_page_before_scanning(monkeypatch):
     的商品」，其实第 1 页有货。
     """
     e = _engine()
-    e._dry_run = False
     e._target_hwnd = 1
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
@@ -479,7 +472,6 @@ def test_empty_list_triggers_exactly_one_refresh_then_gives_up(monkeypatch):
     不能一直刷 —— 用户明确说过「没抢到再去点刷新」，一轮只刷一次。
     """
     e = _engine()
-    e._dry_run = False
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
@@ -502,7 +494,6 @@ def test_price_is_read_from_the_modal_when_the_list_shows_none(monkeypatch):
     「没有一件是 X分Y秒后解锁购买」收工。
     """
     e = _engine()
-    e._dry_run = False
     e._target_hwnd = 1
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
@@ -528,7 +519,6 @@ def test_price_is_read_from_the_modal_when_the_list_shows_none(monkeypatch):
 def test_modal_price_outside_the_range_is_still_skipped(monkeypatch):
     """弹窗读回来的价超区间照样跳过 —— 不能因为补读就放行。"""
     e = _engine()
-    e._dry_run = False
     e._target_hwnd = 1
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)

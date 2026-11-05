@@ -11,7 +11,8 @@
 现状：程序能做到「列表已经在屏幕上时，挑符合条件的买」（`engine.py:265-405`）。
 缺的是**把界面操作到那个状态**，以及**买入失败后的处理**。
 
-本文件记录设计决策与未验证项。**未验证的环节必须先做演练，不许直接实战。**
+本文件记录设计决策与未验证项。**未验证的环节先用假 `InputSink`/`Screen` 在测试里跑通，再上真机。**
+（注：早期版本有「演练模式」，已于 2026-11 整体移除，产品只剩实战一条路径。）
 
 ## 一、完整链路
 
@@ -1353,14 +1354,13 @@ F4 打开市场 → ESC 复位到 market → 切「典藏外观」标签
 | 竞品 | 我们 | 为什么 |
 |---|---|---|
 | 界面缩放 90/100/110/125% | ✅ 做了 | 纯显示比例，`document.documentElement.style.zoom`，存 `localStorage['sjz_zoom']`。**不进 config.json** —— 比例跟本机窗口走，不跟抢购方案走 |
-| 保存成交截图 | ✅ 做了 | 成交那一屏存 `data/shots/YYYYmmdd_HHMMSS_商品名.jpg`，事后是唯一的凭证。挂在 `_fire_and_confirm` 返回 True 之前，一处覆盖三种触发模式；演练不存 |
+| 保存成交截图 | ✅ 做了 | 成交那一屏存 `data/shots/YYYYmmdd_HHMMSS_商品名.jpg`，事后是唯一的凭证。挂在 `_fire_and_confirm` 返回 True 之前，一处覆盖所有触发路径 |
 | 深色/浅色主题 | ❌ 不做 | 配色是从游戏画面取的，浅色等于重画一套；没有需求 |
 | 悬浮状态条 / 紧凑工具条 | ❌ 不做 | 那是桌面壳（pywebview）的活，浏览器版没有窗口可浮 |
 | F7/F8/F9/Ctrl+F7 四热键 | F7 开抢 + F8 停止（可改键） | 见 §4.19。F9 暂停/继续要引擎支持可中断的暂停点，现在只有「停止」一个语义，先不做 |
 
 `_save_shot()` 的三个边界（都有测试钉住）：
 - `save_shots` 关掉 → 不存（一张 300KB，抢几十件就是几十张）
-- `_dry_run` → 不存（演练没花真钱，存下来反而误导）
 - `imwrite` 失败 → **只记一条 warn，不把成交判成失败**（图是凭证，不是成交条件）
 
 `core/config.py` DEFAULTS 加 `"save_shots": True`，`server._save_config` 白名单加同名键；
@@ -1382,11 +1382,12 @@ F4 打开市场 → ESC 复位到 market → 切「典藏外观」标签
 | pythonw 无控制台 | 启动失败 = 双击没反应，什么都看不到 | `desktop.log` 记全过程 + 末尾 `MessageBoxW` 弹错误 |
 
 `desktop.py` 里 webview 改成可选：`import webview` 失败、或 `webview.start()` 立刻返回
-（WebView2 缺失），都退回浏览器模式并继续服务，而不是进程静默退出。
+（WebView2 缺失），退化成本机 Edge/Chrome 的 `--app` 独立窗口（无地址栏无标签）；
+连可用浏览器都找不到就弹错误并退出，**不再退回浏览器标签页，也不留后台僵尸进程**。
 
 **热键两个**：`config.hotkey = {enabled, spec, start_enabled, start_spec}`，
 停止默认 F8、开抢默认 F7，各自一条 `RegisterHotKey` 消息循环，互不影响。
-`_hotkey_toggle()` 的语义：在跑 → 停；没跑 → 过启动前检查 → `start(dry_run=False)`。
+`_hotkey_toggle()` 的语义：在跑 → 停；没跑 → 过启动前检查 → `start()`。
 **热键跳过的是界面，不是检查**：五项不过就不开，把不过的那几项写进调度器日志
 （`Scheduler.note()`），否则按了没反应又查不出原因。队列空 / 全停用也不开。
 
@@ -1419,7 +1420,7 @@ F4 打开市场 → ESC 复位到 market → 切「典藏外观」标签
 `result` 五码：`hit / miss / no_money / over_budget / aborted`。
 
 接线在 `Engine._record()`：`_fire_and_confirm` 成功写 `hit`、没等到弹窗写 `miss`，
-演练一律不写。**只有 hit 才存截图** —— 开关叫「成交后存截图」，没抢到也存就是骗人。
+每次尝试都写一条。**只有 hit 才存截图** —— 开关叫「成交后存截图」，没抢到也存就是骗人。
 
 三个坑：
 

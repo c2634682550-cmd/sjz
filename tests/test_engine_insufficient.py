@@ -58,7 +58,6 @@ def _load(name):
 @pytest.fixture
 def eng():
     e = engine_mod.Engine()
-    e._dry_run = False
     e._log = []
     e._say = lambda msg, level="info": e._log.append((level, msg))
     return e
@@ -115,15 +114,6 @@ def test_normal_list_page_lets_the_run_continue(eng):
     mouse = FakeMouse()
     eng._guard_insufficient(screen, mouse)   # 不该抛
     assert mouse.clicks == []
-
-
-def test_dry_run_reports_but_does_not_click(eng):
-    eng._dry_run = True
-    screen = FakeScreen(_load("insufficient.png"))
-    mouse = FakeMouse()
-    eng._guard_insufficient(screen, mouse)   # 演练不抛，正常收尾
-    assert mouse.clicks == []
-    assert any("余额不足" in m for _, m in eng._log)
 
 
 # ---------------- 点购买那一轮就得认出来 ----------------

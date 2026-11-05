@@ -29,7 +29,8 @@ from collections import deque
 
 from . import timesync
 from .config import (Config, ConfigLoadError, drop_task_dir, mode_for_workflow,
-                     normalize_workflow, resolve_dry_run, task_workflow)
+                     normalize_workflow, task_workflow)
+from .validate import check_conditions
 from .engine import Engine
 
 PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
@@ -212,6 +213,18 @@ class Scheduler:
         # 控制台只维护这一条任务，顾客填价格条件就行，不用先认出皮肤叫什么。
         if name is None:
             return None, "商品名不能为空"
+        # 数字独立兜底：0 与空串合法（= 不限），但 Infinity / 负数 / 小数
+        # 一律拒绝，绝不静默折成默认值（1e309 在 JSON 里会变成 null，
+        # 到了引擎就按 0 = 不限价处理）。
+        clean, errs = check_conditions({
+            "min_price": min_price, "max_price": max_price,
+            "quota": quota, "budget": budget, "max_wear": max_wear,
+            "craft": craft})
+        if errs:
+            return None, "条件不合法：" + "；".join(errs)
+        min_price, max_price = clean["min_price"], clean["max_price"]
+        quota, budget = clean["quota"], clean["budget"]
+        max_wear = clean["max_wear"]
         # **workflow 是唯一真源，mode 由它派生**（审查 S7）。以前两个字段
         # 各自为政：add 里按 mode 判区域、引擎按 workflow 跑，同一个任务
         # 检查的地方和实际跑的地方不是一回事。
@@ -271,8 +284,8 @@ class Scheduler:
                 "categories": [str(c) for c in (categories or []) if str(c).strip()],
                 # 本轮限量：这一条任务抢够几件就停（默认 1）。
                 # 预算上限：这一条任务最多花多少金币，0 = 不限。
-                "quota": max(1, int(quota or 1)),
-                "budget": max(0.0, float(budget or 0)),
+                "quota": quota,
+                "budget": budget,
                 # 启用开关：停用的任务留在队列里但不跑（改条件时先停掉）
                 "enabled": True,
                 # 已抢几件 / 已花多少：抢购是累计的，列表要看得见进度
@@ -283,7 +296,25 @@ class Scheduler:
             # 了事 —— 那份 cfg 是上面 load 出来的快照，期间服务端可能刚
             # 存过设置，整份写回会把人家刚存的盖掉。
             with Config.transaction() as cur:
-                cur["queue"].append(task)
+                # 同名 + 同路线只保留一条：update 而不是追加。老版本换目标
+                # 时会在队列里堆一串同名旧任务，取消勾选再开始就按旧目标
+                # 重跑。
+                prior = next((t for t in cur["queue"]
+                              if (t.get("name") or "").strip() == task["name"]
+                              and t.get("workflow") == wf), None)
+                if prior:
+                    task["id"] = prior.get("id", task["id"])
+                    task["created"] = prior.get("created", task["created"])
+                    # 不复活已结束的任务：状态跟着旧任务走，重跑必须走
+                    # update 里的显式 pending。
+                    task["status"] = prior.get("status", task["status"])
+                    for k in ("bought", "spent"):
+                        if k in prior:
+                            task[k] = prior[k]
+                    cur["queue"][cur["queue"].index(prior)] = task
+                else:
+                    cur["queue"].append(task)
+            tid = task["id"]
             self._say(f"已加入队列：{task['name'] or '所有皮肤'}"
                       + (f"（{time.strftime('%H:%M:%S', time.localtime(fire_at))} 开卖）"
                          if fire_at else "（手动触发）"))
@@ -377,12 +408,8 @@ class Scheduler:
 
     # ---------------- 运行 ----------------
 
-    def start(self, dry_run=None):
-        """启动一轮。`dry_run=None` = 没显式指定，按 `config.resolve_dry_run` 判。
-
-        以前这里是 `dry_run=True` 默认值 + 又单独读 `run.mode`，HTTP 那边
-        还另有一套（env.dry_run）—— 三个入口三种判定（review R3）。
-        """
+    def start(self):
+        """启动一轮（只有实战一种路径）。"""
         if self._thread and self._thread.is_alive():
             if not self._stop.is_set():
                 return False, "调度器已在运行"
@@ -406,16 +433,21 @@ class Scheduler:
             first = [t for t in cfg["queue"]
                      if t.get("status") in (PENDING, ARMED) and t.get("enabled", True)]
             if not first:
-                # 队列里只剩「完成 / 失败 / 跳过」的：用户又点了一次开始，
-                # 意思就是「再跑一遍」。不重置的话下面 _run 会立刻说
-                # 「队列跑完了」，界面上还是没反应（实测这台机器上就是这条：
-                # 上一次因为 SameFileError 失败，之后每次点开始都毫无动静）。
+                # 失败/跳过的任务，再点一次开始就是「重跑」，自动复位；
+                # **已完成（DONE）的绝不能在这里复活** —— 换目标后旧任务
+                # 还留在队列里，一点开始就把上一个目标重新抢一遍。
+                # 要重跑 DONE，必须在队列页显式确认（前端 update 成 pending）。
                 with Config.transaction() as cur:
+                    revived = False
                     for t in cur["queue"]:
                         if (t.get("enabled", True)
-                                and t.get("status") in (DONE, FAILED, SKIPPED)):
+                                and t.get("status") in (FAILED, SKIPPED)):
                             t["status"] = PENDING
                             t["result"] = None
+                            revived = True
+                if not revived:
+                    return False, ("队列里只剩已完成的任务 —— 要重跑请先在"
+                                   "队列页点「重跑」并确认")
                 cfg = Config.load()
                 first = [t for t in cfg["queue"]
                          if t.get("status") in (PENDING, ARMED)
@@ -436,18 +468,13 @@ class Scheduler:
                 if missing:
                     return False, (f"缺少模板：{'、'.join(missing)}"
                                    "（先在游戏里重新截一次再开始）")
-        # 演练判定走**唯一真源** `resolve_dry_run`（请求显式 > run_mode >
-        # env.dry_run 默认）。调度器、HTTP、F7 热键、界面都读这一个函数，
-        # 日志里把最终结论和来源打出来（review R3）。
-        dry_run, dry_src = resolve_dry_run(cfg, dry_run)
-        self._say(f"执行模式：{'演练（只识别不点击）' if dry_run else '实战（会真实点击）'}"
-                  f"，判定来源：{dry_src}")
+        self._say("执行模式：实战（会真实点击）")
         self._stop.clear()
         self._engine = Engine()
         # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器。
         # 必须投递到新线程：回调发生在引擎线程里，直接 join 自己会炸（审查 S11）。
         self._engine.on_hit = self._hit_stop
-        self._thread = threading.Thread(target=self._run, args=(dry_run,), daemon=True)
+        self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         return True, "调度器已启动"
 
@@ -552,11 +579,11 @@ class Scheduler:
                         t["result"] = result
                     break
 
-    def _run(self, dry_run):
+    def _run(self):
         try:
             while not self._stop.is_set():
                 try:
-                    if not self._run_step(dry_run):
+                    if not self._run_step():
                         break
                 except Exception as e:               # noqa: BLE001
                     # 调度器**自身**的异常（配置读失败、排序、校时）以前会一路
@@ -571,7 +598,7 @@ class Scheduler:
             with self._lock:
                 self._active_id = None
 
-    def _run_step(self, dry_run):
+    def _run_step(self):
         """挑一条任务、布防、执行。返回 False = 队列空了，可以收工。"""
         # 先看读盘状态：配置读不出来时**不能**推进状态机 ——
         # 以前这里直接拿默认空队列判「队列跑完了」，盘上的任务还在排着，
@@ -620,7 +647,7 @@ class Scheduler:
         # 只看到调度器停了、日志里一段 traceback。现在这条标失败，
         # 接着跑下一条。
         try:
-            self._run_task(task, dry_run)
+            self._run_task(task)
         except Exception as e:                   # noqa: BLE001
             self._set_status(task["id"], FAILED,
                              f"{type(e).__name__}: {e}")
@@ -688,7 +715,7 @@ class Scheduler:
             "categories": task.get("categories") or [],
         }
 
-    def _run_task(self, task, dry_run):
+    def _run_task(self, task):
         tid = task["id"]
         # workflow 是真源，mode 由它派生（审查 S7）：老任务只有 mode 时按它迁移
         workflow = task_workflow(task, "countdown")
@@ -704,7 +731,7 @@ class Scheduler:
         # 都按错的区域去点。
         saved = self._borrow_config(task)
         try:
-            self._drive_task(task, dry_run, mode, workflow)
+            self._drive_task(task, mode, workflow)
         finally:
             self._return_config(saved)
 
@@ -738,7 +765,7 @@ class Scheduler:
         except Exception:                    # noqa: BLE001
             pass
 
-    def _drive_task(self, task, dry_run, mode, workflow):
+    def _drive_task(self, task, mode, workflow):
         tid = task["id"]
         cfg = Config.load()
 
@@ -759,7 +786,7 @@ class Scheduler:
             # 列表模式点进详情页后才用购买模板：有就带上，没有也不拦
             sync_template(cfg, "buy", tid)
 
-        ok, msg = self._engine.start(dry_run=dry_run, deadline=_fire_at(task) or None,
+        ok, msg = self._engine.start(deadline=_fire_at(task) or None,
                                      mode=mode, workflow=workflow)
         if not ok:
             self._set_status(tid, FAILED, msg)
@@ -802,9 +829,5 @@ class Scheduler:
             # 「公示期里没有符合条件、还在倒计时的商品」「界面导航失败」）
             # 只在引擎日志里，用户盯着清单页的「失败」两字完全不知道为什么。
             res = st.get("error") or self._engine_reason(st) or "未抢到"
-            if dry_run:
-                # 演练跑出来的「失败」不是真失败：没点鼠标，本来就不会成交。
-                # 不标出来，用户会以为程序坏了。
-                res = f"演练：{res}"
             self._set_status(tid, FAILED, res)
             self._say(f"{self._label(task)}：{res}", "warn")

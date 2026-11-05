@@ -524,14 +524,13 @@ def test_pick_season_opens_dropdown_when_closed():
     assert mouse.clicks[0] == COL_SEASON
 
 
-def test_pick_season_dry_run_does_not_click():
-    """演练模式不点任何东西。"""
+def test_pick_season_clicks_dropdown_then_item():
+    """赛季下拉：先点下拉框，再点选项（都是真实输入）。"""
     n, screen, mouse, kb, state = _make_nav()
-    n.dry_run = True
     screen.set(_season_dropdown_img(top=0))
     assert n.col_pick_season("美杜莎") is True
-    assert mouse.clicks == []
-    assert kb.wheels == []
+    assert mouse.clicks, "下拉框和选项都要点"
+    assert mouse.clicks[0] == COL_SEASON
 
 
 def test_clicking_dropdown_toggles_overlay_closed():

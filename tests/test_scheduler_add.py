@@ -59,21 +59,24 @@ def test_add_keeps_the_quota_and_the_budget(monkeypatch):
     assert task["budget"] == 9000.0, f"预算没存住：{task['budget']}"
 
 
-def test_quota_defaults_to_one_and_never_goes_below(monkeypatch):
-    """不填就是抢一件；填 0 / 负数也不许变成「无限抢」。"""
+def test_quota_defaults_to_one_and_invalid_is_rejected(monkeypatch):
+    """不填就是抢一件；0 / 负数 / 小数 / Infinity 一律拒绝，绝不静默折算。"""
     s = _scheduler(monkeypatch)
-    t1, _ = s.add("A", mode="list", max_price=3000)
+    t1, err = s.add("A", mode="list", max_price=3000)
+    assert err is None, err
     assert t1["quota"] == 1
-    t2, _ = s.add("B", mode="list", max_price=3000, quota=0)
-    assert t2["quota"] == 1, f"quota=0 应该是 1 件，实际 {t2['quota']}"
-    t3, _ = s.add("C", mode="list", max_price=3000, quota=-5)
-    assert t3["quota"] == 1
+    for i, bad in enumerate((0, -5, 2.5, "abc", "1e309")):
+        t, err = s.add(f"B{i}", mode="list", max_price=3000, quota=bad)
+        assert t is None, f"quota={bad!r} 应该被拒，实际存成了 {t}"
+        assert "数量" in (err or ""), f"要说清是数量不合法：{err}"
 
 
-def test_budget_zero_means_no_cap(monkeypatch):
+def test_budget_zero_means_no_cap_and_negative_is_rejected(monkeypatch):
     s = _scheduler(monkeypatch)
-    t, _ = s.add("A", mode="list", max_price=3000, budget=0)
+    t, err = s.add("A", mode="list", max_price=3000, budget=0)
+    assert err is None, err
     assert t["budget"] == 0.0
-    t2, _ = s.add("B", mode="list", max_price=3000, budget=-100)
-    assert t2["budget"] == 0.0, "负预算要归零（= 不限），不能变成「一件都不许买」"
+    t2, err = s.add("B", mode="list", max_price=3000, budget=-100)
+    assert t2 is None, "负预算应该被拒"
+    assert "预算" in (err or "") and "负数" in (err or ""), err
 

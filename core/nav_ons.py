@@ -358,9 +358,6 @@ class NavOnsPanel:
         `core.input.Mouse.wheel` 的 PostMessage 对游戏无效 —— 滚了没反应，
         这是和价格输入框同一类坑。
         """
-        if self.dry_run:
-            self.say(f"[演练] 滚轮 {notches:+d} 格", "warn")
-            return True
         u = ctypes.windll.user32
         x, y = _pt(self, at or self.ONS_SCROLL_AT)
         u.SetCursorPos(int(x), int(y))
@@ -644,7 +641,7 @@ class NavOnsPanel:
 
         判勾选见 _ons_box_on()。
         """
-        if scroll_top and not self.dry_run:
+        if scroll_top:
             self.ons_scroll_top()
         img = self._snap()
         if img is None:
@@ -1029,10 +1026,6 @@ class NavOnsPanel:
         if o["on"] == want:
             self.say(f"{name} 已经是{'勾选' if want else '未勾选'}状态，跳过")
             return False
-        if self.dry_run:
-            self.say(f"[演练] {'勾' if want else '取消'} {name} {o['text_pt']}",
-                     "warn")
-            return True
         # 选项文字的 x/y 都是 OCR 读到的**真实像素**（review V02）
         x, y = int(o["text_pt"][0]), int(o["text_pt"][1])
         self.mouse.click(x, y, verify=False)
@@ -1156,9 +1149,6 @@ class NavOnsPanel:
             # skip_done=False：不管当前状态都点一下。用于「星标颜色读不准」
             # 的界面版本 —— 宁可盲点一次（可能反而取消），也别卡着不动。
             self.say("按设置强制点一次星标（不读当前状态）", "warn")
-        if self.dry_run:
-            self.say(f"[演练] 点关注星标（{'加' if want else '取消'}）", "warn")
-            return want
         x, y = _pt(self, COL_FOLLOW)
         self.mouse.click(x, y, verify=False)
         time.sleep(max(0.05, float(wait)))

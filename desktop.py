@@ -91,12 +91,86 @@ def _pick_port(host, want):
     raise RuntimeError(f"{want}~{want + 20} 都被占用")
 
 
-def _open_browser(url):
-    import webbrowser
+def _registry_path(exe_name):
+    """从注册表 App Paths 读浏览器真实路径（Edge/Chrome 都写这里）。"""
     try:
-        webbrowser.open(url)
+        import winreg
+    except Exception:
+        return None
+    keys = [
+        rf"Software\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}",
+        rf"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}",
+    ]
+    for key in keys:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as k:
+                p = winreg.QueryValue(k, None)
+            if p and os.path.isfile(p):
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def _find_browser():
+    """定位本机 Edge/Chrome：`where` → 注册表 → 常见安装路径。"""
+    import shutil
+    for exe in ("msedge.exe", "chrome.exe"):
+        p = shutil.which(exe)
+        if p:
+            return p
+        p = _registry_path(exe)
+        if p:
+            return p
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    for p in (
+        os.path.join(pf86, "Microsoft", "Edge", "Application", "msedge.exe"),
+        os.path.join(pf, "Microsoft", "Edge", "Application", "msedge.exe"),
+        os.path.join(pf, "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(pf86, "Google", "Chrome", "Application", "chrome.exe"),
+    ):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _open_app_window(url, width, height):
+    """用 Edge/Chrome 的 `--app` 起一个独立窗口：无地址栏、无标签页。
+
+    以前这里退回 `webbrowser.open()`，开出来的是浏览器**标签**，直接
+    违反「必须独立窗口」的硬约束，而且失败还被吞掉，进程静默挂住占端口。
+    """
+    exe = _find_browser()
+    if not exe:
+        return None, "本机找不到 Edge/Chrome"
+    import subprocess
+    try:
+        proc = subprocess.Popen([
+            exe, f"--app={url}", f"--window-size={width},{height}",
+            "--no-first-run", "--disable-features=Translate",
+        ])
+    except Exception as e:                       # noqa: BLE001
+        return None, f"{type(e).__name__}: {e}"
+    return proc, exe
+
+
+def _fatal_no_window(url, why):
+    msg = (f"打不开独立窗口：{why}\n\n"
+           f"装了 pywebview 仍失败时，请确认本机有 Edge 或 Chrome。\n"
+           f"控制台地址：{url}")
+    _log("!! " + msg)
+    try:
+        ctypes.windll.user32.MessageBoxW(None, msg, WINDOW_TITLE, 0x10)
     except Exception:
         pass
+    return 2
+
+
+def _wait_app(proc, thread, tick_s=0.5):
+    """等独立窗口关闭（或服务线程结束），随后正常退出释放端口。"""
+    while thread.is_alive() and proc.poll() is None:
+        time.sleep(tick_s)
 
 
 class WinCtl:
@@ -238,9 +312,13 @@ def main():
     _log("服务已就绪，开始建窗口")
 
     if webview is None:
-        _log("没装 pywebview，退回浏览器模式（pip install pywebview 可恢复桌面窗口）")
-        _open_browser(url)
-        _serve_until_interrupt(t)
+        _log("没装 pywebview，改用 Edge/Chrome 独立应用窗口（--app）")
+        proc, why = _open_app_window(url, args.width, args.height)
+        if proc is None:
+            return _fatal_no_window(url, why)
+        _log(f"已用 {why} 打开独立窗口")
+        _wait_app(proc, t)
+        _log("窗口已关闭，退出")
         return 0
 
     ctl = WinCtl()
@@ -297,9 +375,12 @@ def main():
         # 双击后什么都没发生。显式报出来并退回浏览器。
         if not shown["value"]:
             _log("!! webview.start() 在窗口显示前就返回了，窗口没能开起来")
-            _log("   多半是 WebView2 运行时缺失或初始化失败，改用浏览器打开")
-            _open_browser(url)
-            _serve_until_interrupt(t)
+            why = "WebView2 运行时缺失或初始化失败"
+            proc, exe = _open_app_window(url, args.width, args.height)
+            if proc is None:
+                return _fatal_no_window(url, f"{why}；{exe}")
+            _log(f"   改用 {exe} 独立应用窗口")
+            _wait_app(proc, t)
             return 0
 
         # 显示过、又没收到 closed：窗口被别的路径关掉了（任务栏关闭等）。
@@ -308,57 +389,12 @@ def main():
     except Exception as e:
         _log(f"!! 开窗失败: {type(e).__name__}: {e}")
         _log(traceback.format_exc())
-        _log("   改用浏览器打开")
-        _open_browser(url)
-        _serve_until_interrupt(t)
+        proc, exe = _open_app_window(url, args.width, args.height)
+        if proc is None:
+            return _fatal_no_window(url, f"pywebview 失败；{exe}")
+        _log(f"   改用 {exe} 独立应用窗口")
+        _wait_app(proc, t)
         return 0
-
-
-def _serve_until_interrupt(thread, idle_exit_s=180, tick_s=10.0):
-    """浏览器模式下等服务线程结束。
-
-    这条路没有窗口可关，只能靠 Ctrl+C / 任务管理器 —— 所以至少要
-    把地址打出来，别让人以为程序挂了。
-
-    还要起一个看门狗：页面关掉之后（连续 idle_exit_s 秒一个请求都没有）
-    自己退出。以前没有这一步，用户关掉标签后进程一直挂着、占着端口和
-    单实例闸，下次双击只会看到「已经有一个实例在跑」而屏幕上什么都没有 ——
-    从用户角度看就是「程序关不掉」。
-
-    看门狗有个前提：**它盯的那个线程还活着**。所以每轮醒来都要先确认一遍，
-    线程没了就收工，绝不 os._exit —— 这一条以前漏了，后果很吓人：谁调用
-    `_serve_until_interrupt` 时进程已经跑了 180 秒以上（idle_seconds 早就
-    超了），看门狗第一轮醒来就把整个进程干掉，哪怕它盯的线程 0.05 秒前就
-    结束了。实测就是整跑 pytest 时在 81% 无声退出、exit code 还是 0
-    （os._exit 绕过 atexit，junit 都来不及写）。
-    """
-    _log(f"浏览器模式：关掉页面后约 {idle_exit_s // 60} 分钟会自动退出"
-         "（也可以直接 Ctrl+C）")
-    from core import server as _srv
-
-    def _watch():
-        while thread.is_alive():
-            time.sleep(tick_s)
-            if not thread.is_alive():
-                return                   # 服务线程已经结束，看门狗跟着收工
-            if _srv.idle_seconds() < idle_exit_s:
-                continue
-            if _srv.busy():
-                continue                 # 正在抢，别把进程干掉
-            _log(f"!! {idle_exit_s} 秒没有页面连过来（标签关了？），自动退出")
-            try:
-                from core.single_instance import release
-                release()
-            except Exception:            # noqa: BLE001
-                pass
-            os._exit(0)
-
-    threading.Thread(target=_watch, name="idle-watchdog", daemon=True).start()
-    try:
-        while thread.is_alive():
-            thread.join(0.5)
-    except KeyboardInterrupt:
-        _log("收到 Ctrl+C，退出")
 
 
 if __name__ == "__main__":

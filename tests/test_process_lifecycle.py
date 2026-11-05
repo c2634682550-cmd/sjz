@@ -201,7 +201,7 @@ def test_start_refuses_before_spawning_when_template_is_missing(sandbox):
                          "regions": {}, "keywords": []}]
 
     s = scheduler_mod.Scheduler()
-    ok, msg = s.start(dry_run=True)
+    ok, msg = s.start()
     assert ok is False, "缺模板也让它跑起来了"
     assert "模板" in msg, msg
 
@@ -235,14 +235,12 @@ def test_task_regions_are_borrowed_then_returned(sandbox):
     assert back["buy"] == mine, "没借的键也被还原操作动了"
 
 
-def test_start_reruns_a_failed_task(sandbox, monkeypatch):
-    """上一次失败的任务，再点一次「开始」要能重跑，而且**只跑一遍**。
+def test_start_does_not_revive_a_done_task(sandbox, monkeypatch):
+    """已完成的任务不会被 start 自动复活；显式改回 pending 后才重跑，只跑一遍。
 
-    实测这台机器上就是这条：任务因为 SameFileError 失败后状态停在 failed，
-    而调度器只挑 pending/armed —— 于是之后每次点「开始抢购」都立刻
-    「队列跑完了」，界面上完全没反应。
-
-    「只跑一遍」也要守住：引擎跑两次就是下两单。
+    以前 start 会把 failed/done 全部重置成 pending：换目标后旧任务还留在
+    队列里，点一次开始就把上一个目标重新抢一遍。现在必须由用户在队列页
+    显式确认（update status=pending），「只跑一遍」同样要守住。
     """
     from core import scheduler as sch
 
@@ -251,7 +249,7 @@ def test_start_reruns_a_failed_task(sandbox, monkeypatch):
     (tpl / "buy.png").write_bytes(b"x")
     (tpl / "confirm.png").write_bytes(b"x")
     with config.Config.transaction() as cfg:
-        cfg["queue"] = [{"id": "deadbeef", "name": "", "status": "failed",
+        cfg["queue"] = [{"id": "deadbeef", "name": "", "status": sch.DONE,
                          "enabled": True, "fire_at": 0, "mode": "list",
                          "regions": {}, "keywords": [], "quota": 1,
                          "budget": 0, "bought": 0, "spent": 0.0,
@@ -276,7 +274,12 @@ def test_start_reruns_a_failed_task(sandbox, monkeypatch):
 
     monkeypatch.setattr(sch, "Engine", FakeEngine)
     s = sch.Scheduler()
-    ok, msg = s.start(dry_run=True)
+    ok, msg = s.start()
+    assert ok is False, "已完成的任务不该被 start 自动复活"
+    assert "重跑" in msg, f"要告诉用户怎么重跑：{msg}"
+    assert started == [], "没确认就启动了引擎"
+    assert s.update("deadbeef", status=sch.PENDING) is True
+    ok, msg = s.start()
     assert ok is True, msg
 
     deadline = time.time() + 5
@@ -362,67 +365,89 @@ def test_unknown_job_id_returns_none(fresh_jobs):
     assert jobs.status("nope") is None
 
 
-# ---------------------------------------------------------------- 退出路径
+# ---------------------------------------------------------------- 独立窗口
 
-def test_serve_until_interrupt_returns_when_server_thread_ends():
-    """浏览器模式不能变成「进程永不退出」。
+def test_open_app_window_is_a_real_app_window(monkeypatch):
+    """没有 pywebview 时用 Edge/Chrome 的 --app 起独立窗口，不是浏览器标签。
 
-    关窗那条路以前走到 t.join() 就再也回不来：用户以为关了，其实进程
-    还在，端口不释放，下次双击换个端口再起一个。
+    以前这里 `webbrowser.open()`：开出来带地址栏和标签页，直接违反
+    「必须独立窗口」，而且失败还被吞掉，进程静默挂住占端口。
     """
+    import subprocess
+
     import desktop
 
-    t = threading.Thread(target=lambda: time.sleep(0.05))
-    t.start()
+    calls = {}
+
+    class _Proc:
+        def poll(self):
+            return None
+
+    def fake_popen(args, **kw):
+        calls["args"] = list(args)
+        return _Proc()
+
+    monkeypatch.setattr(desktop, "_find_browser",
+                        lambda: r"C:\Program Files\Microsoft\Edge\Application\msedge.exe")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    proc, exe = desktop._open_app_window("http://127.0.0.1:8777", 1180, 800)
+    assert proc is not None, exe
+    args = calls["args"]
+    assert args[0].endswith("msedge.exe")
+    assert "--app=http://127.0.0.1:8777" in args, args
+    assert "--window-size=1180,800" in args, args
+
+
+def test_open_app_window_fails_loudly_without_browser(monkeypatch):
+    """连 Edge/Chrome 都没有时把原因交回去，由调用方报错退出。"""
+    import desktop
+
+    monkeypatch.setattr(desktop, "_find_browser", lambda: None)
+    proc, why = desktop._open_app_window("http://127.0.0.1:8777", 1180, 800)
+    assert proc is None
+    assert "Edge/Chrome" in why, why
+
+
+def test_fatal_no_window_returns_error_and_writes_log(monkeypatch, tmp_path):
+    """打不开窗口要留下日志 + 错误码，绝不静默留在后台占端口。"""
+    import types
+
+    import desktop
+
+    monkeypatch.setattr(desktop, "LOG_PATH", str(tmp_path / "desktop.log"))
+    fake = types.SimpleNamespace(
+        user32=types.SimpleNamespace(MessageBoxW=lambda *a: 0))
+    monkeypatch.setattr(desktop.ctypes, "windll", fake)
+
+    assert desktop._fatal_no_window("http://127.0.0.1:8777",
+                                    "本机找不到 Edge/Chrome") == 2
+    text = (tmp_path / "desktop.log").read_text(encoding="utf-8")
+    assert "打不开独立窗口" in text and "Edge/Chrome" in text, text
+
+
+def test_wait_app_returns_once_the_window_closes():
+    """窗口关了就要返回，不能像旧看门狗那样永久阻塞。"""
+    import desktop
+
+    class _Proc:
+        def poll(self):
+            return 0
+
+    class _Thread:
+        def is_alive(self):
+            return True
+
     t0 = time.time()
-    desktop._serve_until_interrupt(t)          # 不该永久阻塞
-    assert time.time() - t0 < 5, "服务线程结束后还卡着没返回"
+    desktop._wait_app(_Proc(), _Thread(), tick_s=0.01)
+    assert time.time() - t0 < 1
 
 
-def test_idle_watchdog_never_kills_after_the_server_thread_is_gone(monkeypatch):
-    """看门狗盯的线程已经结束，就绝不能再 os._exit。
+def test_start_bat_never_opens_a_browser_tab():
+    """start.bat 不许再 `start http://...` 开浏览器标签。"""
+    import pathlib
 
-    整跑 pytest 时踩过这条：跑到 81% 进程无声退出、exit code 还是 0
-    （os._exit 绕过 atexit，junit 都没生成）。触发条件是「进程已经跑了
-    180 秒以上」—— idle_seconds 早就超了，看门狗第一轮醒来就把整个进程
-    干掉，哪怕它盯的线程 0.05 秒前就结束了。
-    """
-    import desktop
-    from core import server as srv
-
-    monkeypatch.setattr(srv, "idle_seconds", lambda: 10_000)   # 早就算「没人连」
-    monkeypatch.setattr(srv, "busy", lambda: False)
-    killed = []
-    monkeypatch.setattr(desktop.os, "_exit", lambda code: killed.append(code))
-
-    t = threading.Thread(target=lambda: time.sleep(0.02))
-    t.start()
-    t.join()                                  # 线程已经结束
-    desktop._serve_until_interrupt(t, idle_exit_s=1, tick_s=0.02)
-    time.sleep(0.2)                           # 给看门狗留一轮
-    assert killed == [], "服务线程都结束了，看门狗还去杀进程"
-
-
-def test_idle_watchdog_still_exits_when_the_page_is_really_gone(monkeypatch):
-    """线程还活着 + 一直没人连页面 → 必须退出，否则标签关了进程永远挂着。"""
-    import desktop
-    from core import server as srv
-
-    monkeypatch.setattr(srv, "idle_seconds", lambda: 10_000)
-    monkeypatch.setattr(srv, "busy", lambda: False)
-    killed = []
-    monkeypatch.setattr(desktop.os, "_exit", lambda code: killed.append(code))
-
-    stop = threading.Event()
-    t = threading.Thread(target=stop.wait)     # 模拟「服务线程还活着」
-    t.start()
-    threading.Thread(target=desktop._serve_until_interrupt, args=(t,),
-                     kwargs={"idle_exit_s": 1, "tick_s": 0.02},
-                     daemon=True).start()
-    deadline = time.time() + 5
-    while time.time() < deadline and not killed:
-        time.sleep(0.05)
-    stop.set()
-    assert killed, "页面早关了却不退出，进程会一直挂着占端口"
-    assert killed[0] == 0
+    bat = (pathlib.Path(__file__).resolve().parent.parent / "start.bat").read_text(
+        encoding="utf-8", errors="ignore").lower()
+    assert "start http" not in bat, "start.bat 还在开浏览器标签"
 

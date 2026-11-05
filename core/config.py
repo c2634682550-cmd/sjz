@@ -83,8 +83,9 @@ DEFAULTS = {
                         "ons_sort": "默认排序"},
     # ---------------- 开关表（core/switches.py）读的那些 ----------------
     # 每一项都在 switches.SWITCHES 里有对应条目，界面上拨一下就是改这里。
-    "run_mode": "auto",           # auto / semi / dry
-    "dry_run": True,              # 演练：不点鼠标
+    "semi_mode": False,           # 半自动：走到购买键前停手，不点购买/确认
+    # 分辨率基准与容差：换机器/换 DPI 只改这里，判定代码不写死 1920×1080。
+    "screen": {"base_size": [1920, 1080], "tolerance": 0.0},
     "preflight_required": True,   # 开抢前必须过检查
     "force_foreground": True,     # 开点前抢前台并等画面刷新
     "record_enabled": True,       # 写 data/records.jsonl
@@ -207,37 +208,6 @@ def task_workflow(task, fallback="countdown"):
     return normalize_workflow(fallback)
 
 
-def resolve_dry_run(cfg, requested=None):
-    """这次到底是不是演练 —— 全程序唯一判定点。
-
-    以前 HTTP（`_dry_run_requested`）、热键、调度器各自读一套：
-    调度器看 `run.mode == "dry"` 才强制演练，其余看 `env.dry_run`；
-    结果是「全自动 + 勾了演练」仍走演练、反过来又说不清谁说了算。
-
-    优先级（review R3）：
-        1. requested —— 本次请求显式给的（HTTP body / F7 调用方）
-        2. run_mode  —— 显式选择：dry 演练 / semi 半自动（不演练，
-                     到购买键前停手）/ auto 实战
-        3. dry_run   —— 只有 run_mode 缺失或非法时才当默认值
-
-    返回 `(dry_run, 来源)`，来源进日志，排查时一眼看出是谁定的。
-    """
-    if requested is not None:
-        return bool(requested), "请求指定"
-    cfg = cfg or {}
-    run_mode = str(cfg.get("run_mode") or "").strip().lower()
-    if run_mode == "dry":
-        return True, "run_mode=dry"
-    if run_mode in ("auto", "semi"):
-        return False, f"run_mode={run_mode}"
-    val = cfg.get("dry_run")
-    if val is None:
-        # 精简过的配置对象（测试替身）不带这个键：按正式跑处理，
-        # 和热键以前的行为一致。
-        return False, "缺省"
-    return bool(val), "env.dry_run"
-
-
 class Config:
     def __init__(self, data=None):
         self.data = json.loads(json.dumps(DEFAULTS))
@@ -263,6 +233,9 @@ class Config:
             以前直接 `t["fire_at"]`，缺字段就 KeyError 打死调度线程）。
         """
         d = self.data
+        # 老配置里的演练开关已废弃：静默丢弃，不报错也不写回。
+        d.pop("run_mode", None)
+        d.pop("dry_run", None)
         trig = d.get("trigger_mode")
         d["trigger_mode"] = trig if trig in TRIGGER_MODES else "vanish"
 
@@ -512,9 +485,6 @@ class Config:
         # 当成「队列是空的」（review R1）。
         out["config_ok"] = self.load_ok
         out["config_error"] = self._load_error
-        # 演练判定：唯一真源在这里（resolve_dry_run），界面直接显示结论，
-        # 不用自己再拼 run_mode / env.dry_run（review R3）。
-        out["dry_run"], out["dry_run_source"] = resolve_dry_run(self)
         return out
 
     # ---------- 模板 ----------

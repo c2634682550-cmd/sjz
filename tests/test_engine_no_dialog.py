@@ -55,7 +55,6 @@ class FakeCfg:
 
 def _engine(monkeypatch, balances, record):
     e = engine_mod.Engine()
-    e._dry_run = False
     e._target_hwnd = 123
     e._say = lambda msg, level="info": None
     e._record = record
@@ -111,7 +110,6 @@ def test_without_a_confirm_region_the_engine_never_enters_the_click_loop(monkeyp
     records = []
     e = _engine(monkeypatch, ["2,049 0+ 0 40+", "2,049 0+ 0 38+"],
                 lambda *a, **k: records.append(k))
-    e._dry_run = False
     monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
     mouse = FakeMouse()
 
@@ -143,7 +141,6 @@ def test_the_success_dialog_alone_means_bought(monkeypatch):
 def test_no_click_while_the_chip_still_says_unlock(monkeypatch):
     """价格行还写着「X秒后解锁购买」时一下都不许点 —— 先识别再点。"""
     e = engine_mod.Engine()
-    e._dry_run = False
     e._target_hwnd = 123
     e._say = lambda msg, level="info": None
 

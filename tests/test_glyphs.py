@@ -133,7 +133,6 @@ class FakePanel:
         self.boxes = list(boxes)
         self.glyphs_at = dict(glyphs_at)      # {(cx,cy): 模板名}
         self.ocr_text = dict(ocr_text)        # {(cx,cy): OCR 读出的字}
-        self.dry_run = False
 
     def _snap(self):
         img = np.zeros((1080, 1920, 3), np.uint8)
@@ -164,7 +163,6 @@ def _nav(panel):
     n.mouse = None
     n.pt = lambda point: point
     n.say = lambda msg, level="info": None
-    n.dry_run = False
     # 只桩 _ons_wheel：真实现会调 ctypes 移动真实鼠标、滚动游戏窗口。
     n._ons_wheel = lambda notches, at=None: True
     return n

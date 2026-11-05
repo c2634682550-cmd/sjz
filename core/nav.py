@@ -192,19 +192,17 @@ class NavBase:
     mouse   —— core.input.Mouse（要带 game_hwnd，走 SetCursorPos+PostMessage）
     keyboard—— core.input.Keyboard（F4 只能靠 PostMessage 送进去）
     snap    —— 可选，返回当前整屏 BGR 数组的函数；默认用 screen.grab()
-    dry_run —— True 时只打印不点击
     """
 
     # 单步点击的重试次数。2 次够了：第一次可能是画面还在动，第二次还不行
     # 就是真点错了，继续重试只会乱点。
     RETRIES = 2
 
-    def __init__(self, screen, mouse, keyboard=None, snap=None, dry_run=False,
+    def __init__(self, screen, mouse, keyboard=None, snap=None,
                  log=None, ocr_read=None):
         self.screen = screen
         self.mouse = mouse
         self.keyboard = keyboard
-        self.dry_run = dry_run
         self._snap = snap or (lambda: screen.grab())
         self._log = log or (lambda msg, level="info": None)
         self._ocr_read = ocr_read
@@ -299,12 +297,7 @@ class NavBase:
         want 可以是字符串或字符串元组。这是「假阳性」的解药：只有确认到
         了目标页，这一步才算成功。
 
-        演练模式下不校验：屏幕上是用户当前的画面，不是我们走出来的页面，
-        拿它断言只会误报。
         """
-        if self.dry_run:
-            self.say(f"  [演练] 跳过页面校验（{step or want}）", "warn")
-            return None
         # 断言前先把游戏抢回前台：`where()` 读的是屏幕截图，前台一旦被
         # 别的窗口占住，读到的就是那个窗口的内容 —— 实测点完「购买」后
         # 读到「编辑(E)窗口(W)帮助(H)关于(A)」，于是把一次成功的导航判成
@@ -379,10 +372,6 @@ class NavBase:
         报错（实测：控制台窗口或终端压着游戏时，点全落在那个窗口上）。
         早报「目标窗口不在前台」比事后猜要省事得多。
         """
-        if self.dry_run:
-            self.say(f"[演练] 点「{label}」({x},{y})", "warn")
-            return 1.0
-
         before = self._snap()
         hwnd = getattr(self.mouse, "_game_hwnd", None)
         ok = self.mouse.click(x, y, verify=False, expect_foreground=hwnd)
@@ -416,9 +405,6 @@ class NavBase:
         游戏过滤（Raw Input 只认真实硬件事件），实测提权也一样。F4 只开
         不关——这是用户确认过的行为，别指望它来回切。
         """
-        if self.dry_run:
-            self.say("[演练] 按 F4 打开市场", "warn")
-            return True
         if self.keyboard is None:
             raise NavError("没有 Keyboard，按不了 F4")
         before = self._snap()
@@ -447,9 +433,6 @@ class NavBase:
                  "charm": TAB_CHARM}
         if name not in table:
             raise NavError(f"没有这个标签：{name}")
-        if self.dry_run:
-            self.say(f"[演练] 切标签 {name}", "warn")
-            return True
         if self.tab_now() == name:
             self.say(f"已经在 {name} 标签上", "info")
             return True
@@ -493,9 +476,6 @@ class NavBase:
 
         返回最终页面名。识别不出就抛 NavError，不盲试。
         """
-        if self.dry_run:
-            self.say("[演练] 跳过页面复位", "warn")
-            return "unknown"
         if self.keyboard is None:
             raise NavError("没有 Keyboard，没法复位")
 

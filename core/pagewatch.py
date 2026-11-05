@@ -85,8 +85,7 @@ class PageWatcher:
         from .nav import Navigator
         from .screen import Screen
         screen = Screen(self.monitor)
-        self._nav = Navigator(screen, Mouse(screen), snap=screen.grab,
-                              dry_run=False)
+        self._nav = Navigator(screen, Mouse(screen), snap=screen.grab)
         return self._nav
 
     @staticmethod

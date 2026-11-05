@@ -293,12 +293,15 @@ def test_task_can_be_disabled_and_reenabled(server):
     真的被跳过。以前 /api/tasks/update 的白名单里没有 enabled，
     界面点了没反应（接口静默忽略）。
     """
-    code, data = _post(server, "/api/tasks/add",
-                       {"name": "测试皮肤-勾选开关", "mode": "list",
-                        "min_price": 100, "max_price": 200})
-    assert code == 200 and data.get("ok") is not False, data
-    tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())
-    tid = [t for t in tasks["tasks"] if t["name"] == "测试皮肤-勾选开关"][0]["id"]
+    # 直接进队列（显式给框选区域）：不依赖本机 config.json 里有没有框过，
+    # 这条测试只关心 /api/tasks/update 的白名单。
+    from core import server as srv
+    task, err = srv._scheduler.add(
+        "测试皮肤-勾选开关", mode="list", min_price=100, max_price=200,
+        regions={"list": {"x": 0, "y": 0, "w": 1, "h": 1},
+                 "buy": {"x": 0.7, "y": 0.8, "w": 0.2, "h": 0.1}})
+    assert task and not err, err
+    tid = task["id"]
 
     _post(server, "/api/tasks/update", {"id": tid, "enabled": False})
     tasks = json.loads(urllib.request.urlopen(server + "/api/tasks", timeout=10).read())

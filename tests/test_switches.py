@@ -97,14 +97,12 @@ def test_every_switch_has_a_real_consumer():
 # ---------------------------------------------------------------- 类型
 
 @pytest.mark.parametrize("key,raw,want", [
-    ("env.dry_run", "true", True),
-    ("env.dry_run", "0", False),
-    ("env.dry_run", 1, True),
+    ("run.semi", "true", True),
+    ("run.semi", "0", False),
+    ("run.semi", 1, True),
     ("fire.hz", "33", 33),
     ("fire.hz", 33.7, 33),
     ("fire.threshold", "0.9", 0.9),
-    ("run.mode", "semi", "semi"),
-    ("run.mode", "乱写的", "auto"),        # 非法 select 回默认
     ("filter.craft", "", ""),
 ])
 def test_values_are_normalised(key, raw, want):
@@ -181,7 +179,6 @@ class _Cfg(dict):
 def _engine(monkeypatch):
     from core import engine as engine_mod
     eng = engine_mod.Engine()
-    eng._dry_run = False
     monkeypatch.setattr(engine_mod, "match", lambda *a, **k: (0.99, (0, 0)))
     monkeypatch.setattr(eng, "_bought_dialog", lambda screen: True)
     monkeypatch.setattr(eng, "_close_reward", lambda *a, **k: None)
@@ -199,7 +196,7 @@ def test_semi_mode_stops_before_the_click(monkeypatch):
     最后一刻自己按那一下。
     """
     eng, engine_mod = _engine(monkeypatch)
-    cfg = _Cfg(run_mode="semi")
+    cfg = _Cfg(semi_mode=True)
     mouse = _Mouse()
     with pytest.raises(engine_mod.Aborted):
         eng._fire_and_confirm(cfg, _Screen(), mouse, np.zeros((10, 10), np.uint8),
@@ -209,7 +206,7 @@ def test_semi_mode_stops_before_the_click(monkeypatch):
 
 def test_auto_mode_clicks(monkeypatch):
     eng, _ = _engine(monkeypatch)
-    cfg = _Cfg(run_mode="auto")
+    cfg = _Cfg(semi_mode=False)
     mouse = _Mouse()
     ok = eng._fire_and_confirm(cfg, _Screen(), mouse, np.zeros((10, 10), np.uint8),
                                (500, 500), 0.0)

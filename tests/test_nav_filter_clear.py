@@ -39,7 +39,6 @@ class GroupedPanel:
         self.checked = set(checked)
         self.clicked = []
         self.said = []
-        self.dry_run = False
         self.mouse = self
         self.pt = lambda point: point
         self.say = lambda msg, level="info": self.said.append(msg)
@@ -119,7 +118,6 @@ def _nav(panel):
     n.mouse = panel.mouse
     n.pt = panel.pt
     n.say = panel.say
-    n.dry_run = False
     # 只桩 _ons_wheel：真实现会移动真实鼠标、滚动游戏窗口
     n._ons_wheel = lambda notches, at=None: True
     return n

@@ -118,7 +118,6 @@ class Engine:
         self._log = deque(maxlen=300)
         self._state = IDLE
         self._error = None
-        self._dry_run = True
         self._deadline = None
         self._rows = []            # 最近一屏扫到的挂单（给界面看）
         # 上一轮「开始点购买 → 确认弹窗出现」的实测耗时。延迟自适应拿它调
@@ -150,7 +149,7 @@ class Engine:
 
     # ---------------- 对外 ----------------
 
-    def start(self, dry_run=True, deadline=None, mode="detail", workflow=None):
+    def start(self, deadline=None, mode="detail", workflow=None):
         """启动一轮。
 
         workflow 决定走哪条抢购路线（countdown / list / detail）。
@@ -167,14 +166,13 @@ class Engine:
         problem = self._validate(cfg, mode, workflow)
         if problem:
             return False, problem
-        if not dry_run and not find_game_window():
+        if not find_game_window():
             # 找不到游戏窗口就只剩「当前前台」，而用户点「开始抢购」的那一刻
             # 前台是控制台/浏览器自己 —— 整场鼠标会点到控制台上，还可能被
             # ensure_foreground 殷勤地切到前台。宁可拒绝启动，也不盲点（I9）。
             return False, ("没找到游戏窗口（窗口类名 UnrealWindow）—— 先把游戏"
                            "切成无边框窗口化并开着，再点开始")
         self._stop.clear()
-        self._dry_run = bool(dry_run)
         self._mode = mode
         self._workflow = workflow
         # deadline 是校时后的 Unix 时间戳，换算成本机单调时钟，避免中途系统改时间
@@ -191,23 +189,21 @@ class Engine:
         self._verified_by = ""
         self._trigger_mode = None
         self._state = SCAN if mode == "list" else WATCH
-        # 演练不点鼠标，也就无所谓前台；实战时把当前前台窗口记成目标，
-        # 之后每次点击都要求它仍在前台，否则点击会被投递给别的窗口。
+        # 把当前前台窗口记成目标，之后每次点击都要求它仍在前台，
+        # 否则点击会被投递给别的窗口。
         # 目标窗口 = **游戏窗口**，按窗口类名（UnrealWindow）找，不是「当前前台」。
         # 用户点「开始抢购」的那一刻，前台是控制台自己 —— 拿它当目标的话，
         # 引擎会把整场鼠标点到控制台界面上（`ensure_foreground` 还会殷勤地
         # 把控制台切到前台）。找不到游戏窗口才退回当前前台。
         self._target_hwnd = find_game_window() or Mouse.foreground()
         # 游戏独占全屏会把光标锁住，导致后面所有点击静默失效（§4.8）。
-        # 实战开始前先清一次；演练不动鼠标，不用管。
-        if not self._dry_run:
-            ok, had = Mouse.release_cursor_lock()
-            if had:
-                self._say(f"清掉光标裁剪锁（之前{'有' if had else '没有'}锁）"
-                          f" -> {'成功' if ok else '失败'}", "warn")
-            if Mouse.cursor_is_locked():
-                self._say("光标仍被锁住：点击可能无效。"
-                          "如果游戏是独占全屏，请改成「无边框窗口化」再试", "error")
+        ok, had = Mouse.release_cursor_lock()
+        if had:
+            self._say(f"清掉光标裁剪锁（之前{'有' if had else '没有'}锁）"
+                      f" -> {'成功' if ok else '失败'}", "warn")
+        if Mouse.cursor_is_locked():
+            self._say("光标仍被锁住：点击可能无效。"
+                      "如果游戏是独占全屏，请改成「无边框窗口化」再试", "error")
         self._stats.update(hz=0.0, score=0.0, clicks=0, elapsed=0.0,
                            started_at=time.time(),
                            trigger_mode=cfg["trigger_mode"],
@@ -243,7 +239,6 @@ class Engine:
         return {
             "state": state,
             "running": running,
-            "dry_run": self._dry_run,
             "mode": self._mode,
             "stats": st,
             "error": error,
@@ -338,8 +333,7 @@ class Engine:
                 # 「无弹窗版式」走 _buy_without_dialog，别把整任务炸掉。
                 confirm_tpl = None
             w, h = screen.size
-            self._say(f"屏幕 {w}x{h} · "
-                      f"{'演练模式，只识别不点击' if self._dry_run else '实战模式'}")
+            self._say(f"屏幕 {w}x{h} · 实战模式")
             if workflow == "countdown":
                 self._say("触发：等公示期倒计时归零（按跳秒节奏反推精确时刻，"
                           "不是干等「0分0秒」）")
@@ -579,15 +573,6 @@ class Engine:
             self._say(f"第 {attempt} 件：{target['serial'] or '(编号未读出)'}"
                       f" · {target['text']!r}", "hit")
             t_start = time.perf_counter()
-            if self._dry_run:
-                # 演练只验证「能不能找到、能不能选中」，不去等那几十秒的
-                # 倒计时 —— 等了也不点，纯浪费时间。真正要测的点击动作
-                # 由 _fire_and_confirm 的演练分支兜住（它只说不点）。
-                self._say(f"[演练] 已选中 {target['serial'] or '(编号未读出)'}"
-                          f"（{target['sec']} 秒后解锁）—— 演练到此为止，"
-                          "不等待、不点击", "warn")
-                self._set_state(DONE)
-                return
             # 列表上写着「0分0秒后解锁购买」= **其实已经解锁了**。点进去
             # 读到的会是「剩余：X分Y秒」（上架剩余），不是解锁倒计时 ——
             # 这时候还去等倒计时会当场报错、把一件已经能买的货白白丢掉
@@ -682,16 +667,10 @@ class Engine:
             raise RuntimeError("倒计时模式需要先框选「倒计时」区域")
         clock_px = screen.norm_to_px(expand(clock_region, 0.1))
 
-        # 演练**也要真的找皮肤**：导航、切筛选、点卡片读倒计时，全都照做，
-        # 只在最后「点购买」那一步停手（见 _fire_and_confirm 的 dry_run 分支）。
-        # 以前这里直接拿「当前选中的那件」交差 —— 演练永远不点卡片，于是
-        # 「程序到底能不能自己找到我要的那件」在演练里根本验证不了，用户
-        # 看到的就是「演练跑完了，实战还是抢不到」。演练的全部价值就在于
-        # 提前把这一步跑通。
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台 —— 先手动点一下游戏窗口再开始")
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
-                        snap=screen.grab, dry_run=False, log=self._say)
+                        snap=screen.grab, log=self._say)
         page, _ = nav.where()
         target = self._target_skin(cfg)
         # 这一轮是不是已经「重新定位过」了。定位过一次就别再来一次 ——
@@ -776,7 +755,7 @@ class Engine:
             # 「价 1000~999999」只出现在日志的 `_describe` 里，游戏那边
             # 一件没筛，全靠扫到之后逐行比对，列表一多就白扫。
             # 设不进去只记警告：那是锦上添花，逐行比对还能兜住；
-            # AttributeError 是演练用的 FakeNav 没有这些方法。
+            # AttributeError 是测试替身 FakeNav 没有这些方法。
             # **一轮任务只做一次**：这个输入框逐位敲、还要失焦才显示，
             # 实测一次要 18 秒，每件都来一遍纯属烧时间（区间又不会变）。
             if not getattr(self, "_price_filter_tried", False):
@@ -1070,13 +1049,7 @@ class Engine:
         大量无关卡片。现在导航到位后直接设区间，让游戏自己过滤。
         """
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
-                        snap=screen.grab, dry_run=self._dry_run, log=self._say)
-        if self._dry_run:
-            # 演练一律不导航：F4 / 切页 / 点筛选都是真实输入，会把用户
-            # 正在看的界面点走（审查 S3「演练仍实操」）。
-            self._say("[演练] 实战时会先走：F4 → 典藏外观 → 选皮肤 → 购买 → 筛选",
-                      "warn")
-            return None
+                        snap=screen.grab, log=self._say)
         # **先把游戏抢到前台**。list 模式以前少了这一步：用户点完「开始抢购」
         # 控制台自己在前台，F4 就发给了控制台（日志「F4 打开市场 变化 5.4%
         # （无响应）」），接着 OCR 抓到的全是控制台画面，页面一直 unknown，
@@ -1194,17 +1167,6 @@ class Engine:
         一次就重建）。那种情况下只补「不显示公示期」和刷新，**不再重设
         价格筛选** —— 那一步逐位敲输入框，实测 18 秒。
         """
-        if self._dry_run:
-            # 演练不许真实输入：建一个只读的 Navigator（dry_run=True）把
-            # switch 到「不显示公示期」，一个键都不发。
-            if nav is None:
-                nav = Navigator(screen, mouse,
-                                Keyboard(self._target_hwnd,
-                                         mode=getattr(self, "_input_mode",
-                                                      "interception")),
-                                snap=screen.grab, dry_run=True, log=self._say)
-            self._say("[演练] 实战时这里会切「不显示公示期」并刷新列表", "warn")
-            return nav
         if nav is not None:
             self._say("列表模式只买已解锁的货（公示期那批解锁时基本已被抢光）；"
                       "要抢公示期解锁，把「抢购路线」改成「公示期倒计时」", "info")
@@ -1214,7 +1176,7 @@ class Engine:
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台 —— 先手动点一下游戏窗口再开始")
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
-                        snap=screen.grab, dry_run=False, log=self._say)
+                        snap=screen.grab, log=self._say)
         page = nav.where()[0]
         if page != "onsale":
             # 「推荐」页顶部也有在售/推荐标签，判据分得开，但站错页时先切回来
@@ -1392,26 +1354,6 @@ class Engine:
             target_y = int(list_px[1] + int(row["cy"]))
 
             self._set_state(WATCH)
-            if self._dry_run:
-                # 演练的价值是让人看清「本来会买什么」。只报坐标不够 —— 要报
-                # 商品、价格、磨损、点击目标，以及这一屏里所有候选。
-                self._say(f"[演练] 会点这一行 → 屏幕 ({target_x}, {target_y})", "warn")
-                self._say(f"[演练] 商品：「{row['text'][:60]}」", "warn")
-                self._say(f"[演练] 价格：{self._fmt(row['price'])}"
-                          f" · 做工：{row['craft'] or '未读出'}"
-                          f" · 成色：{row['wear'] or '未读出'}"
-                          f" · 磨损：{row['wear_value'] if row['wear_value'] is not None else '未读出'}",
-                          "warn")
-                self._say(f"[演练] 整屏候选（{len(rows)} 条，按条件过滤后 "
-                          f"{sum(1 for d in diag if d['ok'])} 条符合）：", "warn")
-                for d in diag[:8]:
-                    mark = "✓" if d["ok"] else "×"
-                    self._say(f"[演练]   {mark} 「{d['text'][:44]}」{d['why']}", "warn")
-                self._set(elapsed=round(time.perf_counter() - t_start, 2))
-                self._say("演练结束：没有点击任何东西", "hit")
-                self._set_state(DONE)
-                return
-
             self._click(mouse, target_x, target_y)
 
             # 点进详情页后购买按钮应当立刻可点（东西本来就在卖）。
@@ -1565,7 +1507,7 @@ class Engine:
 
         # 半自动：定位、筛选、进详情都做了，就是不点最后那一下 —— 留给用户
         # 自己按（有人就是想在最后一刻确认一眼）。走到这里说明「该点了」。
-        if switches.get(cfg, "run.mode") == "semi" and not self._dry_run:
+        if switches.get(cfg, "run.semi"):
             self._say("半自动：已停在购买按钮前 —— 请在游戏里自己点这一下",
                       "warn")
             raise Aborted("半自动模式，已就位，未点击")
@@ -1574,7 +1516,7 @@ class Engine:
             # 没有框「确认」= 这版界面没有确认弹窗，点价格按钮直接成交。
             # 千万不能进下面那个循环：那个循环按 fire_timeout 连点（50Hz 下
             # 8 秒 400 下），没有弹窗拦着就是买 400 件。
-            # 演练也要走这里（不能往下走 expand(None) → TypeError，以前演练
+            # 没有确认区域时也必须走这里（不能往下走 expand(None) → TypeError，以前
             # 一旦没框确认区域就直接把任务炸了，审查 D4）。
             return self._buy_without_dialog(screen, mouse, buy_click, t_start,
                                             item=item, price=price)
@@ -1608,32 +1550,43 @@ class Engine:
         self._set_state(FIRE)
         clicks = 0
         t_fire = time.perf_counter()
-        if self._dry_run:
-            # 演练不点鼠标，弹窗永远不会出现，所以不能等它——否则要么空转到
-            # 超时误报"没等到弹窗"，要么把屏幕上的旧画面当成弹窗。直接模拟。
-            self._say(f"[演练] 本该点击购买按钮 {buy_click}，"
-                      f"最多连点 {fire_timeout}s", "warn")
-            got_confirm = True
-        else:
-            # 开点前抢一次前台：等待期间焦点可能被别的窗口抢走，第一下点空
-            # 就整场白等。抢不回来就别点（点击会投递给前台窗口）。
-            if switches.get(cfg, "env.foreground") and not mouse.ensure_foreground(
-                    self._target_hwnd, screen=screen):
-                raise Aborted("游戏窗口抢不到前台，没法开点")
-            got_confirm = False
-            while time.perf_counter() - t_fire < fire_timeout:
-                t_iter = time.perf_counter()
-                if self._stop.is_set():
-                    raise Aborted("用户停止")
-                self._failsafe(failsafe)
-                self._click(mouse, *buy_click)
-                clicks += 1
-                self._set(clicks=clicks)
-                # 钱不够时弹的是「三角币不足」，右边那个按钮是「充值」。
-                # 每 5 次点查一遍（OCR 几毫秒，50Hz 下占 7%）。
-                if clicks % 5 == 1 and self._insufficient_showing(screen):
-                    self._guard_insufficient(screen, mouse)
-                # 每点一次就查一次弹窗：弹窗一出现立刻停手，避免后续点击穿透到弹窗里的别处
+        # 开点前抢一次前台：等待期间焦点可能被别的窗口抢走，第一下点空
+        # 就整场白等。抢不回来就别点（点击会投递给前台窗口）。
+        if switches.get(cfg, "env.foreground") and not mouse.ensure_foreground(
+                self._target_hwnd, screen=screen):
+            raise Aborted("游戏窗口抢不到前台，没法开点")
+        got_confirm = False
+        while time.perf_counter() - t_fire < fire_timeout:
+            t_iter = time.perf_counter()
+            if self._stop.is_set():
+                raise Aborted("用户停止")
+            self._failsafe(failsafe)
+            self._click(mouse, *buy_click)
+            clicks += 1
+            self._set(clicks=clicks)
+            # 钱不够时弹的是「三角币不足」，右边那个按钮是「充值」。
+            # 每 5 次点查一遍（OCR 几毫秒，50Hz 下占 7%）。
+            if clicks % 5 == 1 and self._insufficient_showing(screen):
+                self._guard_insufficient(screen, mouse)
+            # 每点一次就查一次弹窗：弹窗一出现立刻停手，避免后续点击穿透到弹窗里的别处
+            cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
+            if cscore >= threshold:
+                self._fire_lag = time.perf_counter() - t_fire
+                self._say(f"确认弹窗出现（相关度 {cscore:.3f}），"
+                          f"点了 {clicks} 次 / {self._fire_lag:.2f}s", "hit")
+                got_confirm = True
+                break
+
+            # ---- 空档里继续采样，别睡死 ----
+            # 两次点击之间要等 interval（50Hz = 20ms）。以前这段是纯
+            # sleep：弹窗在这 20ms 里出现，也要等睡醒才看得见 —— 平均
+            # 白等 10ms、最坏 20ms。抢购里 20ms 就是几十个人的差距。
+            # 现在按 4ms 一个节拍采样（一次截屏+匹配约 2ms），把「弹窗
+            # 出现 → 被发现」压到 ~4ms，同时不改变点击频率。
+            next_click_at = t_iter + interval
+            while time.perf_counter() < next_click_at:
+                left = next_click_at - time.perf_counter()
+                time.sleep(min(0.004, max(0.0, left)))
                 cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
                 if cscore >= threshold:
                     self._fire_lag = time.perf_counter() - t_fire
@@ -1641,89 +1594,66 @@ class Engine:
                               f"点了 {clicks} 次 / {self._fire_lag:.2f}s", "hit")
                     got_confirm = True
                     break
-
-                # ---- 空档里继续采样，别睡死 ----
-                # 两次点击之间要等 interval（50Hz = 20ms）。以前这段是纯
-                # sleep：弹窗在这 20ms 里出现，也要等睡醒才看得见 —— 平均
-                # 白等 10ms、最坏 20ms。抢购里 20ms 就是几十个人的差距。
-                # 现在按 4ms 一个节拍采样（一次截屏+匹配约 2ms），把「弹窗
-                # 出现 → 被发现」压到 ~4ms，同时不改变点击频率。
-                next_click_at = t_iter + interval
-                while time.perf_counter() < next_click_at:
-                    left = next_click_at - time.perf_counter()
-                    time.sleep(min(0.004, max(0.0, left)))
-                    cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
-                    if cscore >= threshold:
-                        self._fire_lag = time.perf_counter() - t_fire
-                        self._say(f"确认弹窗出现（相关度 {cscore:.3f}），"
-                                  f"点了 {clicks} 次 / {self._fire_lag:.2f}s", "hit")
-                        got_confirm = True
-                        break
-                if got_confirm:
-                    break
+            if got_confirm:
+                break
 
         if not got_confirm:
             self._say(f"{fire_timeout}s 内没等到确认弹窗，中止", "warn")
-            if not self._dry_run:
-                self._record(cfg, screen, item=item, price=price,
-                             elapsed=time.perf_counter() - t_start, result="miss")
+            self._record(cfg, screen, item=item, price=price,
+                         elapsed=time.perf_counter() - t_start, result="miss")
             return False
 
         # ---- 等弹窗里的共享倒计时归零，再点确认 ----
         # 真机流程（2026-10-23）：T-5s 点购买弹出确认页，倒计时和列表共享，
         # 归零前点购买没有反应。只能等文本归零，详见 _wait_dialog_unlock。
-        if not self._dry_run:
-            # 传模板进去：文本「提前消失」可能就是弹窗已经没了（被别人买走），
-            # 那种情况不能再盲点确认（以前直接 return True 说解锁了）。
-            unlocked = self._wait_dialog_unlock(
-                screen, confirm_tpl=confirm_tpl, confirm_px=confirm_px,
-                threshold=threshold)
-            if unlocked == "gone":
-                self._say("确认弹窗已经消失（多半被人先买走），这一件按没抢到记",
-                          "warn")
-                self._record(cfg, screen, item=item, price=price,
-                             elapsed=time.perf_counter() - t_start, result="miss")
-                return False
+        # 传模板进去：文本「提前消失」可能就是弹窗已经没了（被别人买走），
+        # 那种情况不能再盲点确认（以前直接 return True 说解锁了）。
+        unlocked = self._wait_dialog_unlock(
+            screen, confirm_tpl=confirm_tpl, confirm_px=confirm_px,
+            threshold=threshold)
+        if unlocked == "gone":
+            self._say("确认弹窗已经消失（多半被人先买走），这一件按没抢到记",
+                      "warn")
+            self._record(cfg, screen, item=item, price=price,
+                         elapsed=time.perf_counter() - t_start, result="miss")
+            return False
 
         # ---- 点确认：闭环，弹窗一消失就停 ----
         self._set_state(CONFIRM)
         # 记一次余额：奖励弹窗读不到时，余额减少是第二判据
-        before_balance = None if self._dry_run else self._balance(screen)
-        if self._dry_run:
-            self._say(f"[演练] 本该点确认 {confirm_clicks} 次 {confirm_click}", "warn")
-        else:
-            # 以前是**盲点** confirm_clicks 下（默认 20 × 10ms = 200ms）：
-            # 第一下就成功的话，剩下 19 下全打在奖励弹窗上（那上面有
-            # 「跳过」，甚至可能点到别的东西），而且白等 190ms。
-            # 现在每点一下就看一眼确认弹窗还在不在：没了立刻收手。
-            # 还开着就继续点，最多点到 confirm_timeout_s —— 覆盖「按钮比
-            # 倒计时晚亮」的情况（这正是原来那个固定 sleep(0.6) 想解决的）。
-            confirm_timeout = max(0.2, float(cfg.get("confirm_timeout_s", 2.0)))
-            t_conf = time.perf_counter()
-            confirm_done = False
-            conf_clicks = 0
-            while not self._stop.is_set():
-                # 连点次数用完、兜底时间也过了，才真的收手
-                if conf_clicks >= confirm_clicks and                         time.perf_counter() - t_conf >= confirm_timeout:
-                    break
-                self._click(mouse, *confirm_click)
-                conf_clicks += 1
-                # 连点次数用完之后降速：还在说明按钮没亮（或认错了），
-                # 这时每 50ms 补一下足够，没必要 500Hz 猛砸 —— 真要是弹窗
-                # 已经换成别的东西，砸得越猛越容易点到不该点的。
-                gap = confirm_gap if conf_clicks < confirm_clicks else max(0.05, confirm_gap)
-                # 2ms 下限：confirm_gap 配成 0 时闭环会刷到几千 Hz，
-                # 把输入队列灌满反而丢事件。一次匹配本身就要 2ms。
-                time.sleep(max(0.002, gap))
-                cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
-                if cscore < threshold:
-                    confirm_done = True
-                    break
-            if self._stop.is_set():
-                raise Aborted("用户停止")
-            self._say(f"确认点了 {conf_clicks} 下"
-                      f"（{time.perf_counter() - t_conf:.2f}s）"
-                      + ("" if confirm_done else "，弹窗仍在"), "info")
+        before_balance = self._balance(screen)
+        # 以前是**盲点** confirm_clicks 下（默认 20 × 10ms = 200ms）：
+        # 第一下就成功的话，剩下 19 下全打在奖励弹窗上（那上面有
+        # 「跳过」，甚至可能点到别的东西），而且白等 190ms。
+        # 现在每点一下就看一眼确认弹窗还在不在：没了立刻收手。
+        # 还开着就继续点，最多点到 confirm_timeout_s —— 覆盖「按钮比
+        # 倒计时晚亮」的情况（这正是原来那个固定 sleep(0.6) 想解决的）。
+        confirm_timeout = max(0.2, float(cfg.get("confirm_timeout_s", 2.0)))
+        t_conf = time.perf_counter()
+        confirm_done = False
+        conf_clicks = 0
+        while not self._stop.is_set():
+            # 连点次数用完、兜底时间也过了，才真的收手
+            if conf_clicks >= confirm_clicks and time.perf_counter() - t_conf >= confirm_timeout:
+                break
+            self._click(mouse, *confirm_click)
+            conf_clicks += 1
+            # 连点次数用完之后降速：还在说明按钮没亮（或认错了），
+            # 这时每 50ms 补一下足够，没必要 500Hz 猛砸 —— 真要是弹窗
+            # 已经换成别的东西，砸得越猛越容易点到不该点的。
+            gap = confirm_gap if conf_clicks < confirm_clicks else max(0.05, confirm_gap)
+            # 2ms 下限：confirm_gap 配成 0 时闭环会刷到几千 Hz，
+            # 把输入队列灌满反而丢事件。一次匹配本身就要 2ms。
+            time.sleep(max(0.002, gap))
+            cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
+            if cscore < threshold:
+                confirm_done = True
+                break
+        if self._stop.is_set():
+            raise Aborted("用户停止")
+        self._say(f"确认点了 {conf_clicks} 下"
+                  f"（{time.perf_counter() - t_conf:.2f}s）"
+                  + ("" if confirm_done else "，弹窗仍在"), "info")
 
         # ---- 查余额不足 ----
         # 点完确认的第一个可能结果是「钱不够」。这一步必须在报告"完成"之前，
@@ -1735,9 +1665,9 @@ class Engine:
         # 「点了但什么都没发生」。2026-11-02 之前这里直接记 hit，结果 data/
         # 里堆了 78 条「成交」，配的截图全是交易行列表 —— 一条真的都没有。
         # 只认奖励弹窗（_bought_dialog）；读不到弹窗时，余额减少算第二判据。
-        bought = self._dry_run
-        by = "dry" if self._dry_run else ""
-        if not self._dry_run and not switches.get(cfg, "fire.verify"):
+        bought = False
+        by = ""
+        if not switches.get(cfg, "fire.verify"):
             # 关掉校验：按「点了就算」处理。这条开关默认开，关掉是为了在
             # 结算弹窗识别不了的界面版本上还能跑；记录里会标 verified=False，
             # 事后能分清真成交和「可能成交」。
@@ -1745,7 +1675,7 @@ class Engine:
             by = "off"
             self._say("成交校验已关闭，按「点了就算」记（记录里标 verified=false）",
                       "warn")
-        elif not self._dry_run:
+        else:
             for _ in range(6):
                 if self._stop.is_set():
                     break
@@ -1777,21 +1707,19 @@ class Engine:
             # 「该商品已被购买」之类的弹窗，它挡住整个界面 —— 下一个任务
             # 连页面都切不过去（实测连报三次「点 collection 标签 0.0%
             # 无响应」，三个任务连环失败）。按 Esc 收掉，再继续。
-            if not self._dry_run:
-                try:
-                    Keyboard(self._target_hwnd,
-                             mode=getattr(self, "_input_mode", "interception")
-                             ).tap("ESC")
-                    time.sleep(0.4)
-                except Exception as e:            # noqa: BLE001
-                    self._say(f"收残留弹窗失败：{type(e).__name__}", "warn")
-        # 只有真成交才留图 + 记账 + 收奖励弹窗；没抢到也记一条 miss，好复盘
-        if not self._dry_run:
-            self._record(cfg, screen, item=item, price=price,
-                         elapsed=elapsed, result="hit" if bought else "miss")
-            if bought:
-                # 奖励弹窗 + 全屏展示页收掉，回到在售列表，下一件才能接着抢
-                self._close_reward(screen, mouse)
+            try:
+                Keyboard(self._target_hwnd,
+                         mode=getattr(self, "_input_mode", "interception")
+                         ).tap("ESC")
+                time.sleep(0.4)
+            except Exception as e:            # noqa: BLE001
+                self._say(f"收残留弹窗失败：{type(e).__name__}", "warn")
+        # 只有真成交才留图；没抢到也记一条 miss，好复盘
+        self._record(cfg, screen, item=item, price=price,
+                     elapsed=elapsed, result="hit" if bought else "miss")
+        if bought:
+            # 奖励弹窗 + 全屏展示页收掉，回到在售列表，下一件才能接着抢
+            self._close_reward(screen, mouse)
         return bought
 
     def _follow(self, nav, cfg, want):
@@ -1981,14 +1909,6 @@ class Engine:
         既白点也可能把界面点到别的状态。
         """
         cfg = Config.load()
-        if self._dry_run:
-            # 演练不许注入任何真实输入：点一下价格按钮就是真花钱。这里必须
-            # 自己短路 —— 以前靠调用方的 `and not self._dry_run` 挡着，改成
-            # 统一判定后演练会直接走进点击循环（审查 D4/P0-5）。
-            self._say(f"[演练] 本该点价格按钮 {buy_click}"
-                      "（这版界面没有确认弹窗，点完直接成交）—— 演练到此为止",
-                      "warn")
-            return True
         self._set_state(FIRE)
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台，没法开点")
@@ -2113,11 +2033,6 @@ class Engine:
 
             msg = popup.describe(result)
             self._say(f"余额不足：{msg}", "error")
-            if self._dry_run:
-                # 演练不点鼠标，弹窗不该是我们造成的；但仍然如实报告「会停」，
-                # 然后正常收尾，让用户看到完整的演练结论而不是一个中断。
-                self._say("[演练] 实战时这里会点「取消」并停止整场", "warn")
-                return
             point = popup.cancel_point(result)
             if point is None:
                 # 认出了弹窗但没定位到「取消」。此时绝不能猜坐标：猜错就是「充值」。

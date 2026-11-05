@@ -50,7 +50,7 @@ class _Mouse:
 
 def _nav(color):
     scr = _Screen(color)
-    return Navigator(scr, _Mouse(scr), None, snap=scr.grab, dry_run=False), scr
+    return Navigator(scr, _Mouse(scr), None, snap=scr.grab), scr
 
 
 def test_gold_star_means_followed():
@@ -77,8 +77,7 @@ def test_set_follow_skips_when_already_in_that_state():
     assert nav.mouse.clicks == [], f"不该点：{nav.mouse.clicks}"
 
 
-def test_dry_run_never_clicks():
+def test_set_follow_on_gray_still_follows():
     nav, _scr = _nav(GRAY)
-    nav.dry_run = True
-    nav.set_follow(True)
-    assert nav.mouse.clicks == []
+    assert nav.set_follow(True) is True
+    assert nav.mouse.clicks, "灰色星标也要点一下才能关注"

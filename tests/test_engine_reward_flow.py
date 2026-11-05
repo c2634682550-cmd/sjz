@@ -49,7 +49,6 @@ class FakeMouse:
 
 def _engine():
     e = Engine()
-    e._dry_run = False
     e._target_hwnd = 123
     e._stop = threading.Event()
     said = []

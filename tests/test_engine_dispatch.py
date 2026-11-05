@@ -58,7 +58,6 @@ def _run(monkeypatch, mode, workflow, trigger_mode="vanish", default_workflow=No
     if default_workflow is not None:
         cfg.values["workflow"] = default_workflow
     e = engine_mod.Engine()
-    e._dry_run = False
     e._target_hwnd = 1
     e._say = lambda *a, **k: None
     called = []

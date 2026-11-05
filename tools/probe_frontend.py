@@ -148,16 +148,16 @@ FIXTURES = {
                "templates_ready": {"buy": True, "confirm": True}},
     "switches": {"ok": True, "groups": [
         {"name": "执行", "items": [
-            {"key": "env.dry_run", "label": "演练模式", "desc": "不点鼠标",
+            {"key": "run.semi", "label": "半自动", "desc": "走到购买键前停手",
              "kind": "bool", "value": True},
             {"key": "run.mode", "label": "执行模式", "desc": "",
              "kind": "select", "value": "auto",
-             "options": [["auto", "自动"], ["dry", "演练"]]},
+             "options": [["auto", "自动"], ["semi", "半自动"]]},
         ]},
     ]},
     "scheduler": {"running": False, "active": None, "tasks": [], "log": [
         {"t": "10:00:00", "level": "info", "msg": "待机"}],
-        "engine": {"state": "idle", "running": False, "dry_run": True,
+        "engine": {"state": "idle", "running": False,
                    "stats": {"scans": 0, "hz": 0, "clicks": 0}, "rows": [],
                    "log": [{"t": "10:00:00", "level": "info", "msg": "待机"}]},
         "clock": {}},

@@ -52,9 +52,6 @@ class NavColPanel:
         （实测报「点了「筛选」但面板没打开」刷满日志）。面板打不开就
         先切回「交易」再试一次。
         """
-        if self.dry_run:
-            self.say("[演练] 打开典藏外观筛选", "warn")
-            return True
         if self._panel_open():
             self.say("筛选面板已经开着", "info")
             return True
@@ -363,9 +360,6 @@ class NavColPanel:
 
         找不到就抛 NavError，不盲点 —— 点错项会筛出别的皮肤，白跑一趟。
         """
-        if self.dry_run:
-            self.say(f"[演练] 赛季下拉选「{name}」", "warn")
-            return True
         if self.keyboard is None:
             raise NavError("没有 Keyboard，滚不了下拉列表")
 
@@ -701,10 +695,6 @@ class NavColPanel:
         else:
             raise NavError(f"未知的筛选行 {row!r}")
 
-        if self.dry_run:
-            self.say(f"[演练] {'勾' if want else '取消'} {row}[{index}] {pt}", "warn")
-            return True
-
         x, y = self.pt(pt)
         before = vision.box_brightness(self._snap(), x, y)
         # 亮像素 > 100 视为已勾选（空框 0-60，勾上 300+，中间空档很大）
@@ -778,10 +768,6 @@ class NavColPanel:
         实测一轮定位光在筛选面板上就耗掉十几秒。现在先一次截图读出全部
         状态，只点真正需要变的 —— 状态本来就对时一次点击都不发。
         """
-        if self.dry_run:
-            self.say(f"[演练] 调筛选 tier={tier} guns={guns}", "warn")
-            return self.col_filter_states()
-
         img = self._snap()
         now = self._read_boxes(img)
 
@@ -1067,9 +1053,6 @@ class NavColPanel:
         for _ in range(3):
             if page not in ("onsale", "detail", "filter_onsale", "unknown"):
                 break
-            if self.dry_run:
-                self.say(f"[演练] 按 Esc 从「{page}」返回上一级", "warn")
-                break
             if self.keyboard is None:
                 break
             self.say(f"当前在「{page}」，按 Esc 返回上一级", "info")
@@ -1086,7 +1069,7 @@ class NavColPanel:
             except NavError:
                 # 有弹窗挡着（最常见：「该商品已被购买」提示还没收）。
                 # 按 Esc 收掉再点一次，否则整个定位流程就死在这一步。
-                if self.keyboard is not None and not self.dry_run:
+                if self.keyboard is not None:
                     self.say("标签点不动，先按 Esc 收掉挡着的弹窗", "warn")
                     self.keyboard.tap("ESC")
                     time.sleep(0.6)
@@ -1321,9 +1304,6 @@ class NavColPanel:
 
         校验：必须落到 detail（商品详情+挂单列表）或 onsale（挂单列表）。
         """
-        if self.dry_run:
-            self.say(f"[演练] 点购买 {COL_BUY}", "warn")
-            return True
         # 点之前先确认右侧真的是「购买」。皮肤已经拥有时，这个位置变成
         # 「售出」—— 盲点就是把自己那件挂出去（真机踩过，用户当场喊停）。
         if not self._buy_button_visible():

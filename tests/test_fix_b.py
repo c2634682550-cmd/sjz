@@ -44,7 +44,6 @@ def _nav(size=(1920, 1080), img=None, words=None):
     """造一个离线的 Navigator：只保留坐标换算/点击护栏这些纯逻辑。"""
     n = nav.Navigator.__new__(nav.Navigator)
     n.size = size
-    n.dry_run = False
     n.mouse = _Mouse()
     n._log = lambda msg, level="info": None
     shot = img if img is not None else np.zeros((size[1], size[0], 3), np.uint8)
@@ -193,7 +192,7 @@ class _ClearHost:
         self.clicks.append((int(x), int(y)))
         return True
 
-    def ons_options(self, scroll_top=True, dry_run=False):
+    def ons_options(self, scroll_top=True):
         return self._later if self.clicks else self._after
 
     def say(self, msg, level="info"):

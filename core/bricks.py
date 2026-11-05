@@ -29,6 +29,24 @@ def normalize(s):
     return ocr.normalize(s)
 
 
+def load_problem():
+    """资源缺失/损坏时返回一句人话，正常返回 None。
+
+    以前 bricks.json 缺失会静默变成空库，界面仍按「11 赛季」在跑，
+    用户以为数据在、其实一条都匹配不上。
+    """
+    if not os.path.isfile(_PATH):
+        return f"皮肤砖块表缺失：{_PATH}"
+    try:
+        with open(_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:                       # noqa: BLE001
+        return f"皮肤砖块表损坏（{type(e).__name__}: {e}）：{_PATH}"
+    if not (data.get("seasons") or data.get("tiers")):
+        return f"皮肤砖块表是空壳（没有赛季数据）：{_PATH}"
+    return None
+
+
 def _load():
     try:
         mtime = os.path.getmtime(_PATH)

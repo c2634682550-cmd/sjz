@@ -336,7 +336,6 @@ class FakePanel:
         self.checked = set(checked)
         self.clicked = []
         self.said = []
-        self.dry_run = False
         # rows: [(name, cx, cy)]，cx 是方框中心 x，文字在 cx+40
         self.rows = rows if rows is not None else [
             ("不限", 1396, 745), ("速度线", 1641, 745),
@@ -399,7 +398,6 @@ def _nav_for_panel(panel):
     n.mouse = panel.mouse
     n.pt = panel.pt
     n.say = panel.say
-    n.dry_run = False
     # **只打桩 _ons_wheel**（真实现会调 ctypes 移动真实鼠标、滚动真实
     # 游戏窗口）。单元测试绝不能碰真机 —— 不打桩时整个文件从 11s 涨到
     # 79s，而且真的会滚到游戏画面上。
@@ -639,7 +637,6 @@ def _nav_for_grid(panel):
     n.mouse = panel.mouse
     n.pt = panel.pt
     n.say = panel.say
-    n.dry_run = False
     # **只打桩 _ons_wheel**（真实现会调 ctypes 移动真实鼠标、滚动真实
     # 游戏窗口）。单元测试绝不能碰真机 —— 不打桩时整个文件从 11s 涨到
     # 79s，而且真的会滚到游戏画面上。

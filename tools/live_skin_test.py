@@ -58,7 +58,7 @@ def run(scroll=0, target=None):
         return out
     time.sleep(0.6)
 
-    nav = Navigator(s, m, kb, dry_run=True)
+    nav = Navigator(s, m, kb)
 
     t0 = time.perf_counter()
     items = nav.skin_items()

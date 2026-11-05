@@ -274,7 +274,7 @@ def test_pagewatch_uses_configured_monitor(monkeypatch):
             raise AssertionError("这里不该真抓屏")
 
     class FakeNav:
-        def __init__(self, screen, mouse, snap=None, dry_run=True):
+        def __init__(self, screen, mouse, snap=None):
             seen["monitor"] = screen.monitor
 
     monkeypatch.setattr(screen_mod, "Screen", FakeScreen)

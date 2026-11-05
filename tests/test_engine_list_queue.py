@@ -142,7 +142,6 @@ def _run(monkeypatch, rows, fire_results):
     e = Engine()
     e._stop = threading.Event()
     e._target_hwnd = 1
-    e._dry_run = False
     e._said = []
     e._say = lambda msg, level="info": e._said.append((level, msg))
     e._failsafe = lambda on: None

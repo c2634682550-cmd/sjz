@@ -89,9 +89,9 @@ def test_disabled_task_is_not_run(monkeypatch):
 
     ran = []
     monkeypatch.setattr(s, "_run_task",
-                        lambda t, d: (ran.append(t["name"]),
-                                      s.update(t["id"], status="done")))
-    s._run(dry_run=True)
+                        lambda t: (ran.append(t["name"]),
+                                   s.update(t["id"], status="done")))
+    s._run()
     assert ran == ["乙"], f"停用的也被跑了：{ran}"
 
 
@@ -122,7 +122,7 @@ def test_bought_and_spent_accumulate_on_the_task(monkeypatch):
     monkeypatch.setattr(sch.shutil, "copyfile", lambda a, b: None)
     monkeypatch.setattr(s, "_engine", _FakeEngine(bought=1, spent=2050.0))
 
-    s._run_task(s.tasks()[0], dry_run=True)
+    s._run_task(s.tasks()[0])
     after = s.tasks()[0]
     assert after["bought"] == 1, after
     assert after["spent"] == 2050.0
@@ -137,8 +137,8 @@ def test_progress_accumulates_across_runs(monkeypatch):
     monkeypatch.setattr(sch.shutil, "copyfile", lambda a, b: None)
     monkeypatch.setattr(s, "_engine", _FakeEngine(bought=1, spent=2000.0))
 
-    s._run_task(s.tasks()[0], dry_run=True)
-    s._run_task(s.tasks()[0], dry_run=True)
+    s._run_task(s.tasks()[0])
+    s._run_task(s.tasks()[0])
     after = s.tasks()[0]
     assert after["bought"] == 2, after
     assert after["spent"] == 4000.0
@@ -164,5 +164,5 @@ def test_a_stuck_engine_does_not_block_the_queue(monkeypatch):
     monkeypatch.setattr(sch.shutil, "copyfile", lambda a, b: None)
     monkeypatch.setattr(s, "_engine", _StuckEngine())
 
-    s._run_task(s.tasks()[0], dry_run=True)      # 不能一直转下去
+    s._run_task(s.tasks()[0])      # 不能一直转下去
     assert s.tasks()[0]["status"] == "failed"

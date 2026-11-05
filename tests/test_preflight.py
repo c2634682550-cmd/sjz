@@ -68,6 +68,31 @@ def test_missing_screen_does_not_crash():
     assert not c["ok"] and "抓不到屏幕" in c["detail"]
 
 
+def test_window_size_is_judged_by_ratio_not_a_hardcoded_number():
+    """分辨率判定按「比例 + 配置容差」，不再写死 1920×1080。
+
+    默认 tolerance=0 时保持老行为（差一点都不行）；放宽容差后，
+    等比例放大的窗口（比如 2560×1440）就该放行。
+    """
+    assert preflight._size_ok((1920, 1080), {"want_size": (1920, 1080),
+                                             "size_tolerance": 0.0}) is True
+    # 等比例放大 4/3，容差 0 时仍然红
+    assert preflight._size_ok((2560, 1440), {"want_size": (1920, 1080),
+                                             "size_tolerance": 0.0}) is False
+    # 容差放到 35% 就放行
+    assert preflight._size_ok((2560, 1440), {"want_size": (1920, 1080),
+                                             "size_tolerance": 0.35}) is True
+    # 基准改了以后，按新基准比对
+    assert preflight._size_ok((2560, 1440), {"want_size": (2560, 1440),
+                                             "size_tolerance": 0.0}) is True
+    # 非等比（改了宽没改高）即使容差相同也不算过
+    assert preflight._size_ok((2304, 1440), {"want_size": (1920, 1080),
+                                             "size_tolerance": 0.05}) is False
+    # 坏数据不崩
+    assert preflight._size_ok(None, {"want_size": (1920, 1080)}) is False
+    assert preflight._size_ok(("x", "y"), {"want_size": (1920, 1080)}) is False
+
+
 def test_ocr_missing_blocks_the_start():
     checks = preflight.evaluate(_facts(ocr=False), "list")
     assert not _by_id(checks, "ocr")["ok"]

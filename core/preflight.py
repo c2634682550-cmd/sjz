@@ -27,6 +27,23 @@ CLOCK_TOLERANCE_S = 2.0
 _INTEGRITY_CN = {0x1000: "低", 0x2000: "普通", 0x3000: "管理员", 0x4000: "系统"}
 
 
+def _size_ok(size, facts):
+    """按实际尺寸 / 基准尺寸的比例判定，阈值来自配置。
+
+    以前是 `tuple(size) != (1920,1080)` 写死：换台 2K 屏就直接红，
+    哪怕窗口化后游戏客户区只是等比例放大。
+    """
+    base = tuple(facts.get("want_size") or WANT_SIZE)
+    tol = float(facts.get("size_tolerance") or 0.0)
+    try:
+        if not base or len(base) != 2 or not size:
+            return False
+        return all(abs(float(size[i]) / float(base[i]) - 1.0) <= tol
+                   for i in range(2))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return False
+
+
 def _ck(cid, label, ok, detail, fix=None, warn=False):
     return {"id": cid, "label": label, "ok": bool(ok),
             "detail": detail, "fix": fix, "warn": bool(warn)}
@@ -55,10 +72,15 @@ def evaluate(facts, mode="list", workflow=None):
         out.append(_ck("window", "游戏窗口", False,
                        facts.get("screen_error") or "抓不到屏幕",
                        {"hint": "检查游戏是否在运行、显示器是否被占用"}))
-    elif tuple(size) != WANT_SIZE:
+    elif not _size_ok(size, facts):
+        base = tuple(facts.get("want_size") or WANT_SIZE)
+        tol = float(facts.get("size_tolerance") or 0.0)
         out.append(_ck("window", "游戏窗口", False,
-                       f"{size[0]}×{size[1]}（坐标按 1920×1080 标的）",
-                       {"hint": "把游戏改成窗口化 1920×1080"}))
+                       f"{size[0]}×{size[1]}（基准 {base[0]}×{base[1]}，"
+                       f"允许偏差 {tol:.0%}）",
+                       {"hint": f"把游戏改成窗口化 {base[0]}×{base[1]}；"
+                                "或在 config 里改 screen.base_size / "
+                                "screen.tolerance 适配本机"}))
     elif facts.get("game_hwnd") is False:
         # 分辨率对得上不代表游戏开着 —— 桌面本来就是 1920×1080。以前这里
         # 报绿「游戏窗口 1920×1080」，用户以为环境没问题，点开始白跑一轮。
@@ -95,7 +117,9 @@ def evaluate(facts, mode="list", workflow=None):
         else:
             # backend_name() 本身就带「不可用（…）」前缀，别再包一层
             detail = name or "不可用"
-            fix = {"hint": "先起 OCR 服务：.venv-vl\\Scripts\\paddlex.exe "
+            fix = {"hint": "缺 OCR 运行环境：仓外 .venv-vl 未安装或服务没起来。"
+                            "先按 README 装（首次还要联网下载模型），再起："
+                            ".venv-vl\\Scripts\\paddlex.exe "
                             "--serve --pipeline tools\\OCR_game.yaml "
                             "--port 8081 --device gpu:0"}
         out.append(_ck("ocr", "OCR 识别", False, detail, fix))
@@ -280,7 +304,11 @@ def collect(cfg, mode="list"):
     from .screen import Screen
 
     facts: dict = {"templates": {n: bool(cfg.has_template(n)) for n in ("buy", "confirm")},
-                   "regions": {n: bool(cfg.region(n)) for n in ("buy", "confirm", "list", "clock")}}
+                   "regions": {n: bool(cfg.region(n)) for n in ("buy", "confirm", "list", "clock")},
+                   # 分辨率基准与容差都来自配置，不在代码里写死 1920×1080：
+                   # 换机器/换 DPI 只需要改配置。
+                   "want_size": tuple(cfg.get("screen.base_size") or WANT_SIZE),
+                   "size_tolerance": float(cfg.get("screen.tolerance") or 0.0)}
     # 先问服务管家、再问客户端：status() 现在不阻塞，但顺序反过来的话，
     # 「服务刚验活成功」和「客户端探活」之间会差一次往返，冷启动那一刻
     # 容易采到「服务已就绪、客户端还没重连」的假阴性。
@@ -355,8 +383,8 @@ def collect(cfg, mode="list"):
             # （driver_ready() 会去建一个 Interception context），一次检查
             # 就顺手把驱动挂上、还要在收尾时销毁 —— 检查阶段只是只读抓屏，
             # 不该碰输入通道（审查 I24）。Navigator.where() 只用 _snap()，
-            # mouse=None + dry_run=True 足够。
-            facts["page"] = Navigator(s, None, dry_run=True).where()[0]
+            # mouse=None 足够：where() 只读截图，不发任何输入。
+            facts["page"] = Navigator(s, None).where()[0]
         except Exception as e:
             facts["page"] = None
             facts["page_error"] = f"认不出页面：{type(e).__name__}: {e}"

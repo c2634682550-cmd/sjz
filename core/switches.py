@@ -31,11 +31,9 @@ import copy
 SWITCHES = [
     # ====================== 运行模式 ======================
     {
-        "key": "run.mode", "group": "运行模式", "label": "执行模式",
-        "kind": "select", "path": "run_mode", "default": "auto",
-        "options": [["auto", "全自动"], ["semi", "半自动"], ["dry", "演练"]],
-        "desc": "全自动：筛选→关注→盯列表→卡点购买；半自动：只定位不点购买；"
-                "演练：走完全流程但不发点击",
+        "key": "run.semi", "group": "运行模式", "label": "半自动",
+        "kind": "bool", "path": "semi_mode", "default": False,
+        "desc": "打开后只定位到购买按钮前停手，不点购买/确认；关闭则全自动",
     },
     {
         "key": "run.workflow", "group": "运行模式", "label": "抢购路线",
@@ -279,13 +277,6 @@ SWITCHES = [
         "desc": "开抢前检查窗口/OCR/校时，不过就不许开始",
     },
     {
-        "key": "env.dry_run", "group": "环境与安全", "label": "演练模式",
-        "kind": "bool", "path": "dry_run", "default": True,
-        "desc": "走完整流程（导航、切筛选、翻页、点开商品都会真做）但**不点"
-                "「购买」**，只报告「本来会买什么」。用来提前确认程序能不能"
-                "自己找到你要的那件",
-    },
-    {
         "key": "env.save_shots", "group": "环境与安全", "label": "成交截图",
         "kind": "bool", "path": "save_shots", "default": True,
         "desc": "成交后留一张截图，事后能回看抢到了什么、花了多少",
@@ -408,14 +399,7 @@ def apply_all(cfg, values):
 
 
 def snapshot(cfg):
-    """给界面用的完整表：定义 + 当前值，按分组排好。
-
-    演练这一项额外带 `effective` / `source`：显示口径取 `config.resolve_dry_run`
-    的结论（run_mode 会覆盖环境开关），否则界面会把「实战」显示成「演练」。
-    """
-    from .config import resolve_dry_run
-
-    dry, source = resolve_dry_run(cfg)
+    """给界面用的完整表：定义 + 当前值，按分组排好。"""
     groups = []
     for g in GROUPS:
         items = []
@@ -424,9 +408,6 @@ def snapshot(cfg):
                 continue
             item = {k: v for k, v in s.items() if k != "group"}
             item["value"] = get(cfg, s["key"])
-            if s["key"] == "env.dry_run":
-                item["effective"] = dry
-                item["source"] = source
             items.append(item)
         if items:
             groups.append({"name": g, "items": items})

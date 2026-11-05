@@ -37,7 +37,7 @@ class _Mouse:
         self.foreground_calls += 1
         return True
 
-    def click(self, x, y):
+    def click(self, x, y, expect_foreground=None):
         self.clicks.append((int(x), int(y)))
 
 
@@ -81,13 +81,17 @@ def test_start_clears_one_shot_flags(monkeypatch):
     """价格/排序筛选的「已尝试」不许跨任务残留（S2）。"""
     cfg = _Cfg(**_LIST_CFG)
     monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
-    monkeypatch.setattr(engine_mod, "find_game_window", lambda: None)
+    monkeypatch.setattr(engine_mod, "find_game_window", lambda: 12345)
     monkeypatch.setattr(engine_mod.Mouse, "foreground", staticmethod(lambda: None))
+    monkeypatch.setattr(engine_mod.Mouse, "release_cursor_lock",
+                        staticmethod(lambda: (True, False)))
+    monkeypatch.setattr(engine_mod.Mouse, "cursor_is_locked",
+                        staticmethod(lambda: False))
     monkeypatch.setattr(Engine, "_run", lambda self, *a: None)
     e = Engine()
     e._price_filter_tried = True
     e._sort_tried = True
-    ok, msg = e.start(dry_run=True, mode="list", workflow="list")
+    ok, msg = e.start(mode="list", workflow="list")
     assert ok, msg
     assert e._price_filter_tried is False
     assert e._sort_tried is False
@@ -100,7 +104,7 @@ def test_start_refuses_without_game_window(monkeypatch):
     monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
     monkeypatch.setattr(engine_mod, "find_game_window", lambda: None)
     e = Engine()
-    ok, msg = e.start(dry_run=False, mode="list", workflow="list")
+    ok, msg = e.start(mode="list", workflow="list")
     assert ok is False
     assert "游戏窗口" in msg
 
@@ -115,31 +119,38 @@ def test_screen_construction_failure_becomes_engine_error(monkeypatch):
 
     monkeypatch.setattr(engine_mod, "Screen", _Boom)
     e = Engine()
-    e._dry_run = False
     e._run(_Cfg(**_LIST_CFG), mode="list", workflow="list")
     assert "OSError" in (e._error or "")
     assert e.status()["state"] == ABORT
 
 
-# ---------------- dry_run 不注入输入 ----------------
+# ---------------- 无弹窗版式：必须真的点 ----------------
 
-def test_dry_run_buy_without_dialog_does_not_click(monkeypatch):
-    """没有确认弹窗的版式在演练里也不能点（点了就是真花钱，D4/P0-5）。"""
+def test_buy_without_dialog_clicks_price_button(monkeypatch):
+    """没有确认弹窗的版式，点价格按钮就是唯一成交动作 —— 必须真点。"""
     cfg = _Cfg()
     monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
+    # 屏幕/OCR 全用假判定：只验证「没有弹窗版式也要真点」
+    monkeypatch.setattr(Engine, "_chip_ready", lambda self, screen: True)
+    monkeypatch.setattr(Engine, "_bought_dialog", lambda self, screen: True)
+    monkeypatch.setattr(Engine, "_balance", lambda self, screen: None)
+    monkeypatch.setattr(Engine, "_guard_insufficient", lambda self, *a: None)
+    monkeypatch.setattr(Engine, "_record", lambda self, *a, **k: None)
     e = Engine()
-    e._dry_run = True
     mouse = _Mouse()
     assert e._buy_without_dialog(_Screen(), mouse, (10, 20),
                                  time.perf_counter()) is True
-    assert mouse.clicks == []
+    assert mouse.clicks, "一次都没点，等于没抢"
 
 
-def test_ons_ready_dry_run_does_not_touch_game(monkeypatch):
-    """演练模式下 _ons_ready 不切前台、不点筛选（S3）。"""
+def test_ons_ready_switches_filter_and_refreshes(monkeypatch):
+    """_ons_ready 会真的切「不显示公示期」并刷新列表。"""
     built = []
 
     class _Nav:
+        def where(self):
+            return ("onsale", 1.0)
+
         def pub_filter(self, value):
             built.append(("pub_filter", value))
 
@@ -148,11 +159,9 @@ def test_ons_ready_dry_run_does_not_touch_game(monkeypatch):
 
     monkeypatch.setattr(engine_mod, "Navigator", lambda *a, **k: _Nav())
     e = Engine()
-    e._dry_run = True
     mouse = _Mouse()
     e._ons_ready(_Cfg(**_LIST_CFG), _Screen(), mouse)
-    assert mouse.foreground_calls == 0
-    assert built == []
+    assert ("ons_refresh",) in built
 
 
 # ---------------- 确认模板的统一口径 ----------------
@@ -205,7 +214,6 @@ def test_countdown_marks_position_after_missing_serial(monkeypatch):
     cfg = _Cfg(regions={"buy": _BOX(0.5, 0.6, 0.1, 0.05)},
                countdown_attempts=2)
     e = Engine()
-    e._dry_run = False
     with pytest.raises(Aborted):
         e._execute_countdown(cfg, _Screen(), _Mouse(), None)
     assert passed == [[], [("pos", 10, 20)]]
@@ -222,7 +230,6 @@ def test_countdown_success_increments_bought(monkeypatch):
     monkeypatch.setattr(Engine, "_fire_and_confirm", lambda *a, **k: True)
     cfg = _Cfg(regions={"buy": _BOX(0.5, 0.6, 0.1, 0.05)}, countdown_attempts=1)
     e = Engine()
-    e._dry_run = False
     e._execute_countdown(cfg, _Screen(), _Mouse(), None)
     assert e._stats["bought"] == 1
     assert e.status()["state"] == DONE
@@ -297,7 +304,6 @@ def test_price_filter_flag_stays_false_when_filter_not_applied(monkeypatch):
                         "list": _BOX(0.1, 0.2, 0.5, 0.5)},
                active_task={"min_price": 5000, "max_price": 1000})
     e = Engine()
-    e._dry_run = False
     assert e._countdown_prepare(cfg, _Screen(), _Mouse(), refresh=False) is None
     assert e._price_filter_tried is False
 
@@ -320,7 +326,6 @@ def test_ons_ready_reuses_prepared_nav(monkeypatch):
 
     monkeypatch.setattr(engine_mod, "Navigator", _boom)
     e = Engine()
-    e._dry_run = False
     mouse = _Mouse()
     e._ons_ready(_Cfg(**_LIST_CFG), _Screen(), mouse, _Nav())
     assert calls == [("pub_filter", "不显示公示期"), ("ons_refresh",)]

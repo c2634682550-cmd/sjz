@@ -2,7 +2,7 @@
 
 R1  配置读失败被当成「队列跑完了」
 R2  新建任务默认 mode 与全局默认分歧
-R3  run_mode 与 env.dry_run 语义重叠
+R3  演练/run_mode 已整体移除，只剩实战一条路径
 R4  驱动点击异常路径（down 失败仍补 UP / finally 覆盖原始异常）
 R5  nav_ons 筛选项列位写死 1396/1641
 
@@ -22,7 +22,7 @@ from core import config as cfgmod  # noqa: E402
 from core import interception as X  # noqa: E402
 from core import input as I  # noqa: E402
 from core import scheduler as sch  # noqa: E402
-from core.config import Config, resolve_dry_run  # noqa: E402
+from core.config import Config  # noqa: E402
 from core.nav_ons import NavOnsPanel  # noqa: E402
 
 
@@ -105,7 +105,7 @@ def test_scheduler_keeps_queue_when_config_unreadable(cfg_file, monkeypatch):
     assert [t["id"] for t in status["tasks"]] == ["a"]
 
     s._stop.set()                    # 别在 _run_step 里真等 0.5s
-    assert s._run_step(True) is True, "读失败要连任，不能判「跑完了」"
+    assert s._run_step() is True, "读失败要连任，不能判「跑完了」"
     assert any("配置读不出来" in e["msg"] for e in s._log)
     # 状态机没动
     assert path.read_text(encoding="utf-8") == before
@@ -172,43 +172,31 @@ def test_preflight_uses_same_route_as_add(cfg_file):
 # ---------------------------------------------------------------- R3
 
 
-@pytest.mark.parametrize("data,expect,srclike", [
-    ({"run_mode": "auto", "dry_run": True}, False, "run_mode"),
-    ({"run_mode": "semi", "dry_run": True}, False, "run_mode"),
-    ({"run_mode": "dry", "dry_run": False}, True, "run_mode"),
-    ({"dry_run": True}, True, "dry_run"),
-    ({}, False, "缺省"),
-])
-def test_resolve_dry_run_priority(data, expect, srclike):
-    dry, src = resolve_dry_run(data)
-    assert dry is expect
-    assert srclike in src
-
-
-def test_request_beats_run_mode():
-    dry, src = resolve_dry_run({"run_mode": "dry"}, requested=False)
-    assert dry is False and src == "请求指定"
-
-
-def test_http_and_config_share_one_decision(cfg_file):
-    """/api/config 展示的演练结论 == HTTP 启动判定。"""
-    from core.server import _dry_run_requested, _preflight_workflow  # noqa: F401
+def test_legacy_dry_keys_are_silently_dropped(cfg_file):
+    """老 config.json 里残留的 run_mode / dry_run 加载时静默忽略、不写回。"""
     _, write = cfg_file
-    for data in ({"run_mode": "auto", "dry_run": True},
-                 {"run_mode": "dry", "dry_run": False},
-                 {"dry_run": True}):
-        write(data)
-        pub = Config.load().public()
-        assert pub["dry_run"] is _dry_run_requested({})
-        assert pub["dry_run_source"]
+    write({"run_mode": "dry", "dry_run": True, "console": {"quota": 1}})
+    cfg = Config.load()
+    assert "run_mode" not in cfg.data and "dry_run" not in cfg.data
+    pub = cfg.public()
+    assert "dry_run" not in pub and "dry_run_source" not in pub
 
 
-def test_scheduler_logs_final_decision():
-    """调度器必须走同一个函数，并把结论+来源打进日志。"""
+def test_scheduler_is_live_only():
+    """调度器只有实战一条路径：源码里不该再有演练分支。"""
     src = inspect.getsource(sch.Scheduler.start)
-    assert "resolve_dry_run(cfg, dry_run)" in src
-    assert "判定来源" in src
-    assert "switches.get" not in src, "调度器里不该再自己拼 run_mode"
+    assert "dry_run" not in src
+    assert "实战" in src
+    for fn in (sch.Scheduler._run, sch.Scheduler._run_step,
+               sch.Scheduler._run_task, sch.Scheduler._drive_task):
+        body = inspect.getsource(fn)
+        assert "dry_run" not in body, f"{fn.__name__} 里还有演练参数"
+
+
+def test_http_start_has_no_mode_switch():
+    from core.server import Handler
+    src = inspect.getsource(Handler._sched_start)
+    assert "dry_run" not in src
 
 
 # ---------------------------------------------------------------- R4
