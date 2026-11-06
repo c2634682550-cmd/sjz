@@ -34,6 +34,9 @@ def _load_spec():
 
     fake_hooks = types.ModuleType("PyInstaller.utils.hooks")
     fake_hooks.collect_submodules = lambda name: []
+    # spec 里还用了 collect_submodules 之外的收集器（rapidocr 的 yaml 走
+    # collect_data_files）；这里返回空表就够，测试只关心自己写的 datas。
+    fake_hooks.collect_data_files = lambda name, **kw: []
     fake_utils = types.ModuleType("PyInstaller.utils")
     fake_utils.hooks = fake_hooks
     fake_pi = types.ModuleType("PyInstaller")

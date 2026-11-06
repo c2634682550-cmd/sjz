@@ -1,0 +1,279 @@
+{
+ "source": "5 张真实截图（u1~u5，1920x1080）人工标注 ROI",
+ "note": "坐标与读数见 _ocr_bench_user_shots.md；u4_card_r1_r 遮挡不可读，未收录",
+ "items": [
+  {
+   "id": "u2_top_2049",
+   "file": "u2_top_2049.png",
+   "display": "2,049",
+   "digits": "2049",
+   "cls": "currency",
+   "box": [
+    1573,
+    39,
+    67,
+    28
+   ]
+  },
+  {
+   "id": "u2_top_0",
+   "file": "u2_top_0.png",
+   "display": "0",
+   "digits": "0",
+   "cls": "currency",
+   "box": [
+    1674,
+    40,
+    14,
+    26
+   ]
+  },
+  {
+   "id": "u2_top_8",
+   "file": "u2_top_8.png",
+   "display": "8",
+   "digits": "8",
+   "cls": "currency",
+   "box": [
+    1754,
+    40,
+    20,
+    26
+   ]
+  },
+  {
+   "id": "u3_top_2049",
+   "file": "u3_top_2049.png",
+   "display": "2,049",
+   "digits": "2049",
+   "cls": "currency",
+   "box": [
+    1577,
+    39,
+    67,
+    28
+   ]
+  },
+  {
+   "id": "u3_top_0",
+   "file": "u3_top_0.png",
+   "display": "0",
+   "digits": "0",
+   "cls": "currency",
+   "box": [
+    1678,
+    40,
+    14,
+    26
+   ]
+  },
+  {
+   "id": "u3_top_8",
+   "file": "u3_top_8.png",
+   "display": "8",
+   "digits": "8",
+   "cls": "currency",
+   "box": [
+    1758,
+    40,
+    20,
+    26
+   ]
+  },
+  {
+   "id": "u3_card_r1_l",
+   "file": "u3_card_r1_l.png",
+   "display": "1,000,000",
+   "digits": "1000000",
+   "cls": "price",
+   "box": [
+    620,
+    394,
+    120,
+    30
+   ]
+  },
+  {
+   "id": "u3_card_r1_r",
+   "file": "u3_card_r1_r.png",
+   "display": "9,999,999",
+   "digits": "9999999",
+   "cls": "price",
+   "box": [
+    1293,
+    394,
+    103,
+    30
+   ]
+  },
+  {
+   "id": "u3_card_r2_l",
+   "file": "u3_card_r2_l.png",
+   "display": "150,000",
+   "digits": "150000",
+   "cls": "price",
+   "box": [
+    639,
+    601,
+    100,
+    30
+   ]
+  },
+  {
+   "id": "u3_card_r2_r",
+   "file": "u3_card_r2_r.png",
+   "display": "129,999",
+   "digits": "129999",
+   "cls": "price",
+   "box": [
+    1302,
+    601,
+    93,
+    30
+   ]
+  },
+  {
+   "id": "u3_card_r3_l",
+   "file": "u3_card_r3_l.png",
+   "display": "469,999",
+   "digits": "469999",
+   "cls": "price",
+   "box": [
+    637,
+    807,
+    106,
+    30
+   ]
+  },
+  {
+   "id": "u3_card_r3_r",
+   "file": "u3_card_r3_r.png",
+   "display": "250,000",
+   "digits": "250000",
+   "cls": "price",
+   "box": [
+    1294,
+    807,
+    102,
+    30
+   ]
+  },
+  {
+   "id": "u3_detail_price",
+   "file": "u3_detail_price.png",
+   "display": "1,000,000",
+   "digits": "1000000",
+   "cls": "price",
+   "box": [
+    1593,
+    915,
+    110,
+    33
+   ]
+  },
+  {
+   "id": "u4_range_lo",
+   "file": "u4_range_lo.png",
+   "display": "2,050",
+   "digits": "2050",
+   "cls": "price",
+   "box": [
+    1525,
+    152,
+    73,
+    33
+   ]
+  },
+  {
+   "id": "u4_range_hi",
+   "file": "u4_range_hi.png",
+   "display": "9,999,999",
+   "digits": "9999999",
+   "cls": "price",
+   "box": [
+    1678,
+    152,
+    116,
+    33
+   ]
+  },
+  {
+   "id": "u4_card_r1_l",
+   "file": "u4_card_r1_l.png",
+   "display": "1,000,000",
+   "digits": "1000000",
+   "cls": "price",
+   "box": [
+    617,
+    391,
+    122,
+    34
+   ]
+  },
+  {
+   "id": "u4_card_r2_l",
+   "file": "u4_card_r2_l.png",
+   "display": "150,000",
+   "digits": "150000",
+   "cls": "price",
+   "box": [
+    636,
+    601,
+    104,
+    30
+   ]
+  },
+  {
+   "id": "u4_card_r3_l",
+   "file": "u4_card_r3_l.png",
+   "display": "469,999",
+   "digits": "469999",
+   "cls": "price",
+   "box": [
+    636,
+    806,
+    108,
+    30
+   ]
+  },
+  {
+   "id": "u5_card_r1_l",
+   "file": "u5_card_r1_l.png",
+   "display": "1,000,000",
+   "digits": "1000000",
+   "cls": "price",
+   "box": [
+    617,
+    391,
+    122,
+    34
+   ]
+  },
+  {
+   "id": "u5_card_r2_l",
+   "file": "u5_card_r2_l.png",
+   "display": "150,000",
+   "digits": "150000",
+   "cls": "price",
+   "box": [
+    636,
+    601,
+    104,
+    30
+   ]
+  },
+  {
+   "id": "u5_card_r3_l",
+   "file": "u5_card_r3_l.png",
+   "display": "469,999",
+   "digits": "469999",
+   "cls": "price",
+   "box": [
+    636,
+    806,
+    108,
+    30
+   ]
+  }
+ ]
+}

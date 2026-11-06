@@ -432,6 +432,51 @@ def card_regions(img, card, upscale=2):
     return out
 
 
+def _whole_rows(img, card):
+    """整卡只做一次 OCR，再按行中心把词聚成行。返回 [(text, box), ...]。
+
+    为什么不再逐带放大：3× 逐带是给 WinRT / PP-OCR 时代的补丁 —— 那时
+    13px 的字不放大就读不出千位逗号。换成进程内 RapidOCR 之后，原图
+    （短边走 64 的 det 限制）已经能读对，而一次整卡推理比 4~5 次条带推理
+    快 5~7 倍：实测 u3 15 张卡 6948ms → 1055ms，字段反而更全（品阶和
+    价格不容易被条带切掉半截）。详见 `_ocr_engine_selection.md` 第七节。
+    """
+    from . import ocr
+
+    x0, y0, x1, y1 = card
+    sy0 = max(0, y0 - 2)
+    sy1 = min(img.shape[0], y1 + 12)
+    sub = img[sy0:sy1, x0:x1]
+    if sub is None or sub.size == 0:
+        return []
+    words = ocr.read_words(sub)
+    if not words:
+        return []
+    words = sorted(words, key=lambda w: (w["y"] + w["h"] / 2.0, w["x"]))
+    rows, cur, cy = [], [], None
+    for w in words:
+        c = w["y"] + w["h"] / 2.0
+        if cy is not None and abs(c - cy) <= max(6, w["h"] * 0.6):
+            cur.append(w)
+            cy = (cy * (len(cur) - 1) + c) / len(cur)
+        else:
+            if cur:
+                rows.append(_row_of(cur, x0, sy0))
+            cur, cy = [w], c
+    if cur:
+        rows.append(_row_of(cur, x0, sy0))
+    return rows
+
+
+def _row_of(words, dx, dy):
+    """一组同行的词 → (拼好的文本, 在整图里的矩形)。"""
+    x0 = min(w["x"] for w in words) + dx
+    y0 = min(w["y"] for w in words) + dy
+    x1 = max(w["x"] + w["w"] for w in words) + dx
+    y1 = max(w["y"] + w["h"] for w in words) + dy
+    return (" ".join(w["text"] for w in words), (x0, y0, x1, y1))
+
+
 def read_card(img, card, upscale=2, read_text=None):
     """认一张卡片：每条有字的带都认一遍，再按内容分到 名称/成色/价格。
 
@@ -439,18 +484,20 @@ def read_card(img, card, upscale=2, read_text=None):
     也常混着残数字（`成色 S 05`）和磨损小数（`成色 S 0.1209`）。后两者
     一律不能当价格 —— 05 会让 pick() 以为这条最便宜，点进去买的反而是贵的。
 
-    read_text: 可注入（测试用假 OCR），默认 core.ocr.read_text。
+    read_text: 可注入（测试用假 OCR），默认走 ocr.read_words 整卡一次。
+    注入时仍走逐带放大路径 —— 假 OCR 通常只接受「一条带」的输入，
+    也方便单测精确控制每次调用的文本。
     """
     if read_text is None:
-        from . import ocr
-        read_text = ocr.read_text
-
-    bands = card_bands(img, card, upscale=upscale)
-    texts = []
-    for b in bands:
-        t = (read_text(b["piece"]) or "").strip()
-        if t:
-            texts.append((t, b["box"]))
+        texts = _whole_rows(img, card)
+        bands = []
+    else:
+        bands = card_bands(img, card, upscale=upscale)
+        texts = []
+        for b in bands:
+            t = (read_text(b["piece"]) or "").strip()
+            if t:
+                texts.append((t, b["box"]))
 
     # 名称先定：最长的、带中文的那一条（成色那条往往很短）。
     # 顺序很重要 —— 下面挑价格时要排除名称那条，名称里的 M4A1 会被读成 41。
@@ -506,6 +553,32 @@ def _pad_aspect(piece, min_ratio=10):
     down = np.repeat(bot_row, bot, axis=0) if bot else None
     parts = [x for x in (up, piece, down) if x is not None]
     return np.vstack(parts)
+
+
+def read_card_bottom(img, card, upscale=3, read_text=None):
+    """只认卡片底部那条带（成色 + 价格），给品阶/价格补认用。
+
+    原来补认是「整卡 5× 再读一遍」：u3 一张卡 5× 要 1.4s，15 张卡直接
+    20s（实测 market.scan 17.5s 的主因之一）。这里只裁底部 38% 再放大，
+    既保留小字放大，又把面积砍掉一大半。
+    """
+    if read_text is None:
+        from . import ocr
+        read_text = ocr.read_text
+
+    x0, y0, x1, y1 = card
+    sy0 = max(0, y0 - 2)
+    sy1 = min(img.shape[0], y1 + 12)
+    sub = img[sy0:sy1, x0:x1]
+    if sub is None or sub.size == 0:
+        return {"grade": "", "price": "", "text": ""}
+    h = sub.shape[0]
+    piece = sub[int(h * 0.62):h, :]
+    if piece is None or piece.size == 0:
+        return {"grade": "", "price": "", "text": ""}
+    piece = vision.upscale(_pad_aspect(piece), max(1, int(upscale or 1)))
+    t = (read_text(piece) or "").strip()
+    return {"grade": t, "price": t, "text": t}
 
 
 def changed_cards(prev, cur, cards, delta=CHANGE_DELTA, prev_cards=None):

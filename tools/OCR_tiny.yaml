@@ -1,0 +1,39 @@
+# 价格二次确认用的 OCR 产线（PaddleX）：PP-OCRv6 tiny。
+#
+# 和 OCR_game.yaml 的检测参数完全一致（limit 64/min、box_thresh 0.5 是价格
+# 行实测值），只把 det/rec 换成 tiny：体积 6.3MB、冷启动 4.3s（small 30.1MB
+# / 4.6s），3× 放大后在 5 张真实截图的 21 条价格 ROI 上 42/42 全对。
+#
+# 这一层只用于「RapidOCR 分数 < 0.5 或千分位格式没过」时的二次确认
+# （core/ocr_chain.py 的 _price_tiers），不是每帧都跑。
+#
+# 跑法：
+#   .venv-vl\Scripts\paddlex.exe --serve --pipeline tools\OCR_tiny.yaml --port 8081 --device cpu
+#
+# 想回到整屏扫描更准的 small：把下面两个 model_name 换成
+# PP-OCRv6_small_det / PP-OCRv6_small_rec，或直接改回 tools/OCR_game.yaml。
+
+pipeline_name: OCR
+
+text_type: general
+
+use_doc_preprocessor: False
+use_textline_orientation: False
+
+SubModules:
+  TextDetection:
+    module_name: text_detection
+    model_name: PP-OCRv6_tiny_det
+    model_dir: null
+    limit_side_len: 64
+    limit_type: min
+    max_side_limit: 4000
+    thresh: 0.3
+    box_thresh: 0.5
+    unclip_ratio: 1.6
+  TextRecognition:
+    module_name: text_recognition
+    model_name: PP-OCRv6_tiny_rec
+    model_dir: null
+    batch_size: 6
+    score_thresh: 0.0

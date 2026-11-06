@@ -260,7 +260,9 @@ def test_restart_waits_for_an_idle_engine(env):
     state, make = env
     svc = make(idle_wait_s=2.0)
     svc._port = 8081
-    svc._started_at = 1.0
+    # 「已经跑了 7 小时」要按 monotonic 表示；写死 1.0 在开机不足 6 小时的
+    # 机器上算不出 7 小时，这条测试会随开机时长偶发失败。
+    svc._started_at = time.monotonic() - 7.0 * 3600
     state["busy"] = True
 
     import threading

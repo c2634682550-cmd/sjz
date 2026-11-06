@@ -203,25 +203,36 @@ def _doctor():
 
     打包后路径和开发时完全不同（单文件 exe 会解包到临时目录），
     出问题时必须能一眼看出配置会写到哪里。
+
+    windowed exe 没有控制台，print 谁也看不见 —— 每条同时写进
+    desktop.log，`SJZ-Control.exe --doctor` 才能在打包版上留证据。
     """
     from core import config, server
-    print("frozen        =", getattr(sys, "frozen", False))
-    print("_MEIPASS      =", getattr(sys, "_MEIPASS", "n/a"))
-    print("BASE          =", BASE)
-    print("sys.executable=", sys.executable)
-    print("cwd           =", os.getcwd())
-    print("config.json   =", config.CONFIG_PATH)
-    print("templates/    =", config.TEMPLATE_DIR)
-    print("data/         =", config.DATA_DIR)
-    print("web/ (STATIC) =", server.STATIC)
-    print("web 存在      =", os.path.isdir(server.STATIC))
-    print("配置目录可写  =", os.access(os.path.dirname(config.CONFIG_PATH), os.W_OK))
+
+    def p(line):
+        print(line)
+        _log(line)
+
+    p(f"frozen        = {getattr(sys, 'frozen', False)}")
+    p(f"_MEIPASS      = {getattr(sys, '_MEIPASS', 'n/a')}")
+    p(f"BASE          = {BASE}")
+    p(f"sys.executable= {sys.executable}")
+    p(f"cwd           = {os.getcwd()}")
+    p(f"config.json   = {config.CONFIG_PATH}")
+    p(f"templates/    = {config.TEMPLATE_DIR}")
+    p(f"data/         = {config.DATA_DIR}")
+    p(f"web/ (STATIC) = {server.STATIC}")
+    p(f"web 存在      = {os.path.isdir(server.STATIC)}")
+    p(f"配置目录可写  = {os.access(os.path.dirname(config.CONFIG_PATH), os.W_OK)}")
     try:
         from core import ocr
-        print("OCR 后端      =", ocr.backend_name())
-        print("OCR 通道      =", ocr.describe())
+        p(f"OCR 后端      = {ocr.backend_name()}")
+        p(f"OCR 通道      = {ocr.describe()}")
+        p(f"OCR 模型目录  = {ocr.rapid_model_dir()}")
+        p(f"OCR Rapid 错误= {ocr.rapid_error() or '（无）'}")
+        p(f"OCR 可用      = {ocr.available()}")
     except Exception as e:
-        print("OCR 自检失败  =", type(e).__name__, e)
+        p(f"OCR 自检失败  = {type(e).__name__} {e}")
 
 
 def _elevate_if_needed():

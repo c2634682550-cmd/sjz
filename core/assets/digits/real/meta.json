@@ -1,0 +1,6102 @@
+{
+  "canon": [
+    20,
+    32
+  ],
+  "origin": "real-game-screenshots",
+  "labeling": "paddleocr-independent + structure constraint",
+  "margin_thresholds": {
+    "9": 0.1,
+    "3": 0.1,
+    "1": 0.1,
+    "2": 0.1,
+    "5": 0.1,
+    "0": 0.1,
+    "8": 0.1,
+    "7": 0.1,
+    "4": 0.1,
+    "6": 0.0993620753288269
+  },
+  "variants": [
+    {
+      "char": "3",
+      "file": "3_v1.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v1.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v1.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v2.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v3.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v1.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v1.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v1.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v2.png",
+      "aspect": 0.6,
+      "aug": 0,
+      "w": 24,
+      "h": 40,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t03",
+      "index": 0,
+      "bbox": [
+        313,
+        316,
+        24,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v4.png",
+      "aspect": 0.6,
+      "aug": 0,
+      "w": 24,
+      "h": 40,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t03",
+      "index": 1,
+      "bbox": [
+        345,
+        316,
+        24,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v2.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t03",
+      "index": 2,
+      "bbox": [
+        378,
+        318,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v5.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v2.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v2.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v6.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v7.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v3.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v2.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v3.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171730_成交.jpg",
+      "string_id": "20261023_171730_成交#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v3.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 0,
+      "bbox": [
+        613,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v1.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v1.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 2,
+      "bbox": [
+        687,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v2.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 3,
+      "bbox": [
+        717,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v3.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 4,
+      "bbox": [
+        747,
+        185,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v4.png",
+      "aspect": 0.6111111111111112,
+      "aug": 0,
+      "w": 22,
+      "h": 36,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t01",
+      "index": 0,
+      "bbox": [
+        1271,
+        187,
+        22,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v3.png",
+      "aspect": 0.6857142857142857,
+      "aug": 0,
+      "w": 24,
+      "h": 35,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t01",
+      "index": 1,
+      "bbox": [
+        1299,
+        185,
+        24,
+        35
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v4.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t01",
+      "index": 2,
+      "bbox": [
+        1343,
+        185,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v5.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t01",
+      "index": 3,
+      "bbox": [
+        1374,
+        185,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v6.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t01",
+      "index": 4,
+      "bbox": [
+        1404,
+        185,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v4.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 0,
+      "bbox": [
+        613,
+        391,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v1.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v2.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 2,
+      "bbox": [
+        687,
+        391,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v3.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 3,
+      "bbox": [
+        717,
+        391,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v4.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 4,
+      "bbox": [
+        747,
+        391,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v4.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t04",
+      "index": 0,
+      "bbox": [
+        624,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v7.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t04",
+      "index": 1,
+      "bbox": [
+        668,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v8.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t04",
+      "index": 2,
+      "bbox": [
+        698,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v9.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t04",
+      "index": 3,
+      "bbox": [
+        728,
+        597,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v5.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t05",
+      "index": 0,
+      "bbox": [
+        1282,
+        597,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v2.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t05",
+      "index": 1,
+      "bbox": [
+        1327,
+        597,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v10.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t05",
+      "index": 2,
+      "bbox": [
+        1356,
+        597,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v11.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t05",
+      "index": 3,
+      "bbox": [
+        1387,
+        597,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v8.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v3.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v5.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v9.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v10.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v5.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v4.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v6.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v6.png",
+      "aspect": 0.6153846153846154,
+      "aug": 0,
+      "w": 24,
+      "h": 39,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t02",
+      "index": 0,
+      "bbox": [
+        332,
+        13,
+        24,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v4.png",
+      "aspect": 0.7368421052631579,
+      "aug": 0,
+      "w": 28,
+      "h": 38,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t02",
+      "index": 1,
+      "bbox": [
+        361,
+        10,
+        28,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v7.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t02",
+      "index": 2,
+      "bbox": [
+        394,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v12.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 0,
+      "bbox": [
+        266,
+        12,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v6.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 1,
+      "bbox": [
+        298,
+        12,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "6",
+      "file": "6_v1.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v7.png",
+      "aspect": 0.65,
+      "aug": 0,
+      "w": 26,
+      "h": 40,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 3,
+      "bbox": [
+        363,
+        13,
+        26,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v8.png",
+      "aspect": 0.6410256410256411,
+      "aug": 0,
+      "w": 25,
+      "h": 39,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 4,
+      "bbox": [
+        396,
+        14,
+        25,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v13.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 5,
+      "bbox": [
+        426,
+        12,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v11.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 6,
+      "bbox": [
+        458,
+        12,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v7.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 7,
+      "bbox": [
+        490,
+        12,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v5.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t06",
+      "index": 0,
+      "bbox": [
+        332,
+        316,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v5.png",
+      "aspect": 0.7027027027027027,
+      "aug": 0,
+      "w": 26,
+      "h": 37,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t06",
+      "index": 1,
+      "bbox": [
+        363,
+        318,
+        26,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v5.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t06",
+      "index": 2,
+      "bbox": [
+        396,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v12.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v6.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v8.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v13.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v9.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v6.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v8.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v9.png",
+      "aspect": 0.6,
+      "aug": 0,
+      "w": 24,
+      "h": 40,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t03",
+      "index": 0,
+      "bbox": [
+        335,
+        316,
+        24,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v10.png",
+      "aspect": 0.6,
+      "aug": 0,
+      "w": 24,
+      "h": 40,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t03",
+      "index": 1,
+      "bbox": [
+        367,
+        316,
+        24,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v10.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261103_215944_M16A4突击步枪·夜穹.jpg",
+      "string_id": "20261103_215944_M16A4突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        400,
+        318,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v14.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v7.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v9.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v15.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v16.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v11.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v7.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v11.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v3.png",
+      "aspect": 0.6,
+      "aug": 0,
+      "w": 24,
+      "h": 40,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t04",
+      "index": 0,
+      "bbox": [
+        301,
+        316,
+        24,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v12.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t04",
+      "index": 1,
+      "bbox": [
+        332,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v12.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261103_220027_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_220027_SMG-45冲锋枪·夜穹#t04",
+      "index": 2,
+      "bbox": [
+        366,
+        318,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v17.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v8.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v10.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v18.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v19.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v13.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v8.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v13.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_220142_Vector冲锋枪·龙焱.jpg",
+      "string_id": "20261103_220142_Vector冲锋枪·龙焱#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v20.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v9.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v11.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v21.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v22.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v14.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v9.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v14.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v4.png",
+      "aspect": 0.6,
+      "aug": 0,
+      "w": 24,
+      "h": 40,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t03",
+      "index": 0,
+      "bbox": [
+        301,
+        316,
+        24,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v6.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t03",
+      "index": 1,
+      "bbox": [
+        332,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v7.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_221720_FS-12霰弹枪·夜穹.jpg",
+      "string_id": "20261103_221720_FS-12霰弹枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        364,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v23.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v10.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v12.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v24.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v25.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v15.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v15.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v8.png",
+      "aspect": 0.675,
+      "aug": 0,
+      "w": 27,
+      "h": 40,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t03",
+      "index": 0,
+      "bbox": [
+        300,
+        316,
+        27,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v10.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t03",
+      "index": 1,
+      "bbox": [
+        333,
+        316,
+        26,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v11.png",
+      "aspect": 0.7027027027027027,
+      "aug": 0,
+      "w": 26,
+      "h": 37,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        365,
+        318,
+        26,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v16.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261103_225228_SMG-45冲锋枪·夜穹.jpg",
+      "string_id": "20261103_225228_SMG-45冲锋枪·夜穹#t03",
+      "index": 3,
+      "bbox": [
+        400,
+        318,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v26.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v12.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v13.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v27.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 3,
+      "bbox": [
+        261,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v28.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v17.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v16.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v9.png",
+      "aspect": 0.65,
+      "aug": 0,
+      "w": 26,
+      "h": 40,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t05",
+      "index": 0,
+      "bbox": [
+        300,
+        316,
+        26,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v10.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t05",
+      "index": 1,
+      "bbox": [
+        334,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v14.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t05",
+      "index": 2,
+      "bbox": [
+        366,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v18.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t05",
+      "index": 3,
+      "bbox": [
+        400,
+        318,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v11.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "20261103_225718_SKS射手步枪·龙焱.jpg",
+      "string_id": "20261103_225718_SKS射手步枪·龙焱#t05",
+      "index": 4,
+      "bbox": [
+        430,
+        316,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v19.png",
+      "aspect": 0.6111111111111112,
+      "aug": 0,
+      "w": 22,
+      "h": 36,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t00",
+      "index": 0,
+      "bbox": [
+        323,
+        13,
+        22,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v13.png",
+      "aspect": 0.7352941176470589,
+      "aug": 0,
+      "w": 25,
+      "h": 34,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t00",
+      "index": 1,
+      "bbox": [
+        350,
+        11,
+        25,
+        34
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v15.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t00",
+      "index": 2,
+      "bbox": [
+        380,
+        11,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v5.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t00",
+      "index": 3,
+      "bbox": [
+        410,
+        11,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v12.png",
+      "aspect": 0.6578947368421053,
+      "aug": 0,
+      "w": 25,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t01",
+      "index": 0,
+      "bbox": [
+        124,
+        12,
+        25,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v17.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t01",
+      "index": 1,
+      "bbox": [
+        154,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v20.png",
+      "aspect": 0.6388888888888888,
+      "aug": 0,
+      "w": 23,
+      "h": 36,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t01",
+      "index": 2,
+      "bbox": [
+        184,
+        14,
+        23,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v11.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 24,
+      "h": 36,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t01",
+      "index": 3,
+      "bbox": [
+        212,
+        12,
+        24,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v12.png",
+      "aspect": 0.6571428571428571,
+      "aug": 0,
+      "w": 23,
+      "h": 35,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t01",
+      "index": 4,
+      "bbox": [
+        242,
+        12,
+        23,
+        35
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v16.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 0,
+      "bbox": [
+        265,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v14.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 1,
+      "bbox": [
+        295,
+        12,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "6",
+      "file": "6_v2.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v17.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 4,
+      "bbox": [
+        382,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v15.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 5,
+      "bbox": [
+        412,
+        12,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v16.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 6,
+      "bbox": [
+        441,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v18.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 0,
+      "bbox": [
+        265,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v17.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 1,
+      "bbox": [
+        295,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "6",
+      "file": "6_v3.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v21.png",
+      "aspect": 0.6111111111111112,
+      "aug": 0,
+      "w": 22,
+      "h": 36,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 3,
+      "bbox": [
+        355,
+        14,
+        22,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v19.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 4,
+      "bbox": [
+        383,
+        12,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v29.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 5,
+      "bbox": [
+        412,
+        12,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v22.png",
+      "aspect": 0.6111111111111112,
+      "aug": 0,
+      "w": 22,
+      "h": 36,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 6,
+      "bbox": [
+        443,
+        14,
+        22,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v20.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 7,
+      "bbox": [
+        471,
+        12,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v21.png",
+      "aspect": 0.21052631578947367,
+      "aug": 0,
+      "w": 8,
+      "h": 38,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t01",
+      "index": 8,
+      "bbox": [
+        500,
+        12,
+        8,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v18.png",
+      "aspect": 0.6363636363636364,
+      "aug": 0,
+      "w": 28,
+      "h": 44,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t06",
+      "index": 0,
+      "bbox": [
+        109,
+        709,
+        28,
+        44
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v6.png",
+      "aspect": 0.6136363636363636,
+      "aug": 0,
+      "w": 27,
+      "h": 44,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t06",
+      "index": 1,
+      "bbox": [
+        145,
+        709,
+        27,
+        44
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v22.png",
+      "aspect": 0.6363636363636364,
+      "aug": 0,
+      "w": 28,
+      "h": 44,
+      "source": "drv_after_filter.png",
+      "string_id": "drv_after_filter#t06",
+      "index": 2,
+      "bbox": [
+        178,
+        709,
+        28,
+        44
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v30.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 0,
+      "bbox": [
+        165,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v14.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v19.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "3",
+      "file": "3_v31.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 4,
+      "bbox": [
+        293,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v23.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v13.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        39
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v18.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "drv_colfilter.png",
+      "string_id": "drv_colfilter#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v24.png",
+      "aspect": 0.6388888888888888,
+      "aug": 0,
+      "w": 23,
+      "h": 36,
+      "source": "drv_sel.png",
+      "string_id": "drv_sel#t00",
+      "index": 2,
+      "bbox": [
+        184,
+        14,
+        23,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v20.png",
+      "aspect": 0.6363636363636364,
+      "aug": 0,
+      "w": 28,
+      "h": 44,
+      "source": "catalog.png",
+      "string_id": "catalog#t02",
+      "index": 0,
+      "bbox": [
+        49,
+        508,
+        28,
+        44
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v7.png",
+      "aspect": 0.6136363636363636,
+      "aug": 0,
+      "w": 27,
+      "h": 44,
+      "source": "catalog.png",
+      "string_id": "catalog#t02",
+      "index": 1,
+      "bbox": [
+        85,
+        508,
+        27,
+        44
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v23.png",
+      "aspect": 0.6363636363636364,
+      "aug": 0,
+      "w": 28,
+      "h": 44,
+      "source": "catalog.png",
+      "string_id": "catalog#t02",
+      "index": 2,
+      "bbox": [
+        118,
+        508,
+        28,
+        44
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v25.png",
+      "aspect": 0.6111111111111112,
+      "aug": 0,
+      "w": 22,
+      "h": 36,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t01",
+      "index": 0,
+      "bbox": [
+        2,
+        257,
+        22,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "7",
+      "file": "7_v14.png",
+      "aspect": 0.6857142857142857,
+      "aug": 0,
+      "w": 24,
+      "h": 35,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t01",
+      "index": 1,
+      "bbox": [
+        30,
+        255,
+        24,
+        35
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v24.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t01",
+      "index": 2,
+      "bbox": [
+        75,
+        255,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v25.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t01",
+      "index": 3,
+      "bbox": [
+        105,
+        255,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v26.png",
+      "aspect": 0.65,
+      "aug": 0,
+      "w": 26,
+      "h": 40,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 0,
+      "bbox": [
+        338,
+        347,
+        26,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v27.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 1,
+      "bbox": [
+        371,
+        347,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v28.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 2,
+      "bbox": [
+        403,
+        347,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v26.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 3,
+      "bbox": [
+        437,
+        349,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v29.png",
+      "aspect": 0.625,
+      "aug": 0,
+      "w": 25,
+      "h": 40,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 4,
+      "bbox": [
+        467,
+        347,
+        25,
+        40
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v15.png",
+      "aspect": 0.7105263157894737,
+      "aug": 0,
+      "w": 27,
+      "h": 38,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 5,
+      "bbox": [
+        498,
+        349,
+        27,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "4",
+      "file": "4_v16.png",
+      "aspect": 0.7105263157894737,
+      "aug": 0,
+      "w": 27,
+      "h": 38,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t02",
+      "index": 6,
+      "bbox": [
+        530,
+        349,
+        27,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v19.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t03",
+      "index": 0,
+      "bbox": [
+        12,
+        667,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v8.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t03",
+      "index": 1,
+      "bbox": [
+        57,
+        667,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v30.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t03",
+      "index": 2,
+      "bbox": [
+        87,
+        667,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v31.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "detail_panel.png",
+      "string_id": "detail_panel#t03",
+      "index": 3,
+      "bbox": [
+        117,
+        667,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v21.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t00",
+      "index": 0,
+      "bbox": [
+        178,
+        120,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v32.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t00",
+      "index": 1,
+      "bbox": [
+        223,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v9.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t00",
+      "index": 2,
+      "bbox": [
+        256,
+        120,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v33.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t00",
+      "index": 3,
+      "bbox": [
+        287,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v20.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 0,
+      "bbox": [
+        328,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v21.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 1,
+      "bbox": [
+        375,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v22.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 2,
+      "bbox": [
+        406,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v23.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 3,
+      "bbox": [
+        438,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v24.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 4,
+      "bbox": [
+        484,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v25.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 5,
+      "bbox": [
+        516,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v26.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "filter_panel.png",
+      "string_id": "filter_panel#t01",
+      "index": 6,
+      "bbox": [
+        548,
+        120,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v22.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "insufficient.png",
+      "string_id": "insufficient#t01",
+      "index": 0,
+      "bbox": [
+        174,
+        167,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v34.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "insufficient.png",
+      "string_id": "insufficient#t01",
+      "index": 1,
+      "bbox": [
+        219,
+        167,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v27.png",
+      "aspect": 0.5945945945945946,
+      "aug": 0,
+      "w": 22,
+      "h": 37,
+      "source": "insufficient.png",
+      "string_id": "insufficient#t01",
+      "index": 2,
+      "bbox": [
+        252,
+        167,
+        22,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v35.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "insufficient.png",
+      "string_id": "insufficient#t01",
+      "index": 3,
+      "bbox": [
+        281,
+        167,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v23.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t00",
+      "index": 0,
+      "bbox": [
+        624,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v36.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t00",
+      "index": 1,
+      "bbox": [
+        668,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v10.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t00",
+      "index": 2,
+      "bbox": [
+        699,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v37.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t00",
+      "index": 3,
+      "bbox": [
+        728,
+        185,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v24.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t01",
+      "index": 0,
+      "bbox": [
+        1283,
+        185,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v38.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t01",
+      "index": 1,
+      "bbox": [
+        1326,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v11.png",
+      "aspect": 0.5945945945945946,
+      "aug": 0,
+      "w": 22,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t01",
+      "index": 2,
+      "bbox": [
+        1358,
+        185,
+        22,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v39.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t01",
+      "index": 3,
+      "bbox": [
+        1387,
+        185,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v25.png",
+      "aspect": 0.6052631578947368,
+      "aug": 0,
+      "w": 23,
+      "h": 38,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t02",
+      "index": 0,
+      "bbox": [
+        1283,
+        391,
+        23,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v40.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t02",
+      "index": 1,
+      "bbox": [
+        1326,
+        391,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v12.png",
+      "aspect": 0.5945945945945946,
+      "aug": 0,
+      "w": 22,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t02",
+      "index": 2,
+      "bbox": [
+        1358,
+        391,
+        22,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v41.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t02",
+      "index": 3,
+      "bbox": [
+        1387,
+        391,
+        23,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v26.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t03",
+      "index": 0,
+      "bbox": [
+        624,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v28.png",
+      "aspect": 0.6388888888888888,
+      "aug": 0,
+      "w": 23,
+      "h": 36,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t03",
+      "index": 1,
+      "bbox": [
+        669,
+        599,
+        23,
+        36
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v42.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t03",
+      "index": 2,
+      "bbox": [
+        698,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v43.png",
+      "aspect": 0.6578947368421053,
+      "aug": 0,
+      "w": 25,
+      "h": 38,
+      "source": "list_filtered.png",
+      "string_id": "list_filtered#t03",
+      "index": 3,
+      "bbox": [
+        728,
+        597,
+        25,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v27.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t00",
+      "index": 0,
+      "bbox": [
+        613,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "5",
+      "file": "5_v13.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v44.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t00",
+      "index": 2,
+      "bbox": [
+        687,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v45.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t00",
+      "index": 3,
+      "bbox": [
+        717,
+        185,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v46.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t00",
+      "index": 4,
+      "bbox": [
+        747,
+        185,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "2",
+      "file": "2_v28.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t02",
+      "index": 0,
+      "bbox": [
+        613,
+        391,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v13.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t02",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v14.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t02",
+      "index": 2,
+      "bbox": [
+        687,
+        391,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v15.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t02",
+      "index": 3,
+      "bbox": [
+        717,
+        391,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "8",
+      "file": "8_v16.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t02",
+      "index": 4,
+      "bbox": [
+        747,
+        391,
+        25,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "9",
+      "file": "9_v27.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t03",
+      "index": 0,
+      "bbox": [
+        624,
+        597,
+        24,
+        37
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v47.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t03",
+      "index": 1,
+      "bbox": [
+        668,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v48.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t03",
+      "index": 2,
+      "bbox": [
+        698,
+        597,
+        24,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "0",
+      "file": "0_v49.png",
+      "aspect": 0.6578947368421053,
+      "aug": 0,
+      "w": 25,
+      "h": 38,
+      "source": "list_unfiltered.png",
+      "string_id": "list_unfiltered#t03",
+      "index": 3,
+      "bbox": [
+        728,
+        597,
+        25,
+        38
+      ],
+      "license": "auto",
+      "augmented": false
+    },
+    {
+      "char": "1",
+      "file": "1_v29.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "1",
+      "file": "1_v30.png",
+      "aspect": 0.6666666666666666,
+      "aug": 0,
+      "w": 26,
+      "h": 39,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 5,
+      "bbox": [
+        326,
+        13,
+        26,
+        39
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "2",
+      "file": "2_v29.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "2",
+      "file": "2_v30.png",
+      "aspect": 0.6585365853658537,
+      "aug": 0,
+      "w": 27,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 2,
+      "bbox": [
+        229,
+        11,
+        27,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v17.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v18.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v19.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v20.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v21.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v22.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v23.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v24.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v25.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v26.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v27.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v28.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v29.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "4",
+      "file": "4_v30.png",
+      "aspect": 0.7567567567567568,
+      "aug": 0,
+      "w": 28,
+      "h": 37,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 1,
+      "bbox": [
+        196,
+        11,
+        28,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v14.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v15.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v16.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v17.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v18.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v19.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v20.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v21.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v22.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v23.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v24.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v25.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v26.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v27.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v28.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v29.png",
+      "aspect": 0.6486486486486487,
+      "aug": 0,
+      "w": 24,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t00",
+      "index": 1,
+      "bbox": [
+        644,
+        185,
+        24,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "5",
+      "file": "5_v30.png",
+      "aspect": 0.6216216216216216,
+      "aug": 0,
+      "w": 23,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t05",
+      "index": 1,
+      "bbox": [
+        1327,
+        597,
+        23,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v4.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v5.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v6.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v7.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v8.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v9.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v10.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v11.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v12.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v13.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v14.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v15.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v16.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v17.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v18.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v19.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261103_214931_AS_Val突击步枪·夜穹.jpg",
+      "string_id": "20261103_214931_AS_Val突击步枪·夜穹#t03",
+      "index": 2,
+      "bbox": [
+        330,
+        12,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v20.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v21.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v22.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v23.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v24.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v25.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v26.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v27.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v28.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v29.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "6",
+      "file": "6_v30.png",
+      "aspect": 0.631578947368421,
+      "aug": 0,
+      "w": 24,
+      "h": 38,
+      "source": "_live_after.png",
+      "string_id": "_live_after#t02",
+      "index": 2,
+      "bbox": [
+        324,
+        12,
+        24,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v15.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v16.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v17.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v18.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v19.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v20.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v21.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v22.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v23.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v24.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v25.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v26.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v27.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v28.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v29.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "7",
+      "file": "7_v30.png",
+      "aspect": 0.6842105263157895,
+      "aug": 0,
+      "w": 26,
+      "h": 38,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 6,
+      "bbox": [
+        357,
+        11,
+        26,
+        38
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v17.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v18.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v19.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v20.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v21.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v22.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v23.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v24.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v25.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v26.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v27.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v28.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v29.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "8",
+      "file": "8_v30.png",
+      "aspect": 0.6756756756756757,
+      "aug": 0,
+      "w": 25,
+      "h": 37,
+      "source": "20261023_173237_成交.jpg",
+      "string_id": "20261023_173237_成交#t03",
+      "index": 1,
+      "bbox": [
+        643,
+        391,
+        25,
+        37
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "9",
+      "file": "9_v28.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "9",
+      "file": "9_v29.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    },
+    {
+      "char": "9",
+      "file": "9_v30.png",
+      "aspect": 0.6341463414634146,
+      "aug": 0,
+      "w": 26,
+      "h": 41,
+      "source": "20261023_171212_成交.jpg",
+      "string_id": "20261023_171212_成交#t00",
+      "index": 7,
+      "bbox": [
+        389,
+        11,
+        26,
+        41
+      ],
+      "license": "augmented",
+      "augmented": true
+    }
+  ]
+}

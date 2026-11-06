@@ -1,44 +1,33 @@
-"""游戏内文字读取 —— 唯一后端：PaddleOCR PP-OCRv6（本机服务）。
+"""游戏内文字读取 —— 主路径 RapidOCR，PP-OCRv6 服务与自建字模做降级。
 
-为什么只剩一个
---------------
-2026-11-01 用真截图做了横向评测（tools/ocr_eval.py，判分见 说明.txt 第九节）：
+2026-11-06 的第二轮选型（20 条主基准 + 21 条真实截图 ROI，两轮打乱，
+CPU-only，见仓库根 `_ocr_engine_selection.md`）：
 
-    引擎                        字段准确   整屏 1380×630   1920×1080
-    Windows OCR                  16/42       66ms          118ms / 价格 0/6
-    PaddleOCR-VL-1.6              漏块     161s(CPU)         —
-    RapidOCR v6 small            31/42      264ms            —
-    RapidOCR v5 server           40/42     2159ms            —
-    PP-OCRv5 server              42/42      192ms            —
-    PP-OCRv5 mobile              42/42       95ms            —
-    PP-OCRv6 small               42/42       63ms          98ms / 价格 6/6
+    引擎                        主基准  真实 ROI   单帧(CPU)  冷启动   体积
+    RapidOCR v6 small (ONNX)    36/36   42/42     13~73ms   1.2s    30MB
+    PP-OCRv6 tiny (paddle)      36/36   42/42     25~34ms   4.3s    6MB+4GB venv
+    PP-OCRv6 small (paddle 服务) 34/36   38/42     71~90ms   4.6s    —
+    自建字模                     32/36   24~28/42   4~6ms    0ms     0.08MB
 
-PP-OCRv6 small 是唯一「准确率满分 + 延迟可接受」的，所以其它后端全部删掉
-（ocr_winrt.py / ocr_vl.py），只留这一条路。少一层选择，就少一处「后端
-切换导致落点偏移」的隐患。
-
-为什么走 HTTP 而不是进程内
---------------------------
-paddle 装进来 exe 会从几十 MB 涨到 1.5GB，PyInstaller 对它的静态分析也
-基本不可用。所以本机另起一个 PaddleX OCR 服务，这里只做客户端：
-
-    .venv-vl\\Scripts\\paddlex.exe --serve --pipeline tools\\OCR_game.yaml ^
-        --port 8081 --device gpu:0
+所以这里的主路径换成进程内的 RapidOCR（`core/ocr_rapid.py`），PP-OCRv6
+服务（`core/ocr_ppocr.py`）退成第二级，只在价格读不准时用 3× 放大复核；
+字模（`core/digit_ocr.py`）是最后一级纯数字快路径。编排在
+`core/ocr_chain.py`，本模块只保留配置、自检和对外接口。
 
 服务没起会怎样
 --------------
-`available()` 为假 → 启动前检查的「OCR 识别」那项不过 → 不许开抢，
-并直接告诉你哪条命令没执行。**宁可开不了工，也不要带着瞎的眼睛去抢。**
+RapidOCR 是进程内的，服务不在照样能读（这是这次换主路径的主要收益：
+以前 paddlex 服务没起来，OCR 整项检查就不过）。服务不在时：
+`available()` 仍看 Rapid；价格的二级复核自动跳过；日志里会写明。
 
-运行中服务挂了：每次识别抛错 → 返回空 → 引擎按「读不出倒计时/读不出
-价格」走它已有的失败分支（Aborted 或跳过该商品），不会乱点。连续 3 次
-失败后客户端会长时间停用，避免每 5 秒白等一次超时。
+运行中 Rapid 报错：`read_words` 落到服务（若在跑），否则抛 OCRError，
+调用方按「眼睛瞎了」处理，不会把空串当成「没字」去乱点。
 """
 import json
 import re
 import threading
 
-from . import ocr_ppocr
+from . import ocr_chain, ocr_ppocr, ocr_rapid
 
 _lock = threading.Lock()
 _settings = None
@@ -95,14 +84,19 @@ def reload():
 
 
 def _client():
-    """PP-OCR 客户端（懒建；建失败一次就不再建，直到 reload/set_url）。"""
+    """OCR 主链（懒建；建失败一次就不再建，直到 reload/set_url）。
+
+    主链的第一级是进程内 RapidOCR，模型在 core/assets/rapid/（随仓库走）；
+    第二级才是原来的 PP-OCR 服务。三级的参数写死在 ocr_rapid / ocr_chain，
+    这里不重复配置，避免两份参数各改一半。
+    """
     global _backend, _broken, _last_err
     if _backend is not None:
         return _backend
     if _broken:
         return None
     try:
-        _backend = ocr_ppocr.make(_cfg().get("ppocr") or {})
+        _backend = ocr_chain.make(_cfg())
         _last_err = ""
     except Exception as e:                       # noqa: BLE001
         _last_err = f"{type(e).__name__}: {e}"
@@ -152,10 +146,11 @@ def stats():
 
 
 def set_url(url):
-    """把客户端切到另一个 OCR 服务地址（蓝绿重启用，见 core/ocr_service.py）。
+    """把 PP-OCR 客户端切到另一个服务地址（蓝绿重启用，见 core/ocr_service.py）。
 
-    只改地址、不动别的配置；下一次调用时按新地址重建客户端。
-    调用方不用感知 —— 老实例在新实例验活之前一直还在服务。
+    只改地址、不动别的配置。**已经建好的主链只换第二级**：RapidOCR 的
+    ONNX session 留着（重建要 1.2s 冷启动，蓝绿切换正好发生在抢购间隙，
+    那 1.2s 白等一次很浪费）。
     """
     global _settings, _backend, _broken
     with _lock:
@@ -164,6 +159,14 @@ def set_url(url):
         pp["url"] = url
         s["ppocr"] = pp
         _settings = s
+        b = _backend
+        if b is not None and hasattr(b, "pp"):
+            try:
+                b.pp = ocr_ppocr.make(pp)
+                b.url = getattr(b.pp, "url", "") or url
+                return
+            except Exception:                   # noqa: BLE001
+                pass
         _backend = None
         _broken = False
 
@@ -319,14 +322,65 @@ def best_match(text, candidates, floor=0.55):
 
 
 def last_number(text):
-    """文本里最后一个数字（整数）。
+    """文本里最后一个**合格**价格数字（整数）；不合格返回 None。
 
-    千位逗号先去掉（OCR 会把 `15,000` 认成 `15` + `囤` + `00`），
-    取**最后一个**数字串：价格条上印的是一个数，右上角货币栏里三角币
-    在最右边，两处都是「最后一个」。
+    闸门 2（格式）：千分位必须 3 位一组，不带逗号时 1~9 位，多位不许前导 0。
+    不合格就返回 None，让调用方走「读不到」分支，而不是把半截串
+    （`9,9` / `025` / 金币图标粘出来的 `0`）当成价格点下去。
+
+    取最后一个数字串的理由没变：价格条上印的是一个数，右上角货币栏里
+    三角币在最右边，两处都是「最后一个」。实现见 ocr_chain.price_from_text。
     """
-    nums = digit_runs(text)
-    return int(nums[-1]) if nums else None
+    value, _tok = ocr_chain.price_from_text(text)
+    return value
+
+
+def read_price(img, ban=None, timeout=None):
+    """读价格条上那个数。返回 int；读不到 / 不合格返回 None。
+
+    这是「点购买」前唯一该用的价格入口（`engine._bar_price` 走这里）。
+    三级降级 + 两道闸门都在 ocr_chain.Backend.read_price 里：
+      RapidOCR(原图) → PP-OCRv6(3×，仅分数<0.5 或格式没过时) → 自建字模
+    任何一级没过闸门就继续往下，全都没过返回 None —— 不猜。
+    `ban`：出现这些词（详情按钮上的「解锁」「秒」）直接判为非价格。
+    """
+    if img is None or getattr(img, "size", 0) == 0:
+        return None
+    b = _client()
+    if b is None:
+        return None
+    try:
+        value = b.read_price(img, ban=ban, timeout=timeout)
+    except Exception:                            # noqa: BLE001
+        _stats["empty"] += 1
+        return None
+    if value is None:
+        _stats["empty"] += 1
+    else:
+        _stats["calls"] += 1
+    return value
+
+
+def rapid_model_dir():
+    """RapidOCR 本地模型目录（打包后是 _MEIPASS/core/assets/rapid）。
+
+    `--doctor` 用它确认离线模型确实进包了 —— 模型没进包时 RapidOCR
+    会退回自己包内的副本，看起来一切正常，实际多背了 30MB 且版本可能不同。
+    """
+    return ocr_rapid.MODEL_DIR
+
+
+def rapid_error():
+    """RapidOCR 初始化/调用失败原因；正常时返回空串。
+
+    打包版出问题（yaml 没进包、onnxruntime DLL 缺失）时，`--doctor`
+    只打「OCR 可用 = False」是没法修的，必须把这行原样带出来。
+    """
+    b = _client()
+    rp = getattr(b, "rapid", None) if b is not None else None
+    if rp is None:
+        return _last_err or ""
+    return getattr(rp, "last_error", "") or _last_err or ""
 
 
 # ---------------- 数字 ----------------

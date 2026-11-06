@@ -431,7 +431,11 @@ class Supervisor:
         if not os.path.isfile(exe):
             raise FileNotFoundError(
                 f"没有 {exe}（OCR 服务环境没装，见 说明.txt 第九节）")
-        yaml = os.path.join(root, "tools", "OCR_game.yaml")
+        # 价格二次确认只认 tiny（见 tools/OCR_tiny.yaml 的说明）；想回整屏
+        # 更准的 small，把 ocr.ppocr.pipeline 配成 tools/OCR_game.yaml 即可。
+        yaml = os.path.join(root, self.cfg.get("pipeline") or "tools/OCR_tiny.yaml")
+        if not os.path.isfile(yaml):
+            yaml = os.path.join(root, "tools", "OCR_game.yaml")
         args = [exe, "--serve",
                 "--pipeline", yaml if os.path.isfile(yaml) else "OCR",
                 "--port", str(port), "--device", self.cfg.get("device") or "gpu:0"]

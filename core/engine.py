@@ -914,15 +914,16 @@ class Engine:
         全读不出，一件也抢不了）。购买按钮区在 (1482..1780, 936..984)，点
         进去直接读它。按钮上要是印着倒计时（没到解锁时刻的版式），读出来
         的数字不可信，返回 None。
+
+        这里走 `ocr.read_price`（RapidOCR → PP-OCRv6 3× 复核 → 字模），
+        不是 read_text + last_number：三级降级和「分数 + 千分位」两道闸门
+        都在那一层做，放大也由它按级别决定（一级用原图，别把 3× 图喂给
+        RapidOCR，那 30ms 白花）。
         """
         crop = screen.grab(screen.norm_to_px(cfg.region("bar") or BAR_N))
         if crop is None or getattr(crop, "size", 0) == 0:
             return None
-        big = upscale(crop, 3)
-        text = ocr.read_text(big) or ""
-        if "解锁" in text or "秒" in text:
-            return None
-        return ocr.last_number(text)
+        return ocr.read_price(crop, ban=("解锁", "秒"))
 
     @staticmethod
     def _ocr_clock(screen, px):

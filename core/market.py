@@ -13,6 +13,8 @@
 """
 import re
 
+import cv2
+
 from . import bricks, cards as cardmod, ocr
 from . import vision
 
@@ -236,7 +238,7 @@ def scan(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None, read_t
 
     found = cardmod.locate_cards(img)
     if found:
-        return _scan_cards(img, found, upscale=max(3, upscale or 1),
+        return _scan_cards(img, found, upscale=max(1, upscale or 1),
                            read_text=read_text)
     return _scan_grid(img, min_row_h=min_row_h, upscale=upscale,
                       card_h=card_h, cols=cols, col_split=col_split)
@@ -252,7 +254,7 @@ class Scanner:
     用法：scanner = Scanner(); rows = scanner.scan(frame)
     """
 
-    def __init__(self, upscale=3, read_text=None, delta=None):
+    def __init__(self, upscale=1, read_text=None, delta=None):
         self.upscale = upscale
         self.read_text = read_text
         self.delta = delta
@@ -260,33 +262,45 @@ class Scanner:
         self.cards = []
         self.cache = {}
         self.ocr_calls = 0        # 测试用：数一共认了几张卡
+        self._grid_prev = None    # 整屏 OCR 兜底：上一帧的图与结果
+        self._grid_rows = []
 
     def reset(self):
         """列表刷新/翻页后调用：上一帧的缓存全作废。"""
         self.prev = None
         self.cards = []
         self.cache.clear()
+        self._grid_prev = None
+        self._grid_rows = []
 
     def scan(self, img):
         if img is None or getattr(img, "size", 0) == 0:
             return []
         found = cardmod.locate_cards(img)
         if not found:
-            # 找不到卡片线，退回整屏 OCR；这条路上没有缓存可谈。
-            # 只用默认值时按原样调用，测试替换掉 scan() 也还能接得上。
-            kw = {}
-            if self.upscale != 3:
-                kw["upscale"] = self.upscale
+            # 找不到卡片线，退回整屏 OCR（2×，1× 会漏小字）。
+            # 整屏一帧 1.4~2.5s，静止帧直接复用上一帧结果 —— 兜底路径大多
+            # 停在筛选/详情页，画面根本不动，没必要每帧重认一遍。
+            # 判「动没动」用 1/4 缩略图上「明显变化」的像素数，而不是均值：
+            # 均值会被大面积的静止背景稀释，一个价格数字变了也当没变。
+            sig = cv2.resize(img, (480, 270), interpolation=cv2.INTER_AREA)
+            if (self._grid_prev is not None
+                    and int((cv2.absdiff(self._grid_prev, sig) > 20).sum()) < 120):
+                return [dict(r) for r in self._grid_rows]
+            kw = {"upscale": 2}
             if self.read_text is not None:
                 kw["read_text"] = self.read_text
-            return scan(img, **kw)
+            rows = scan(img, **kw)
+            self._grid_prev = sig
+            self._grid_rows = [dict(r) for r in rows]
+            return rows
 
         kw = {} if self.delta is None else {"delta": self.delta}
         # prev_cards 必须传：两帧卡片数不一样时（翻页/刷新）下标不能按位置
         # 对应，否则会把上一批的缓存（名字、价格）当成新卡用。
         changed = cardmod.changed_cards(self.prev, img, found,
                                         prev_cards=self.cards, **kw)
-        read = self.read_text or ocr.read_text
+        read = self.read_text            # None 时 read_card 走整卡一次
 
         rows = []
         for i, rect in enumerate(found):
@@ -302,7 +316,8 @@ class Scanner:
                     self.cache.pop(i, None)
                     continue
                 row = parse_row(text)
-                price = _price_from_block(got["price"], img, rect, read)
+                price = _price_from_block(got["price"], img, rect,
+                                          read or ocr.read_text)
                 if price is not None:
                     row["price"] = float(price)
                 wear = bricks.parse_wear_loose(got["grade"]) or row.get("wear")
@@ -319,10 +334,12 @@ class Scanner:
         return rows
 
 
-def _scan_cards(img, found, upscale=3, read_text=None):
-    """逐张卡片认字，拼成和 _scan_grid 一样的行结构。"""
-    if read_text is None:
-        read_text = ocr.read_text
+def _scan_cards(img, found, upscale=1, read_text=None):
+    """逐张卡片认字，拼成和 _scan_grid 一样的行结构。
+
+    upscale 只对注入 read_text 的测试路径有意义；生产路径（read_text=None）
+    走 cards.read_card 内部的整卡一次 read_words，不再放大。
+    """
     out = []
     for rect in found:
         got = cardmod.read_card(img, rect, upscale=upscale, read_text=read_text)
@@ -332,11 +349,20 @@ def _scan_cards(img, found, upscale=3, read_text=None):
         row = parse_row(text)
         # 价格是单独一块认出来的，直接用它，别让 parse_row 在拼起来的
         # 整段文字里猜 —— 名字里的型号数字（QBZ95 / M250）会被当成价格。
-        price = _price_from_block(got["price"], img, rect, read_text)
+        price = _price_from_block(got["price"])
+        craft, wear = _grade_from_block(got["grade"])
+        # 缺字段才补认，而且一卡最多补一次：价格和成色挤在同一条底带上，
+        # 分开补等于把同一块图放大读两遍（u3 15 张卡，光补认就多吃 1.4s）。
+        if (price is None or not wear) and img is not None and rect is not None:
+            bottom = cardmod.read_card_bottom(
+                img, rect, upscale=3, read_text=read_text or ocr.read_text)
+            if price is None:
+                price = _price_from_block(bottom.get("price"))
+            craft = craft or bricks.parse_craft(bottom.get("grade"))
+            wear = wear or bricks.parse_wear(bottom.get("grade"))
         # 价格只信「价格块」里认出来的那一个：认不出来就是 None，
         # 不能让 parse_row 在整段文字里猜出来的数留着（会把 9,500 读成 500）。
         row["price"] = float(price) if price is not None else None
-        craft, wear = _grade_from_block(got["grade"], img, rect, read_text)
         if not wear:
             # 在售页的成色印在卡片**左上角**（名称上方），不在底行；
             # 但只认「成色 X」这种写法 —— 名称里的 M4A1 / SCAR-H 也是字母。
@@ -364,7 +390,7 @@ def _grade_from_block(text, img=None, rect=None, read_text=None, strict=False):
     wear = bricks.parse_wear(text, strict=strict)
     if (craft and wear) or (img is None or rect is None or read_text is None):
         return craft, wear
-    big = cardmod.read_card(img, rect, upscale=5, read_text=read_text)
+    big = cardmod.read_card_bottom(img, rect, upscale=3, read_text=read_text)
     return (bricks.parse_craft(big.get("grade")) or craft,
             bricks.parse_wear(big.get("grade"), strict=strict) or wear)
 
@@ -387,7 +413,7 @@ def _price_from_block(text, img=None, rect=None, read_text=None):
     if d and len(d) <= 8:
         return int(d)
     if img is not None and rect is not None and read_text is not None:
-        big = cardmod.read_card(img, rect, upscale=5, read_text=read_text)
+        big = cardmod.read_card_bottom(img, rect, upscale=3, read_text=read_text)
         d2 = digits(big.get("price"))
         if d2 and len(d2) <= 8:
             return int(d2)

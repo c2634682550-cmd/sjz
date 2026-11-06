@@ -16,6 +16,10 @@ ocr_service_*.log
 /dist/
 /build/
 
+# 前端截图 / 临时备份：体积大、且是排查用的中间产物，不入库
+/_fe_shots/
+/_backup_*/
+
 # 排查时的临时截图/探针
 /_shots/
 /_icons/

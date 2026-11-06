@@ -1,0 +1,141 @@
+{
+  "canon": [
+    20,
+    32
+  ],
+  "font": 0,
+  "variants": [
+    {
+      "char": "0",
+      "file": "0_t1.png",
+      "aspect": 0.6785714285714286,
+      "thickness": 1
+    },
+    {
+      "char": "0",
+      "file": "0_t2.png",
+      "aspect": 0.7666666666666667,
+      "thickness": 2
+    },
+    {
+      "char": "1",
+      "file": "1_t1.png",
+      "aspect": 0.32142857142857145,
+      "thickness": 1
+    },
+    {
+      "char": "1",
+      "file": "1_t2.png",
+      "aspect": 0.4,
+      "thickness": 2
+    },
+    {
+      "char": "2",
+      "file": "2_t1.png",
+      "aspect": 0.7142857142857143,
+      "thickness": 1
+    },
+    {
+      "char": "2",
+      "file": "2_t2.png",
+      "aspect": 0.7666666666666667,
+      "thickness": 2
+    },
+    {
+      "char": "3",
+      "file": "3_t1.png",
+      "aspect": 0.75,
+      "thickness": 1
+    },
+    {
+      "char": "3",
+      "file": "3_t2.png",
+      "aspect": 0.7666666666666667,
+      "thickness": 2
+    },
+    {
+      "char": "4",
+      "file": "4_t1.png",
+      "aspect": 0.75,
+      "thickness": 1
+    },
+    {
+      "char": "4",
+      "file": "4_t2.png",
+      "aspect": 0.8,
+      "thickness": 2
+    },
+    {
+      "char": "5",
+      "file": "5_t1.png",
+      "aspect": 0.75,
+      "thickness": 1
+    },
+    {
+      "char": "5",
+      "file": "5_t2.png",
+      "aspect": 0.7666666666666667,
+      "thickness": 2
+    },
+    {
+      "char": "6",
+      "file": "6_t1.png",
+      "aspect": 0.6785714285714286,
+      "thickness": 1
+    },
+    {
+      "char": "6",
+      "file": "6_t2.png",
+      "aspect": 0.7333333333333333,
+      "thickness": 2
+    },
+    {
+      "char": "7",
+      "file": "7_t1.png",
+      "aspect": 0.7142857142857143,
+      "thickness": 1
+    },
+    {
+      "char": "7",
+      "file": "7_t2.png",
+      "aspect": 0.7666666666666667,
+      "thickness": 2
+    },
+    {
+      "char": "8",
+      "file": "8_t1.png",
+      "aspect": 0.75,
+      "thickness": 1
+    },
+    {
+      "char": "8",
+      "file": "8_t2.png",
+      "aspect": 0.7666666666666667,
+      "thickness": 2
+    },
+    {
+      "char": "9",
+      "file": "9_t1.png",
+      "aspect": 0.6428571428571429,
+      "thickness": 1
+    },
+    {
+      "char": "9",
+      "file": "9_t2.png",
+      "aspect": 0.7333333333333333,
+      "thickness": 2
+    },
+    {
+      "char": ",",
+      "file": "comma_t1.png",
+      "aspect": 0.7777777777777778,
+      "thickness": 1
+    },
+    {
+      "char": ",",
+      "file": "comma_t2.png",
+      "aspect": 0.8181818181818182,
+      "thickness": 2
+    }
+  ]
+}

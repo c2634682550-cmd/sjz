@@ -98,9 +98,15 @@ def fake():
 
 @pytest.fixture
 def use_backend(monkeypatch):
-    """把 ocr 的配置临时换掉，用例结束自动还原。"""
+    """把 ocr 的配置临时换掉，用例结束自动还原。
+
+    这几条测的是 PP-OCR 服务那条链路（请求格式、缓存、熔断），所以显式
+    关掉 RapidOCR 主路径 —— 否则纯色假图会先走进程内 Rapid 再落回假服务，
+    断言还在过，但测的已经不是「客户端行为」了。
+    """
     def _apply(url="http://127.0.0.1:9", **pp):
-        s = {"ppocr": {**config.DEFAULTS["ocr"]["ppocr"], "url": url, **pp}}
+        s = {"rapid": {"enabled": False},
+             "ppocr": {**config.DEFAULTS["ocr"]["ppocr"], "url": url, **pp}}
         monkeypatch.setattr(ocr, "_settings", s, raising=False)
         monkeypatch.setattr(ocr, "_backend", None, raising=False)
         monkeypatch.setattr(ocr, "_last_err", "", raising=False)
@@ -116,13 +122,16 @@ def _img(w=1380, h=630):
 
 # ---------------------------------------------------------------- 配置
 
-def test_defaults_only_have_ppocr():
-    """只剩一个后端 —— 配置里不该再有 backend / paddle_vl / hot_backend。
+def test_defaults_keep_only_the_three_known_ocr_sections():
+    """配置里只允许 rapid / ppocr / service 三段。
 
-    service 是服务管家（定时重启）的配置，不是第二个后端。
+    2026-11-06 起主路径是进程内 RapidOCR（rapid），ppocr 是二级复核，
+    service 是服务管家 —— 别再把 backend / paddle_vl / hot_backend 那套
+    「多后端切换」加回来：后端一多，落点偏移的坑就跟着回来。
     """
     d = config.DEFAULTS["ocr"]
-    assert set(d) == {"ppocr", "service"}
+    assert set(d) == {"rapid", "ppocr", "service"}
+    assert d["rapid"]["enabled"] is True
     assert d["ppocr"]["model"].startswith("PP-OCRv6")
     assert d["ppocr"]["url"].startswith("http")
 

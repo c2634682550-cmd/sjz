@@ -158,17 +158,19 @@ def test_pick_never_selects_an_over_budget_item():
 def test_backend_name_reports_the_real_engine():
     """backend_name() 是打包后排查 OCR 的唯一手段，必须说清是谁在干活。
 
-    2026-11-01 起只剩 PP-OCRv6 一个后端（走本机服务），所以这里钉两件事：
-    名字里必须写明是 PP-OCR，且不可用时必须**明说**不可用 —— 不许出现
-    「名字看着正常、其实一直读空」的情况。
+    2026-11-06 起主路径是进程内 RapidOCR（PP-OCRv6 服务退成价格二级复核、
+    字模做三级兜底）。钉两件事：名字里要么写 RapidOCR、要么写 PP-OCR（并
+    带上服务地址）；真不可用时必须**明说**不可用 —— 不许出现「名字看着
+    正常、其实一直读空」。
     """
     from core import ocr
     name = ocr.backend_name()
     assert isinstance(name, str) and name
     if "不可用" in name:
-        return          # 服务没起是合法状态，只要它老老实实报不可用
-    assert "PP-OCR" in name, name
-    assert "127.0.0.1" in name or "http" in name, name
+        return          # 进程内引擎也起不来是合法状态，只要它老老实实报不可用
+    assert "RapidOCR" in name or "PP-OCR" in name, name
+    if "PP-OCR" in name:
+        assert "127.0.0.1" in name or "http" in name, name
 
 
 def test_backend_name_matches_a_real_recognition():

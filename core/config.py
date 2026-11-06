@@ -128,17 +128,22 @@ DEFAULTS = {
         "ons_columns": [1396, 1641],    # 兜底列心
     },
 
-    # OCR（见 core/ocr.py）。2026-11-01 起只剩 PP-OCRv6 一个后端：
-    # 真截图评测里它是唯一「准确率满分 + 延迟可接受」的，其它方案全删。
+    # OCR（见 core/ocr.py）。2026-11-06 起主路径换成进程内 RapidOCR：
+    # 两块基准集全对（36/36、42/42）、离线、冷启动 1.2s、模型 30MB 随仓库走；
+    # PP-OCRv6 服务退成「价格二次确认」的第二级，自建字模是第三级。
     "ocr": {
+        "rapid": {
+            "enabled": True,                  # false = 退回旧的纯 PP-OCR 服务路径
+        },
         "ppocr": {
             "mode": "auto",                   # auto / http / off
-            "url": "http://127.0.0.1:8081",   # paddlex --serve --pipeline OCR
+            "url": "http://127.0.0.1:8081",   # paddlex --serve --pipeline tools/OCR_tiny.yaml
             "timeout_s": 5.0,
             "cache": 64,                      # 同图缓存条数
             "max_side": 2560,                 # 超过就先缩图再发
             "min_score": 0.5,                 # 低于这个置信度的行丢掉（与 ocr_ppocr 默认一致）
-            "model": "PP-OCRv6 small",        # 只用于自检显示，不影响请求
+            "model": "PP-OCRv6 tiny",         # 只用于自检显示，不影响请求
+            "pipeline": "tools/OCR_tiny.yaml",  # 服务端流水线；换 OCR_game.yaml 用 small
             "cooldown_s": 30.0,
             "fail_limit": 3,                  # 连续失败几次就长时间停用
             "long_cooldown_s": 600.0,

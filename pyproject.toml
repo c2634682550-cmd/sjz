@@ -7,9 +7,13 @@ dependencies = [
     "mss>=9.0,<11",
     "opencv-python>=4.8,<6",
     "numpy>=1.24,<3",
-    # OCR 不在这个环境里：core/ocr_ppocr.py 只用 urllib 连本机的 PaddleX
-    # 服务（见 说明.txt 第九节）。原来那套 winrt-* 依赖随 Windows OCR 后端
-    # 一起删了 —— 留着只会让 exe 多背几个用不到的 DLL。
+    # OCR 主路径：进程内 RapidOCR + ONNXRuntime（core/ocr_rapid.py）。
+    # 模型（PP-OCRv6 small，30MB）随 core/assets/rapid 分发，离线可跑；
+    # 缺模型时 RapidOCR 会退回它包内的同名模型。约 60MB 依赖，冷启动 1.2s。
+    # PP-OCR 服务只做价格二次确认（core/ocr_ppocr.py 仍只用标准库 urllib），
+    # 不给 exe 装 paddle（4.3GB）。旧的 winrt-* / tesseract 依赖已全部删除。
+    "rapidocr>=3.10,<4",
+    "onnxruntime>=1.20,<2",
     "pywebview>=6.2.1",
 ]
 

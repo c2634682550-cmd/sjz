@@ -1,0 +1,440 @@
+{
+ "source": "ocrbench/user_shots u1~u5 真实截图裁剪",
+ "items": [
+  {
+   "id": "u1_tier_legend",
+   "file": "u1_tier_legend.png",
+   "src": "u1",
+   "box": [
+    606,
+    470,
+    74,
+    31
+   ],
+   "kind": "tier",
+   "craft": "传说",
+   "wear": null,
+   "note": "筛选面板 传说品阶"
+  },
+  {
+   "id": "u1_tier_epic",
+   "file": "u1_tier_epic.png",
+   "src": "u1",
+   "box": [
+    847,
+    474,
+    71,
+    24
+   ],
+   "kind": "tier",
+   "craft": "史诗",
+   "wear": null,
+   "note": "筛选面板 史诗品阶"
+  },
+  {
+   "id": "u1_tier_rare",
+   "file": "u1_tier_rare.png",
+   "src": "u1",
+   "box": [
+    1084,
+    473,
+    72,
+    25
+   ],
+   "kind": "tier",
+   "craft": "稀有",
+   "wear": null,
+   "note": "筛选面板 稀有品阶"
+  },
+  {
+   "id": "u1_tier_common",
+   "file": "u1_tier_common.png",
+   "src": "u1",
+   "box": [
+    1325,
+    473,
+    71,
+    25
+   ],
+   "kind": "tier",
+   "craft": "普通",
+   "wear": null,
+   "note": "筛选面板 普通品阶"
+  },
+  {
+   "id": "u3_card_r1_l",
+   "file": "u3_card_r1_l.png",
+   "src": "u3",
+   "box": [
+    91,
+    398,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "A",
+   "note": "第1行左卡"
+  },
+  {
+   "id": "u3_card_r1_r",
+   "file": "u3_card_r1_r.png",
+   "src": "u3",
+   "box": [
+    749,
+    398,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "C",
+   "note": "第1行右卡"
+  },
+  {
+   "id": "u3_card_r2_l",
+   "file": "u3_card_r2_l.png",
+   "src": "u3",
+   "box": [
+    91,
+    605,
+    97,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "B",
+   "note": "第2行左卡"
+  },
+  {
+   "id": "u3_card_r2_r",
+   "file": "u3_card_r2_r.png",
+   "src": "u3",
+   "box": [
+    749,
+    605,
+    97,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "C",
+   "note": "第2行右卡"
+  },
+  {
+   "id": "u3_card_r3_l",
+   "file": "u3_card_r3_l.png",
+   "src": "u3",
+   "box": [
+    91,
+    810,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "S",
+   "note": "第3行左卡"
+  },
+  {
+   "id": "u3_card_r3_r",
+   "file": "u3_card_r3_r.png",
+   "src": "u3",
+   "box": [
+    733,
+    811,
+    112,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "S",
+   "note": "第3行右卡"
+  },
+  {
+   "id": "u4_card_r1_l",
+   "file": "u4_card_r1_l.png",
+   "src": "u4",
+   "box": [
+    91,
+    398,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "A",
+   "note": "第1行左卡"
+  },
+  {
+   "id": "u4_card_r1_r",
+   "file": "u4_card_r1_r.png",
+   "src": "u4",
+   "box": [
+    749,
+    398,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "C",
+   "note": "第1行右卡"
+  },
+  {
+   "id": "u4_card_r2_l",
+   "file": "u4_card_r2_l.png",
+   "src": "u4",
+   "box": [
+    91,
+    605,
+    97,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "B",
+   "note": "第2行左卡"
+  },
+  {
+   "id": "u4_card_r2_r_merged",
+   "file": "u4_card_r2_r_merged.png",
+   "src": "u4",
+   "box": [
+    638,
+    605,
+    208,
+    22
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "C",
+   "note": "价格+品阶被合成一行"
+  },
+  {
+   "id": "u4_card_r3_l",
+   "file": "u4_card_r3_l.png",
+   "src": "u4",
+   "box": [
+    92,
+    812,
+    95,
+    21
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "S",
+   "note": "第3行左卡"
+  },
+  {
+   "id": "u4_card_r3_r",
+   "file": "u4_card_r3_r.png",
+   "src": "u4",
+   "box": [
+    737,
+    811,
+    108,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "S",
+   "note": "第3行右卡"
+  },
+  {
+   "id": "u5_card_r1_l",
+   "file": "u5_card_r1_l.png",
+   "src": "u5",
+   "box": [
+    91,
+    398,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "A",
+   "note": "第1行左卡"
+  },
+  {
+   "id": "u5_card_r1_r",
+   "file": "u5_card_r1_r.png",
+   "src": "u5",
+   "box": [
+    749,
+    398,
+    97,
+    24
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "C",
+   "note": "第1行右卡"
+  },
+  {
+   "id": "u5_card_r2_l",
+   "file": "u5_card_r2_l.png",
+   "src": "u5",
+   "box": [
+    91,
+    605,
+    97,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "B",
+   "note": "第2行左卡"
+  },
+  {
+   "id": "u5_card_r2_r_merged",
+   "file": "u5_card_r2_r_merged.png",
+   "src": "u5",
+   "box": [
+    639,
+    605,
+    207,
+    22
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "C",
+   "note": "价格+品阶被合成一行"
+  },
+  {
+   "id": "u5_card_r3_l",
+   "file": "u5_card_r3_l.png",
+   "src": "u5",
+   "box": [
+    92,
+    812,
+    95,
+    21
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "S",
+   "note": "第3行左卡"
+  },
+  {
+   "id": "u5_card_r3_r",
+   "file": "u5_card_r3_r.png",
+   "src": "u5",
+   "box": [
+    733,
+    811,
+    112,
+    23
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": "S",
+   "note": "第3行右卡"
+  },
+  {
+   "id": "u3_panel_rarity",
+   "file": "u3_panel_rarity.png",
+   "src": "u3",
+   "box": [
+    1728,
+    534,
+    42,
+    26
+   ],
+   "kind": "card",
+   "craft": "极品",
+   "wear": null,
+   "note": "右面板稀有度值"
+  },
+  {
+   "id": "u4_panel_epic",
+   "file": "u4_panel_epic.png",
+   "src": "u4",
+   "box": [
+    1423,
+    383,
+    41,
+    26
+   ],
+   "kind": "card",
+   "craft": "优品",
+   "wear": null,
+   "note": "筛选面板 优品"
+  },
+  {
+   "id": "u3_panel_label_rarity",
+   "file": "u3_panel_label_rarity.png",
+   "src": "u3",
+   "box": [
+    1446,
+    533,
+    56,
+    25
+   ],
+   "kind": "neg",
+   "craft": null,
+   "wear": null,
+   "note": "「稀有度」标签"
+  },
+  {
+   "id": "u3_panel_label_wear",
+   "file": "u3_panel_label_wear.png",
+   "src": "u3",
+   "box": [
+    1445,
+    577,
+    41,
+    26
+   ],
+   "kind": "neg",
+   "craft": null,
+   "wear": null,
+   "note": "「成色」标签"
+  },
+  {
+   "id": "u4_panel_all_rarity",
+   "file": "u4_panel_all_rarity.png",
+   "src": "u4",
+   "box": [
+    1424,
+    329,
+    87,
+    23
+   ],
+   "kind": "neg",
+   "craft": null,
+   "wear": null,
+   "note": "「所有稀有度」"
+  },
+  {
+   "id": "u4_panel_all_wear",
+   "file": "u4_panel_all_wear.png",
+   "src": "u4",
+   "box": [
+    1424,
+    502,
+    71,
+    24
+   ],
+   "kind": "neg",
+   "craft": null,
+   "wear": null,
+   "note": "「所有成色」"
+  },
+  {
+   "id": "u2_card_common",
+   "file": "u2_card_common.png",
+   "src": "u2",
+   "box": [
+    91,
+    554,
+    61,
+    25
+   ],
+   "kind": "neg",
+   "craft": null,
+   "wear": null,
+   "note": "「典藏」标签，无品阶"
+  }
+ ]
+}

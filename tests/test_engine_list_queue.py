@@ -149,7 +149,7 @@ def _run(monkeypatch, rows, fire_results):
     FakeNav.made = []
     monkeypatch.setattr(eng_mod, "Navigator", FakeNav)
     monkeypatch.setattr(eng_mod, "Keyboard", lambda *a, **k: None)
-    monkeypatch.setattr(eng_mod.market, "scan", lambda frame: list(rows))
+    monkeypatch.setattr(eng_mod.market, "scan", lambda frame, **kw: list(rows))
     monkeypatch.setattr(eng_mod, "match", lambda a, b: (1.0, None))
     monkeypatch.setattr(e, "_load", staticmethod(lambda cfg, name: np.zeros((4, 4))))
     clicks = []
