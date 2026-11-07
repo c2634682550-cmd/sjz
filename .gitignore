@@ -123,7 +123,10 @@ ocr_service_*.log
 # 进化引擎的运行时账本与检查点：保留 evo/*.py 与 evo_config.json，其余是运行数据
 /evo/fixtures/
 /evo/state/
+/evo/collect/.state/
 /evo/collect/events.jsonl
+/evo/collect/stages.jsonl
+/evo/registry.jsonl
 
 # 根目录实测证据：pytest XML、基准 JSON、本机调参/配置快照（含本机硬件与绝对路径）
 /_*.json
