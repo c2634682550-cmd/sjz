@@ -60,6 +60,18 @@ def _load():
     return data
 
 
+def reset_cache():
+    """丢掉模块级砖皮表缓存（测试隔离用，生产不调用）。
+
+    `_cache` 按 mtime 命中：测试若在临时目录里铺一份 bricks.json 并把
+    `_PATH` 指过去，用例结束后缓存仍留着那份数据；下一个用例换成别的
+    目录、但 mtime 恰好相同时会拿到上一份表 —— 随机顺序下就是
+    「按品阶停止」用例偶发读错砖皮。测试侧由
+    `tests/order_isolation.py` 的 autouse 夹具调用。
+    """
+    _cache.update(mtime=0, data=None)
+
+
 def _flatten(data=None):
     """摊平成「一条 = 一个赛季 × 一个皮肤 × 一把武器」。
 

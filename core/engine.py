@@ -18,19 +18,24 @@
 """
 import os
 import random
+import ctypes
 import re
 import threading
 import time
 import traceback
+import weakref
 from collections import deque
 
 import cv2
 import numpy as np
 
-from . import countdown, market, ocr, popup, records, switches, timesync
-from .config import Config, DATA_DIR
+from . import (cards, click_burst, countdown, dry_run as dryrun, idle_roam,
+               market, ocr, pooltrace, popup, records, repeat, recovery,
+               scene_guard as sg, skip_late, stop_grade, switches, timesync,
+               watchdog)
+from .config import Config
 from .input import (Keyboard, Mouse, MouseStolen, WindowNotForeground,
-                    find_game_window)
+                    find_game_window, landing_unobservable)
 from .nav import NavError, Navigator
 # ROI 的唯一定义处（绝对像素在 nav_coords，引擎用归一化别名）
 from .nav_coords import (CONTINUE_POINT as CONT_CLICK,
@@ -38,9 +43,9 @@ from .nav_coords import (CONTINUE_POINT as CONT_CLICK,
                          N_CLOCK as CLOCK_N, N_LIST as LIST_N,
                          N_POPUP_HINT as POPUP_HINT_N,
                          N_REWARD as REWARD_N, N_SERIAL as SERIAL_N,
-                         N_SKIP as SKIP_N)
+                         N_SKIP as SKIP_N, N_TOAST as TOAST_N)
 from .screen import Screen
-from .vision import expand, imread, imwrite, match, to_gray, upscale
+from .vision import expand, imread, match, match_scaled, to_gray, upscale
 
 IDLE, SCAN, WATCH, FIRE, CONFIRM, DONE, ABORT = (
     "idle", "scan", "watch", "fire", "confirm", "done", "abort")
@@ -82,6 +87,16 @@ COUNTDOWN_SCAN_CARDS = 2
 # 运行中重读配置的间隔（秒）。用户改价格/做工/限量，最多这么久后生效。
 LIVE_RELOAD_S = 2.0
 
+# 展示页「继续」按钮周围的窄带（归一化）。整屏 OCR 要 1.4~2.5s，这条窄带
+# 只要 ~60ms —— 判据（「继续」两个字）不变，只是不再为了一句话认一整屏。
+CONT_STRIP = {"x": 0.40, "y": 0.890, "w": 0.20, "h": 0.100}
+
+# 边界调用连续失败多久才放弃这一轮。截图/OCR 是外部依赖（驱动、显存、本机
+# 服务），偶发失败很常见；0.1 秒的抖动不该把一件正在倒计时的货甩掉。但
+# 「一直失败」必须中止 —— 否则线程会一声不响地空转到天亮（挂机稳定性）。
+OCR_ERROR_ABORT_S = 6.0
+GRAB_ERROR_ABORT_S = 10.0
+
 
 def choose_countdown_target(cands, tried=()):
     """从候选里挑「最早解锁」的那件。没有合格的就返回 None。
@@ -111,10 +126,30 @@ class Aborted(Exception):
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, dry_run=None):
+        # dry-run 开关：默认关闭，靠 DAFORS_DRY_RUN=1 或显式参数打开。
+        # 打开后 `_run` 用 DryRunMouse 替身，fire 阶段只记落点、不注入。
+        self._dry = dryrun.dry_enabled(dry_run)
+        self._dry_events = []
+        self._dry_stats = {"points": 0, "outside_client": 0,
+                           "outside_bbox": 0, "bbox_unknown": 0}
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
+        # 「检查存活 → 建线程」的不可分割闸门（审查 R01 #2）：并发 start() 必须
+        # 直接拒绝，不能排队 —— 排队会让后到线程在第一个建完线程之后再过一次
+        # 存活检查，8 个请求照样起来 8 条引擎线程同时点同一个鼠标。
+        self._lifecycle = threading.RLock()
+        # 停止前的真实阶段。stop()/guard_stop() 会把状态改成 abort，不先记
+        # 下来的话「是不是已经进过开火/确认」就永久丢失，调度器只能看到
+        # abort 而误判成「还没下单、可以自动重跑」（审查 B01）。
+        self._stage_before_stop = None
+        # 本轮安全收尾是否已经跑过：guard_stop 与 _run 的 finally 都会收尾，
+        # 不收口的话同一次事故会冻结/还原/写记录两遍（审查 R01 #8）。
+        self._contained = False
+        # 卡死检测：监督方（调度器 / 长跑验证工具）按「多久没跳」判活。
+        # 引擎自己不做重启 —— 收掉资源、重开一轮是调度器的决定。
+        self._hb = watchdog.Heartbeat()
         self._log = deque(maxlen=300)
         self._state = IDLE
         self._error = None
@@ -134,7 +169,47 @@ class Engine:
         self._sort_tried = False
         self._verified_by = ""
         self._trigger_mode = None
+        # 确认弹窗的现场标定每次运行只做一次：弹窗不在画面时启动阶段
+        # 一定读不到（实测 0.223），只能等它第一次真的出现再标。
+        self._confirm_calibrated = False
         self._target_hwnd = None      # 启动时游戏窗口；点击前校验它在前台
+        # 入池/抽签证据：每件商品一次尝试，toast + 倒计时都往这里记，
+        # 记账时由 _record 一次性取走（见 core/pooltrace.py）。
+        self._pooltrace = pooltrace.PoolTrace()
+        # 场景守卫：只负责「看清情况 / 决定级别 / 给一句话」，具体恢复动作由
+        # recovery 能力库和调度器执行。默认配置来自代码，用户配置里有 guard
+        # 段才覆盖 —— 这里只读不写。
+        try:
+            guard_cfg = sg.GuardConfig.from_mapping(Config.load().get("guard"))
+        except Exception:                    # noqa: BLE001  读配置失败不影响启动
+            guard_cfg = sg.GuardConfig()
+        self._guard = sg.SceneGuard(guard_cfg)
+        self._cursor_home = None
+        # Cleanup 的回调要「不持有 self」。直接用 bound method 会形成
+        # Engine -> Cleanup -> bound method -> Engine 的引用环：Engine 只能等
+        # gc 回收，它持有的 threading.Event（_stop）也跟着拖住一个内核 Event
+        # 句柄。真机只建一个 Engine 所以看不见，压测里每轮新建就会句柄堆积。
+        # 这里传弱引用代理，环断掉，引用计数归零即释放。
+        self_ref = weakref.ref(self)
+
+        def _freeze():
+            eng = self_ref()
+            return eng._stop.set() if eng else True
+
+        def _reset_cursor():
+            eng = self_ref()
+            return eng._restore_cursor() if eng else True
+
+        def _record(ctx=None):
+            eng = self_ref()
+            return eng._record_incident(ctx) if eng else True
+
+        self._cleanup = recovery.Cleanup(recovery.ResourceAdapters(
+            freeze=_freeze,
+            release_input=lambda: True,   # 点击是即按即放，没有持续按下态
+            reset_cursor=_reset_cursor,
+            record=_record,
+        ))
         self._stats = {
             "hz": 0.0,
             "score": 0.0,
@@ -145,7 +220,19 @@ class Engine:
             "mode": "detail",
             "scans": 0,
             "rows": 0,
+            # ---- feature:scan.repeat BEGIN ----
+            # 最近 30 次的「每件刷新」用量（界面上直接可查）；路线见 refresh_route，
+            # list 路线按页刷新，scan.repeat 不生效。
+            "refresh_counts": [],
+            "refresh_route": "",
+            # ---- feature:scan.repeat END ----
+            # ==== FEATURE-SKIP-LATE:STATS BEGIN ====
+            # 本轮因「来不及」跳过的件：{item, remaining_s, source, reason}
+            "late_skips": [],
+            # ==== FEATURE-SKIP-LATE:STATS END ====
         }
+        # 本轮第几次发起购买；成交截图底栏写「第 N 轮」（只在 _fire_and_confirm 自增）
+        self._attempt_no = 0
 
     # ---------------- 对外 ----------------
 
@@ -157,8 +244,24 @@ class Engine:
         也不算 —— 界面上写「公示期倒计时归零就买」，配置里一改就悄悄换成
         另一条完全不同的路线。现在任务说了算，全局配置只当默认值。
         """
+        if not self._lifecycle.acquire(blocking=False):
+            return False, "引擎正在启动或停止，稍后再试"
+        try:
+            return self._start_locked(deadline, mode, workflow)
+        finally:
+            self._lifecycle.release()
+
+    def _start_locked(self, deadline=None, mode="detail", workflow=None):
         if self._thread and self._thread.is_alive():
             return False, "已经在运行了"
+        # 硬停/人工处理是**持久状态**：下一轮启动不许自行清掉它（审查 B02）。
+        # 以前这里无条件 user_resume()，队列在几百毫秒内就会接着下单。
+        gw = self._guard
+        if gw.halt_latched or gw.state in (sg.STATE_HALTED,
+                                          sg.STATE_WAITING_HUMAN):
+            snap = gw.snapshot()
+            return False, (snap.get("message")
+                           or "当前处于安全停止状态，请先点「继续」再开始")
         cfg = Config.load()
         workflow = workflow or cfg.get("workflow") or "countdown"
         if workflow not in WORKFLOWS:
@@ -173,6 +276,16 @@ class Engine:
             return False, ("没找到游戏窗口（窗口类名 UnrealWindow）—— 先把游戏"
                            "切成无边框窗口化并开着，再点开始")
         self._stop.clear()
+        self._hb.reset()
+        self._hb.beat()
+        self._attempt_no = 0
+        # 提前把截图线程和 mss 建好：成交那一刻只投递，不再花时间起线程。
+        try:
+            from . import shotproof
+            if shotproof.settings(cfg)["enabled"]:
+                self._shot_worker()
+        except Exception:                   # noqa: BLE001 截图组件坏了不影响开抢
+            pass
         self._mode = mode
         self._workflow = workflow
         # deadline 是校时后的 Unix 时间戳，换算成本机单调时钟，避免中途系统改时间
@@ -180,6 +293,35 @@ class Engine:
                           if deadline else None)
         self._error = None
         self._log.clear()
+        # 开抢前自动标定：按当前客户区换算内置坐标，并用模板/OCR 锚点自检。
+        # 当次结果决定当次是否启动：fallback/error 必须当场拦下，不能只写
+        # 两条 warn 就继续点（闸门读到的是上一次写入的状态，拦不住本轮）。
+        try:
+            from . import autocalib as _autocalib
+            cal = _autocalib.run_for_engine(cfg, workflow=workflow)
+            st = cal.get("status")
+            # 闸门用 record() 按「引擎真正会点的配置坐标」算好的 gate：
+            # skipped/fallback/error 都拦，超阈值 adjusted 也拦；只有必需
+            # 区域被用户手框过才放行。
+            block = cal.get("gate")
+            if block is None:
+                block = _autocalib.gate_reason(cal, cfg, workflow)
+            if block:
+                self._say(block, "warn")
+                self._say("本次不启动：先把游戏窗口完整露出来、别遮挡购买/确认"
+                          "按钮，或打开「高级设置 → 区域微调」手动框一次",
+                          "warn")
+                return False, f"自动标定未通过：{block}"
+            if st in ("ok", "adjusted") and cal.get("message"):
+                # 这行必须写全：buy 分数 / 偏移 / 几何中心 / 走的哪条路径
+                self._say(cal["message"], "info")
+            elif st == "skipped":
+                self._say(cal.get("message") or "本次没有可校验锚点",
+                          "info")
+        except Exception as e:                 # 标定异常按 error 处理：当次不启动
+            self._say(f"自动标定没跑起来，本次不启动：{type(e).__name__}: {e}",
+                      "warn")
+            return False, f"自动标定没跑起来：{type(e).__name__}: {e}"
         # 一次性状态（价格区间筛选/排序筛选）每轮清零。这两个标记是 Engine
         # 实例属性，而整个调度只建一个 Engine：不清的话第 2 个任务起会沿用
         # 上一个任务「筛选已经做过了」，换了价格区间也一件不筛，预算判断
@@ -188,6 +330,20 @@ class Engine:
         self._sort_tried = False
         self._verified_by = ""
         self._trigger_mode = None
+        self._confirm_calibrated = False
+        self._pooltrace.begin()
+        # 任务切换不能带着上一轮的残留（审查 B08）：连续失败计数会提前触发
+        # stop_after_fails，`_rows` 会让新任务的清单页显示旧任务的挂单。
+        self._fails_in_row = 0
+        self._rows = []
+        # ==== FEATURE-GRADE:INIT BEGIN ====
+        # 品阶计数每轮重来（和 quota/budget 一样是「本轮」语义）
+        self._grade = None
+        self._grade_last = {}
+        # ==== FEATURE-GRADE:INIT END ====
+        # 新一轮开始：上一轮「停止前阶段 / 已收尾」的标记作废
+        self._stage_before_stop = None
+        self._contained = False
         self._state = SCAN if mode == "list" else WATCH
         # 把当前前台窗口记成目标，之后每次点击都要求它仍在前台，
         # 否则点击会被投递给别的窗口。
@@ -196,35 +352,110 @@ class Engine:
         # 引擎会把整场鼠标点到控制台界面上（`ensure_foreground` 还会殷勤地
         # 把控制台切到前台）。找不到游戏窗口才退回当前前台。
         self._target_hwnd = find_game_window() or Mouse.foreground()
+        # 记录事故前的光标位置：硬停/误买收尾时尝试还原，不让光标停在危险区域
+        try:
+            self._cursor_home = Mouse.cursor()
+        except Exception:                    # noqa: BLE001
+            self._cursor_home = None
+        # 用户主动开新的一轮 = 清掉上一次的暂停/硬停状态
+        # （已删除：硬停是持久状态，只有用户显式点「继续」才清 —— 见 B02）
         # 游戏独占全屏会把光标锁住，导致后面所有点击静默失效（§4.8）。
         ok, had = Mouse.release_cursor_lock()
         if had:
             self._say(f"清掉光标裁剪锁（之前{'有' if had else '没有'}锁）"
                       f" -> {'成功' if ok else '失败'}", "warn")
-        if Mouse.cursor_is_locked():
-            self._say("光标仍被锁住：点击可能无效。"
-                      "如果游戏是独占全屏，请改成「无边框窗口化」再试", "error")
+        # 不再做「挪 40px 再挪回」的锁探测：那会真实移动用户鼠标。
+        # 若光标真被钉住，点击失败会从 click() 的报错链直接暴露出来。
         self._stats.update(hz=0.0, score=0.0, clicks=0, elapsed=0.0,
                            started_at=time.time(),
                            trigger_mode=cfg["trigger_mode"],
-                           mode=mode, workflow=workflow, scans=0, rows=0)
-        self._thread = threading.Thread(target=self._run, args=(cfg, mode, workflow),
-                                        daemon=True)
-        self._thread.start()
+                           mode=mode, workflow=workflow, scans=0, rows=0,
+                           # ==== FEATURE-SKIP-LATE:STATS BEGIN ====
+                           # 每轮重新记，复盘只看本轮
+                           late_skips=[],
+                           # ==== FEATURE-SKIP-LATE:STATS END ====
+                           # ==== FEATURE-GRADE:STATS BEGIN ====
+                           # 契约 §4.3：stats.grade_counts 本轮各品阶成交件数
+                           grade_counts={"legend": 0, "epic": 0, "rare": 0},
+                           # 停止原因：quota / budget / grade（空 = 正常收尾）
+                           stop_reason="", stop_detail="",
+                           # ==== FEATURE-GRADE:STATS END ====
+                           )
+        try:
+            self._thread = threading.Thread(target=self._run,
+                                            args=(cfg, mode, workflow),
+                                            daemon=True)
+            self._thread.start()
+        except Exception as e:                    # noqa: BLE001
+            # 启动失败必须回滚：线程没起来却把状态留在 WATCH，调度器会一直等
+            self._thread = None
+            self._set_state(IDLE)
+            return False, f"引擎线程启动失败：{type(e).__name__}: {e}"
         return True, "已启动"
 
-    def stop(self):
-        self._stop.set()
+    def stop(self, timeout=2.0):
+        """停下引擎。**只有线程真的退出才返回成功**（审查 R01 #3）。
+
+        以前 join 2s 超时也返回「已停止」，可线程还卡在 OCR/HTTP 这类不可
+        打断的调用里，返回后 0.79s 还会补点一次；上层看到「已停止」就把任务
+        放回 PENDING、再开一轮，于是两个引擎同时点同一个鼠标。
+        现在：停不下来就返回 False + 明说原因，让调度器把队列锁住。
+        """
+        with self._lifecycle:
+            self._stop.set()
+            self._mark_stage()
+            t = self._thread
+            # 引擎线程自己调 stop()（on_hit 回调）时绝不能 join 自己：
+            # join 当前线程直接 RuntimeError("cannot join current thread")。
+            if (t and t.is_alive() and t is not threading.current_thread()):
+                t.join(timeout=timeout)
+            alive = bool(t and t.is_alive()
+                         and t is not threading.current_thread())
+            if alive:
+                return False, "停止请求已发出，但引擎线程还在收尾（可能仍有一步点击）"
+            with self._lock:
+                if self._state in (SCAN, WATCH, FIRE, CONFIRM):
+                    self._state = ABORT
+            # 引擎线程已经退干净：把截图队列收尾（失败只影响截图，不影响停止）
+            self._shot_worker_close()
+            return True, "已停止"
+
+    def wait_stop(self, timeout=3.0):
+        """等引擎线程真正退出；返回 True = 已停干净。"""
         t = self._thread
-        # 引擎线程自己调 stop()（比如 on_hit 回调里「抢到就停」）时绝不能 join
-        # 自己：join 当前线程直接 RuntimeError("cannot join current thread")，
-        # 异常从回调里抛出去会打断抢到的收尾。让线程自己看到 _stop 退出即可。
-        if (t and t.is_alive() and t is not threading.current_thread()):
-            t.join(timeout=2.0)
+        if t and t.is_alive() and t is not threading.current_thread():
+            try:
+                t.join(timeout=timeout)
+            except RuntimeError:
+                pass
+        return not (t and t.is_alive())
+
+    def _window_gone(self):
+        """游戏窗口真的没了（区别于只是丢焦点：窗口在、只是不在前台）。"""
+        try:
+            from .input import find_game_window
+            return not find_game_window()
+        except Exception:                    # noqa: BLE001
+            return False
+
+    def _recover_gpu(self, why=""):
+        """窗口消失：判 GPU_TDR → 记录进度 → 拉起游戏 → 等窗口（≤2 次）。"""
+        try:
+            from . import gpu_guard
+        except Exception as e:               # noqa: BLE001
+            self._say(f"GPU 恢复模块不可用：{type(e).__name__}: {e}", "warn")
+            return None
+        prog = {"stage": getattr(self, "_stage_before_stop", "") or "",
+                "why": why, "state": self._state}
+        res = gpu_guard.handle_window_gone(progress=prog, say=self._say)
+        self._gpu_last = res
+        return res
+
+    def _mark_stage(self):
+        """把「停止瞬间真正在做什么」记下来（B01 的唯一可信来源）。"""
         with self._lock:
-            if self._state in (SCAN, WATCH, FIRE, CONFIRM):
-                self._state = ABORT
-        return True, "已停止"
+            if self._state in (FIRE, CONFIRM):
+                self._stage_before_stop = self._state
 
     def status(self):
         with self._lock:
@@ -232,18 +463,44 @@ class Engine:
             state = self._state
             error = self._error
         running = bool(self._thread and self._thread.is_alive())
+        # ---- feature:mouse.human BEGIN ----
+        # 轨迹的生效/降级必须能在状态里读到（契约 §2.1），没开跑也要给原因
+        traj = getattr(self, "_traj", None)
+        st["trajectory"] = (traj.status() if traj is not None else
+                            {"effective": "idle", "active": False,
+                             "reason": "尚未开跑：轨迹决策器在 _run 里才构造"})
+        # ---- feature:mouse.human END ----
+        # ---- feature:mouse.idle BEGIN ----
+        # 漫游的生效/降级/归位时刻都要能从 status 读到；未开跑给稳定形状。
+        roam_sess = getattr(self, "_roam", None)
+        st["roam"] = (roam_sess.snapshot() if roam_sess is not None
+                      else idle_roam.empty_stats())
+        # ---- feature:mouse.idle END ----
+        # ---- feature:buy.followup BEGIN ----
+        # 补刀的开关/是否生效/是否用掉，没开跑也要有稳定形状给前端与用例。
+        st["followup"] = dict(st.get("followup") or
+                              {"enabled": False, "effective": False, "used": False})
+        # ---- feature:buy.followup END ----
         # 跑完了就把耗时定住。一直按「现在 - 开始时间」算的话，
         # 停了之后界面上的运行时间还会一秒一秒往上跳。
         if st["started_at"] and running:
             st["elapsed"] = round(time.time() - st["started_at"], 1)
         return {
             "state": state,
+            # 停止前真实阶段（fire/confirm 或者 None）：调度器据此判断
+            # 「这轮是不是已经进过开火/确认」，决定能不能自动重跑。
+            "stage_before_stop": self._stage_before_stop,
             "running": running,
+            # 心跳有多久没跳。None = 还没开始干活（刚构造/刚启动）。
+            "beat_age_s": self._hb.age(),
             "mode": self._mode,
             "stats": st,
             "error": error,
             "rows": list(self._rows),
             "log": list(self._log)[-60:],
+            # 前端只认这两个：当前处置级别 + 一句人话 + 唯一主按钮
+            "guard": self._guard.snapshot(),
+            "doing": self._guard.doing_text(self._doing_text(state)),
         }
 
     # ---------------- 内部 ----------------
@@ -297,33 +554,320 @@ class Engine:
         self._log.append({"t": time.strftime("%H:%M:%S"), "ts": time.time(),
                           "level": level, "msg": msg})
 
-    def _click(self, mouse, x, y):
-        """带前台校验的点击。目标窗口不在前台就抛 WindowNotForeground。"""
-        mouse.click(x, y, expect_foreground=self._target_hwnd)
+    # ---------------- 失活自愈（引擎级） ----------------
+    #
+    # 真机踩过：游戏内部「激活态」丢失后，注入照样被受理（accepted=True），
+    # 但游戏零响应 —— 点击日志全绿，页面一动不动。判据只有一种组合：
+    #   注入已发出 + 3 秒内页面没变化 + landing 是 raw_input_blind / down=up=0
+    # 处置固定三步：提示 → 等 3 秒 → 同一条注入重试 1 次 → 仍失败就停。
+    # 不连续重试、不换注入方式：换通道只会把现场搞得更乱。
+
+    def _input_lost(self, mouse):
+        """上一击是否「已发出但落地不可观测」→ (blind, last_click)。"""
+        fn = getattr(mouse, "channel_status", None)
+        if not callable(fn):
+            return False, {}
+        try:
+            return landing_unobservable(fn())
+        except Exception:                    # noqa: BLE001 状态读不到不算失活
+            return False, {}
+
+    def _notify_idle_input(self, label, last):
+        """失活提示：写状态日志（悬浮窗/日志区都能看到），不弹阻塞框。"""
+        land = (last or {}).get("landing") or {}
+        msg = ("游戏失去了操作状态，请点一下游戏画面"
+               f"（{label}：注入已发出，落地 {land.get('mode') or 'unknown'}，"
+               "3 秒内页面没变化）")
+        self._say(msg, "warn")
+        self._set(notice=msg, notice_at=time.time())
+
+    @staticmethod
+    def _doing_text(state):
+        """「现在在做什么」：给完全不懂技术的用户看，不显示转圈。"""
+        return {
+            IDLE: "闲着，等你开始",
+            SCAN: "正在看交易行的列表",
+            WATCH: "正在盯着倒计时",
+            FIRE: "正在点购买",
+            CONFIRM: "正在确认购买",
+            DONE: "这一轮已经完成",
+            ABORT: "已经停下",
+        }.get(state, "正在处理")
+
+    def guard_snapshot(self):
+        return self._guard.snapshot()
+
+    def guard_resume(self):
+        """用户点了唯一的「继续」：清掉暂停/硬停记录，允许下一轮继续。"""
+        # 若还挂着「未收尾」标记，先把真实收尾跑完再清 —— 标记只能由
+        # 「收尾真的做完」触发清零，不能靠点一下按钮抹掉（审查 B03）。
+        try:
+            if self._guard.snapshot().get("containment_pending"):
+                self._contain_guard("resume")
+        except Exception:                    # noqa: BLE001
+            pass
+        snap = self._guard.user_resume()
+        self._say("用户点了继续，恢复盯盘", "info")
+        return snap
+
+    def _contain_guard(self, reason):
+        """跑一次安全收尾，并把结果写进守卫证据后清 pending。"""
+        snap = self._guard.snapshot()
+        res = self._cleanup.run({"scene": snap.get("scene"), "reason": reason})
+        self._contained = True
+        self._guard.add_evidence(containment_ok=not res["failed"],
+                                 containment_failed=list(res["failed"]))
+        self._guard.containment_done()
+        return res, snap
+
+    def guard_stop(self):
+        """用户要求立刻安全停止：清状态、还原、写记录、退出。"""
+        # 顺序很重要（审查 B07）：先冻结、再等线程退出，最后才还原光标 ——
+        # 反过来做，线程在「按下→抬起」之间被还原光标，仍会补点一次。
+        self._stop.set()
+        self._mark_stage()
+        snap = self._guard.hard_halt("用户请求停止")
+        t = self._thread
+        if t and t.is_alive() and t is not threading.current_thread():
+            try:
+                t.join(timeout=2.0)
+            except RuntimeError:
+                pass
+        res, snap = self._contain_guard("user_stop")
+        self._say(f"安全停止：还原 {len(res['done'])} 项，"
+                  f"失败 {len(res['failed'])} 项", "warn")
+        with self._lock:
+            # 已经完成的任务不许被「停止」改成 abort（M-4）
+            if self._state != DONE:
+                self._state = ABORT
+            self._error = snap.get("message")
+        # 返回收尾**之后**的快照：hard_halt 那份的 containment_pending 还是 True
+        return self._guard.snapshot()
+
+    def force_release_input(self):
+        """退出进程前的最后一道保险：把强制收尾能做的都做一遍。
+
+        `_bye` 会在 stop() 之后直接 os._exit(0)，不给守护线程任何机会；
+        只要 stop() 没停干净，按键状态就可能停在 DOWN。这里同步跑一次
+        真实收尾（冻结 + 释放输入 + 还原光标），返回是否全部成功。
+        """
+        self._stop.set()
+        try:
+            res, _ = self._contain_guard("shutdown")
+        except Exception as e:               # noqa: BLE001
+            return False, f"收尾失败：{type(e).__name__}: {e}"
+        return (not res["failed"]), f"还原 {len(res['done'])} 项，失败 {len(res['failed'])} 项"
+
+    def _force_scene(self, scene_id, evidence=None):
+        """把一条确定发生的异常上报给守卫；返回值是给前端的状态快照。"""
+        snap = self._guard.force(scene_id, evidence or {})
+        if snap.get("state") in (sg.STATE_HALTED, sg.STATE_WAITING_HUMAN):
+            msg = snap.get("message") or ""
+            if msg:
+                self._say(msg, "error" if snap["state"] == sg.STATE_HALTED else "warn")
+                with self._lock:
+                    if self._error is None:
+                        self._error = msg
+        return snap
+
+    def _restore_cursor(self):
+        """把光标放回启动前的位置；失败只返回 False，不影响其它收尾。"""
+        if not self._cursor_home:
+            return True
+        try:
+            ok = ctypes.windll.user32.SetCursorPos(int(self._cursor_home[0]),
+                                                  int(self._cursor_home[1]))
+            # SetCursorPos 返回 0 表示被别的窗口/裁剪锁挡下来了，不能当成功
+            return bool(ok)
+        except Exception:                    # noqa: BLE001
+            return False
+
+    def _record_incident(self, ctx=None):
+        """事故记录：写一条可追溯的日志（截图由 _record 在成交路径负责）。"""
+        ctx = ctx or {}
+        self._say(f"事故记录：场景={ctx.get('scene') or 'unknown'} "
+                  f"级别={ctx.get('level')} 时间={time.strftime('%H:%M:%S')}",
+                  "error")
+        return True
+
+    def _click(self, mouse, x, y, hold=None):
+        """带前台校验的点击。目标窗口不在前台就抛 WindowNotForeground。
+
+        `hold`（秒）只在连点参数里用到：按下→抬起之间真的按住这么久，
+        None 时各通道沿用原行为。
+        """
+        mouse.click(x, y, expect_foreground=self._target_hwnd, hold=hold)
+
+    def _click_fire(self, mouse, x, y, hold=None):
+        """开火专用点击：给 Mouse 打一个「本次不做曲线移动」的标记。
+
+        走标记而不是加参数，是为了不破坏 `_click` 的既有签名 —— 测试和别的
+        分支会直接 monkeypatch `_click`，多一个 kwarg 就会炸。
+        真 Mouse 在 click() 里读这个标记：有预热落点就零位移，没有就按
+        瞬时直线落点；轨迹只留在非开火动作上。
+        """
+        hint = getattr(mouse, "_fire_hint", False)
+        try:
+            setattr(mouse, "_fire_hint", True)
+            if hold is None:
+                return self._click(mouse, x, y)
+            return self._click(mouse, x, y, hold=hold)
+        finally:
+            setattr(mouse, "_fire_hint", hint)
+
+    # ---------------- dry-run（只记录落点，不注入） ----------------
+
+    def _dry_probe_bbox(self, screen, cfg, name, region):
+        """按模板在当前画面里定位按钮 bbox（屏幕像素）。返回 (bbox, score)。
+
+        只做「抓图 + 匹配」，不点任何东西。region 传 None 或模板缺失时
+        返回 (None, None)，调用方据此标成「bbox 未知」而不是猜一个。
+        """
+        if region is None:
+            return None, None
+        try:
+            tpl = self._load(cfg, name)
+        except RuntimeError:
+            return None, None
+        px = screen.norm_to_px(region)
+        crop = screen.grab(px)
+        if crop is None or getattr(crop, "size", 0) == 0:
+            return None, None
+        try:
+            score, loc, scale = match_scaled(to_gray(crop), tpl)
+        except Exception:                     # noqa: BLE001 匹配异常不该挡住记录
+            return None, None
+        if loc is None:
+            return None, score
+        h, w = tpl.shape[:2]
+        return (px[0] + loc[0], px[1] + loc[1],
+                px[0] + loc[0] + int(w * scale),
+                px[1] + loc[1] + int(h * scale)), score
+
+    def _dry_note_point(self, screen, phase, x, y, bbox=None, note=""):
+        """记一条「本该点这里」：客户区判定 + 按钮 bbox 判定。"""
+        rep = dryrun.point_report(screen, int(x), int(y), bbox)
+        rep["t"] = round(time.time(), 3)
+        rep["phase"] = phase
+        if note:
+            rep["note"] = note
+        with self._lock:
+            self._dry_events.append(rep)
+            self._dry_stats["points"] += 1
+            if rep["in_client"] is False:
+                self._dry_stats["outside_client"] += 1
+            if rep["in_bbox"] is False:
+                self._dry_stats["outside_bbox"] += 1
+            if rep["in_bbox"] is None:
+                self._dry_stats["bbox_unknown"] += 1
+        self._say(f"dry-run 落点[{phase}] ({rep['x']},{rep['y']}) "
+                  f"客户区内={rep['in_client']} bbox内={rep['in_bbox']}", "info")
+        return rep
+
+    def _dry_note_fire(self, cfg, screen, buy_click):
+        """开火阶段：记下「要点的购买按钮」和「弹窗出现后要点的确认」。"""
+        buy_region = cfg.region("buy")
+        buy_bbox, buy_score = self._dry_probe_bbox(
+            screen, cfg, "buy",
+            expand(buy_region, 0.15) if buy_region is not None else None)
+        self._dry_note_point(
+            screen, "fire_buy", *buy_click, bbox=buy_bbox,
+            note=f"buy_score={None if buy_score is None else round(buy_score, 3)}")
+        confirm_region = cfg.region("confirm")
+        if confirm_region is not None:
+            c_bbox, c_score = self._dry_probe_bbox(
+                screen, cfg, "confirm", expand(confirm_region, 0.25))
+            cx, cy = self._center(screen, confirm_region)
+            self._dry_note_point(
+                screen, "fire_confirm", cx, cy, bbox=c_bbox,
+                note=f"confirm_score="
+                     f"{None if c_score is None else round(c_score, 3)}")
 
     def _set(self, **kw):
         with self._lock:
             self._stats.update(kw)
 
     def _run(self, cfg, mode="detail", workflow=None):
+        # 二级（PP-OCRv6）是「看起来有、实际可能每次 500」的一层：TCP 探活
+        # 分辨不出来。启动时真推理一次，把结论写进状态，别让价格复核悄悄
+        # 摔到字模兜底还没人知道（本机 CPU 上的 Paddle+oneDNN 就是这样）。
+        # 自检放后台线程、探活预算 300ms：端口被丢包时那 1.5s 探活不该算进
+        # 启动时间；结论晚几百毫秒出现在状态栏即可。
+        def _pp_selfcheck():
+            try:
+                ok, err = ocr.selfcheck_pp(probe_timeout=0.3)
+                if ok:
+                    return
+                if "已关闭" in err or "未起" in err:
+                    self._say(f"OCR 二级复核未启用（{err}），价格二次确认走字模兜底")
+                else:
+                    self._say(f"OCR 二级复核不可用：{err} —— 价格二次确认将直接"
+                              "走字模兜底，本次统计里的 tier2_fail 会随之增加", "warn")
+            except Exception:                          # noqa: BLE001
+                pass
+
+        threading.Thread(target=_pp_selfcheck, name="ocr-ppcheck", daemon=True).start()
         # **资源构造也必须在 try 里**：Screen/Mouse 一抛异常（mss 初始化、
         # 显示器序号、interception 驱动装载），线程直接死掉、`_error` 永远
         # 是 None，调度器把这轮记成「未抢到」，真因只剩一条没人看的 stderr
         # 栈。构造失败必须落到 except，写成线程级 error（审查 S9）。
         screen = None
         try:
-            screen = Screen(cfg["monitor"])
+            # F6：monitor 是手改配置的常见目标（写成负数/字符串/超大值会让
+            # Screen 抛 ValueError，线程直接死）。读时校验，越界回退到自动选屏。
+            monitor = switches.read(cfg, "monitor", 1, "int", 0, 16, key="monitor")
+            screen = Screen(monitor)
             self._input_mode = cfg.get("input_mode") or "interception"
-            mouse = Mouse(screen, game_hwnd=self._target_hwnd,
-                          mode=self._input_mode)
+            if self._dry:
+                # dry-run：不构造真 Mouse（连驱动都不装载），点击只记账。
+                mouse = dryrun.DryRunMouse(screen)
+                self._say("dry-run：只记录落点，不注入（系统光标不动）", "warn")
+            else:
+                mouse = Mouse(screen, game_hwnd=self._target_hwnd,
+                              mode=self._input_mode)
             # getattr 兜底：测试里的 FakeMouse 没有这两个属性时不炸
             warn = getattr(mouse, "driver_warning", None)
             eff = getattr(mouse, "mode", self._input_mode)
+            # review F8：`_input_mode` 必须回写**实际生效**通道（请求 message
+            # 却降级到 legacy 时，后面的日志/键盘都要按真实通道走）。
+            self._input_mode = eff
+            label = getattr(mouse, "channel_label", None) \
+                or ("驱动注入(interception)" if eff == "interception"
+                    else "PostMessage(legacy)")
             if warn:
-                self._say(f"Interception 驱动不可用，退回旧输入方式：{warn}", "warn")
+                self._say(f"输入通道：{label}（已降级：{warn}）", "warn")
             else:
-                self._say(f"输入通道：{'驱动注入(interception)' if eff == 'interception' else 'PostMessage(legacy)'}")
+                self._say(f"输入通道：{label}")
+            # ---- feature:mouse.human BEGIN ----
+            self._traj = None
+            try:
+                from . import humanmouse
+                self._traj = humanmouse.Trajectory(cfg, mode=eff)
+                attach = getattr(mouse, "attach_trajectory", None)
+                if attach:                     # FakeMouse 没有这个方法，测试不受影响
+                    attach(self._traj)
+                text, level = self._traj.banner()
+                self._say(text, level)
+            except Exception as e:                          # noqa: BLE001
+                self._traj = None
+                self._say("拟人轨迹：初始化失败，本次点击不做拟人移动"
+                          f"（{type(e).__name__}: {e}）", "warn")
+            # ---- feature:mouse.human END ----
             workflow = workflow or cfg.get("workflow") or "countdown"
+            # ---- feature:mouse.idle BEGIN ----
+            # 只在倒计时路线生效；list/detail 没有可反推的解锁时刻，
+            # 构造时就把「不启用」说明打出来，之后 tick 也不会产生动作。
+            self._roam = idle_roam.RoamSession(
+                cfg, screen=screen, mouse=mouse, hwnd=self._target_hwnd,
+                workflow=workflow, input_mode=self._input_mode,
+                traj=getattr(self, "_traj", None), say=self._say)
+            note = self._roam.startup_notice()
+            if note:
+                self._say(note, "info")
+            # ---- feature:mouse.idle END ----
+            # 实时校准：每轮开跑前拿当前屏幕重新算一次模板比例。换分辨率 /
+            # 改缩放 / 换显示器之后直接开跑也能对上，不用回头点标定。
+            self._live_calibrate(cfg, screen, workflow)
             try:
                 confirm_tpl = self._load(cfg, "confirm")
             except RuntimeError:
@@ -361,10 +905,24 @@ class Engine:
                 self._execute(cfg, screen, mouse, buy_tpl, confirm_tpl)
         except Aborted as e:
             self._say(str(e), "warn")
+            msg = str(e)
+            if "鼠标甩到左上角" in msg:
+                self._force_scene(sg.SC_USER_TAKEOVER,
+                                  {"user_input_age_s": 0.0})
+            elif "抢不到前台" in msg:
+                self._force_scene(sg.SC_WINDOW_LOST,
+                                  {"foreground": False})
+            if self._window_gone():
+                res = self._recover_gpu(msg)
+                if res and res.get("action") == "gave_up":
+                    with self._lock:
+                        self._error = res["message"]
             self._set_state(ABORT)
         except MouseStolen as e:
             self._say(f"鼠标被抢：{e}", "error")
             self._say("停止执行，避免点击落到别处", "error")
+            self._force_scene(sg.SC_SELF_FAULT,
+                              {"driver_ok": False, "why": str(e)})
             self._set_state(ABORT)
             with self._lock:
                 self._error = f"鼠标被抢：{e}"
@@ -372,6 +930,15 @@ class Engine:
             self._say(f"目标窗口不在前台：{e}", "error")
             self._say("把游戏窗口切到前台再开始，"
                       "否则点击会被系统投递给别的窗口", "error")
+            self._force_scene(sg.SC_WINDOW_LOST,
+                              {"foreground": False, "why": str(e)})
+            if self._window_gone():
+                res = self._recover_gpu(str(e))
+                if res and res.get("action") == "gave_up":
+                    self._set_state(ABORT)
+                    with self._lock:
+                        self._error = res["message"]
+                    return
             self._set_state(ABORT)
             with self._lock:
                 self._error = f"目标窗口不在前台：{e}"
@@ -379,6 +946,8 @@ class Engine:
             self._say(f"{type(e).__name__}: {e}", "error")
             for line in traceback.format_exc().splitlines()[-6:]:
                 self._say(line, "error")
+            self._force_scene(sg.SC_SELF_FAULT,
+                              {"driver_ok": False, "why": str(e)})
             self._set_state(ABORT)
             with self._lock:
                 self._error = f"{type(e).__name__}: {e}"
@@ -396,11 +965,47 @@ class Engine:
                 started = self._stats.get("started_at")
                 if started:
                     self._stats["elapsed"] = round(time.time() - started, 1)
+            # 硬停收尾：冻结、释放、还原光标、卸钩子、收子进程、写记录。
+            # 幂等，重复跑也不会报错；有一项失败只记录，不阻断其它收尾。
+            try:
+                # RECOVERING 不能悬着（B05）：自动恢复动作还没接线，本轮退出
+                # 时把它结算成「需要人处理」或硬停，别让引擎状态永远停在恢复中。
+                if self._guard.state == sg.STATE_RECOVERING:
+                    self._guard.abandon_recovery("本轮结束：没有可执行的自动恢复")
+                    self._say("自动恢复没有可执行动作，转人工/硬停", "warn")
+                if self._guard.state == sg.STATE_HALTED and not self._contained:
+                    res = self._cleanup.run({
+                        "scene": self._guard.owner,
+                        "level": sg.LEVEL_HALT,
+                        "reason": self._error or "",
+                    })
+                    self._contained = True
+                    # 收尾真的跑完才清 containment_pending（B03）：以前没有
+                    # 任何生产路径调 containment_done()，前端唯一按钮永远灰着。
+                    self._guard.add_evidence(
+                        containment_ok=not res["failed"],
+                        containment_failed=list(res["failed"]))
+                    self._guard.containment_done()
+                    self._say(f"安全收尾：完成 {len(res['done'])} 项，"
+                              f"失败 {len(res['failed'])} 项，"
+                              f"跳过 {len(res['skipped'])} 项", "error")
+                elif self._guard.state == sg.STATE_WAITING_HUMAN:
+                    with self._lock:
+                        if self._error is None:
+                            self._error = self._guard.snapshot().get("message")
+                elif self._state == DONE:
+                    self._guard.succeed()
+            except Exception:                    # noqa: BLE001
+                pass
             if screen is not None:
                 screen.close()
 
     def _set_state(self, state):
         with self._lock:
+            # 任何落到 abort 的路径都先记下真实阶段：stop()、守卫硬停、
+            # 异常退出三者都要留下「是否已进过开火/确认」这一事实（B01）。
+            if state == ABORT and self._state in (FIRE, CONFIRM):
+                self._stage_before_stop = self._state
             self._state = state
 
     def _refresh_task(self, cfg):
@@ -457,8 +1062,30 @@ class Engine:
             raise RuntimeError(f"模板读不出来：{name}.png")
         return to_gray(img)
 
+    def _live_calibrate(self, cfg, screen, workflow):
+        """开跑前按当前画面实时对齐模板（不弹窗、不动鼠标、不抢焦点）。
+
+        启动前检查已经跑过一次自愈，这里再跑一遍是为了「换了分辨率 / 缩放
+        后直接开跑」—— 用户不去点标定，脚本自己在每一轮起跑时对一次比例。
+        页面未知时只做几何判断和尺寸补偿，不会拿桌面画面重采游戏模板；
+        重采要等启动前检查拿到确定的页面之后再走。
+        """
+        try:
+            from . import template_heal
+            res = template_heal.heal(cfg, page=None, workflow=workflow,
+                                     screen=screen, reason="run-start")
+        except Exception as e:                      # noqa: BLE001
+            self._say(f"模板实时校准跳过（{type(e).__name__}: {e}）", "warn")
+            return
+        status = res.get("status")
+        if status in ("rescaled", "recaptured", "fit"):
+            self._say(f"模板实时校准：{res.get('message')}")
+        elif status == "failed":
+            self._say(f"模板实时校准未通过：{res.get('message')} —— "
+                      "仍按现有模板跑，匹配失败会自动停", "warn")
+
     def _execute(self, cfg, screen, mouse, buy_tpl, confirm_tpl):
-        threshold = float(cfg["threshold"])
+        threshold = switches.get(cfg, "fire.threshold")
         # 入口已经规范化过就沿用那个值（见 _run）；单独调进来时也要兜住，
         # 非法值按 vanish：跟日志里报的「等占位按钮消失」保持一致。
         mode = getattr(self, "_trigger_mode", None) or cfg["trigger_mode"]
@@ -468,6 +1095,12 @@ class Engine:
         buy_px = screen.norm_to_px(expand(buy_region, 0.15))
         buy_click = self._center(screen, buy_region)
         failsafe = bool(cfg["failsafe"])
+        # ==== FEATURE:telemetry BEGIN ====
+        # 详情路线没有倒计时零点：进轮就清掉，避免上一轮中途异常留下的零点
+        # 被算成这一件的 offset_ms。
+        self._zero_perf = None
+        self._zero_primed = False
+        # ==== FEATURE:telemetry END ====
 
         frames = 0
         t_report = time.perf_counter()
@@ -476,11 +1109,14 @@ class Engine:
         last_score = 0.0
         armed = mode != "vanish"   # vanish 模式必须先看见占位按钮，才能"等它消失"
         t_arm_warn = t_start
-        arm_grace = float(cfg.get("arm_grace_s", 1.5))
+        # F6：同样走带校验的读取入口 —— 手改成 inf 会让 sleep 挂死线程。
+        arm_grace = switches.read(cfg, "arm_grace_s", 1.5, "float", 0.0, 30.0,
+                                  key="arm_grace_s")
         t_overdue = None
 
         # ---- 阶段一：监视按钮状态 ----
         while not self._stop.is_set():
+            self._hb.beat()
             self._failsafe(failsafe)
             last_score, _ = match(to_gray(screen.grab(buy_px)), buy_tpl)
             frames += 1
@@ -530,7 +1166,14 @@ class Engine:
         else:
             raise Aborted("用户停止")
 
+        # ==== FEATURE-POOL:ATTEMPT BEGIN ====
+        # 列表/详情路线没有倒计时可反推挂牌时刻，只新开一次证据容器等 toast。
+        self._pooltrace.begin()
+        # ==== FEATURE-POOL:ATTEMPT END ====
         if self._fire_and_confirm(cfg, screen, mouse, confirm_tpl, buy_click, t_start):
+            # ==== FEATURE-GRADE:DETAIL AFTER-HIT BEGIN ====
+            self._grade_after_hit(cfg)
+            # ==== FEATURE-GRADE:DETAIL AFTER-HIT END ====
             self._set_state(DONE)
         else:
             # 没抢到也得落到终态。状态停在 FIRE，调度器那边会一直等
@@ -562,7 +1205,10 @@ class Engine:
             raise RuntimeError("倒计时模式需要先框选「购买」按钮区域")
         buy_click = self._center(screen, buy_region)
         tried = []
-        attempts = max(1, int(cfg.get("countdown_attempts") or COUNTDOWN_ATTEMPTS))
+        # F6：手改成 "abc"/inf 时旧写法 int() 直接抛异常打挂这一轮。
+        attempts = max(1, int(switches.read(
+            cfg, "countdown_attempts", COUNTDOWN_ATTEMPTS, "int", 0, 100,
+            key="countdown_attempts") or COUNTDOWN_ATTEMPTS))
         for attempt in range(1, attempts + 1):
             self._set_state(SCAN)
             target = self._countdown_prepare(cfg, screen, mouse, tried,
@@ -580,8 +1226,23 @@ class Engine:
             already = target.get("sec") == 0
             if already:
                 self._say("这件已经解锁了，直接买", "hit")
+            # ==== FEATURE-POOL:CLOCK BEGIN ====
+            # 本件尝试的证据从列表上第一次读到倒计时开始记：挂牌时刻只能
+            # 从「读到的时刻 − 那一刻的剩余秒」反推；读不到 clock 就留 null。
+            self._pooltrace.begin()
+            if not already and target.get("kind") == "unlock":
+                second = None
+                if target.get("seen2_ms") is not None:
+                    second = (target.get("seen2_ms"), target.get("seen2_s"),
+                              target.get("seen2_lag_s") or 0.0)
+                self._pooltrace.observe_clock(target.get("seen_ms"),
+                                              target.get("sec"),
+                                              target.get("seen_lag_s") or 0.0,
+                                              second=second)
+            # ==== FEATURE-POOL:CLOCK END ====
             try:
-                self._watch_countdown(cfg, screen, already_unlocked=already)
+                self._watch_countdown(cfg, screen, already_unlocked=already,
+                                      mouse=mouse, buy_click=buy_click)
             except Aborted as e:
                 if self._stop.is_set():
                     raise
@@ -590,10 +1251,16 @@ class Engine:
                 tried.append(self._tried_mark(target))
                 continue
             if self._fire_and_confirm(cfg, screen, mouse, confirm_tpl,
-                                      buy_click, t_start):
+                                      buy_click, t_start,
+                                      item=target.get("name") or ""):
                 # 倒计时路线成交也要累加「已抢 N 件」：以前只有列表路线写
                 # bought，面板上倒计时抢到永远显示 0（审查 S16）。
                 self._set(bought=int(self._stats.get("bought") or 0) + 1)
+                # ==== FEATURE-GRADE:COUNTDOWN AFTER-HIT BEGIN ====
+                # 成交后按品阶收口；scope=all 抛 Aborted，scope=grade 也到此为止
+                # （倒计时路线一件成交就是这一轮结束）。
+                self._grade_after_hit(cfg)
+                # ==== FEATURE-GRADE:COUNTDOWN AFTER-HIT END ====
                 self._set_state(DONE)
                 return
             tried.append(self._tried_mark(target))
@@ -670,12 +1337,70 @@ class Engine:
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台 —— 先手动点一下游戏窗口再开始")
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
-                        snap=screen.grab, log=self._say)
+                        snap=screen.grab, log=self._say, opts=cfg.get("market_entry"))
         page, _ = nav.where()
         target = self._target_skin(cfg)
         # 这一轮是不是已经「重新定位过」了。定位过一次就别再来一次 ——
         # 下面扫不到目标时还会兜底定位，重复跑等于把筛选流程走两遍。
         located = [False]
+
+        # ---- feature:scan.repeat BEGIN ----
+        # 每件独立抽「还刷不刷、刷几次」：倒计时路线一次 _countdown_prepare
+        # 就是一件。0/0 = 一次都不刷；抽到几次就最多刷几次，用尽即退出。
+        # 语义：刷新是重新排队/重新抽样，不是给同一件多一次中签机会。
+        self._set(refresh_route="countdown")
+        self._repeat_ctx = None
+        rep_used = 0
+        rep_last = [0.0]
+        try:
+            _rep_lo, _rep_hi = repeat.limits(cfg)
+            rep_budget = repeat.draw(_rep_lo, _rep_hi)
+        except repeat.RepeatConfigError as e:
+            rep_budget = 0
+            self._say(f"scan.repeat 区间倒挂（{e}）—— 本轮按 0 次刷新", "warn")
+        # 间隔走既有的「列表扫描间隔」，再压上硬下限，避免刷新点成连发
+        rep_gap = repeat.gap_floor(switches.get(cfg, "scan.interval"))
+
+        def repeat_refresh(why=""):
+            """按这一件的预算刷一次列表；预算用尽返回 False。
+
+            次数在**点刷新之前**扣：刷新抛错也算一次，不能白刷。两次刷新
+            之间至少隔 rep_gap 秒（硬下限）。间隔未到就等，等到用户按停为止。
+            """
+            nonlocal rep_used
+            # 买到即停（quota/stop_after_hit/用户按停）已经把 _stop 置位：
+            # 一次都不许再刷，预算和停止标志都不能绕过。
+            if self._stop.is_set() or rep_used >= rep_budget:
+                return False
+            if rep_used > 0:
+                wait = rep_gap - (time.perf_counter() - rep_last[0])
+                if wait > 0 and self._stop.wait(wait):
+                    return False
+            rep_used += 1
+            try:
+                nav.ons_refresh()
+            except Exception as e:                # noqa: BLE001
+                self._say(f"{why}刷新失败（第 {rep_used}/{rep_budget} 次，"
+                          f"仍计入次数）：{e}", "warn")
+            else:
+                self._say(f"{why}刷新（第 {rep_used}/{rep_budget} 次）")
+            rep_last[0] = time.perf_counter()
+            return True
+
+        def repeat_settle(text=""):
+            """记这一件的刷新用量：写进 status 的最近 30 条 + 留给成交台账。"""
+            self._repeat_ctx = {"refresh_budget": rep_budget,
+                                "refresh_used": rep_used}
+            with self._lock:
+                rc = self._stats.setdefault("refresh_counts", [])
+                rc.append({"item": str(text or "")[:80],
+                           "budget": int(rep_budget), "used": int(rep_used)})
+                del rc[:-30]
+            if rep_used:
+                self._say(f"这件刷新 {rep_used}/{rep_budget} 次"
+                          + ("（用尽，换下一件）" if rep_used >= rep_budget
+                             else ""))
+        # ---- feature:scan.repeat END ----
 
         def locate():
             """把界面筛到目标皮肤那一档，并点开它。
@@ -788,7 +1513,7 @@ class Engine:
                     except NavError as e:
                         self._say(f"排序没切成（不影响抢购）：{e}", "warn")
             if refresh:
-                nav.ons_refresh()
+                repeat_refresh("换件前")
             page_no = nav.ons_page()
             while page_no is not None and page_no > 1:
                 nav.ons_prev_page()
@@ -802,6 +1527,12 @@ class Engine:
         task = dict(cfg.get("active_task") or {})
         # 最短倒计时（秒）：比它短的直接跳过，0 = 不限制
         min_lead = float(switches.get(cfg, "countdown.min_lead") or 0)
+        # 来不及跳过的阈值（秒）：与 min_lead 并存，取更严格的那个。
+        # 手改配置写成脏值时这里显式失败，不静默套默认值继续跑。
+        try:
+            late_s = skip_late.threshold(cfg)
+        except skip_late.SkipLateConfigError as e:
+            raise Aborted(f"来不及跳过配置不合法：{e}")
 
         def sweep():
             """扫当前页，逐件点开读倒计时。返回 (候选, 跳过原因)。
@@ -820,6 +1551,19 @@ class Engine:
                 if not ok and why != "价格没读出来":
                     skips.append(why)
                     continue
+                # ==== FEATURE-GRADE:COUNTDOWN GATE BEGIN ====
+                # 点进详情页之前就按品阶闸门过一遍：已达标的档位连点都不点。
+                verdict, gk = self._grade_gate(cfg, row.get("text") or "")
+                if verdict == "abort":
+                    s = stop_grade.settings(cfg)
+                    counts = self._grade_counter().snapshot()
+                    text_g = stop_grade.detail(s, counts, [gk])
+                    self._mark_stop(cfg, "grade", text_g + "，整轮停止")
+                    raise Aborted(f"品阶达标：{text_g}，按设置整轮停止")
+                if verdict == "skip":
+                    skips.append(f"{stop_grade.CN[gk]} 已达目标件数")
+                    continue
+                # ==== FEATURE-GRADE:COUNTDOWN GATE END ====
                 # scan 给的 x0/cy 是浮点，SetCursorPos 只收整数，必须转
                 x = int(list_px[0] + max(row["x0"], 0) + 40)
                 y = int(list_px[1] + int(row["cy"]))
@@ -837,10 +1581,32 @@ class Engine:
                     if (lo and price < lo) or (hi and price > hi):
                         skips.append(f"弹窗价格 {price:.0f} 不在区间")
                         continue
+                # 倒计时读数与它对应的时刻必须成对取：挂牌反推用的是
+                # 「读到的这一刻 − 这一刻的剩余秒」，所以时间戳取 OCR 回来的
+                # 瞬间，误差只算这一小段 OCR 延迟（+1s 显示截断）。
+                t_clock = time.perf_counter()
                 words = self._ocr_clock(screen, clock_px)
+                clock_lag_s = time.perf_counter() - t_clock
+                clock_seen_ms = int(time.time() * 1000)
                 text = " ".join(w["text"] for w in words)
-                sec = countdown.parse_words(words)
-                kind = countdown.kind_words(words)
+                # ---- 来不及跳过：首读这一帧就判，来不及的直接不进场 ----
+                # 取数与判定都走 skip_late.judge_words()，列表直达路线共用
+                # 同一份实现，避免两条路线判得不一样。
+                verdict = skip_late.judge_words(late_s, words)
+                sec, kind = verdict["display_sec"], verdict["kind"]
+                if verdict["skip"]:
+                    entry = skip_late.stats_entry(
+                        text or f"row@{y}", verdict, sec, kind)
+                    with self._lock:
+                        lst = self._stats.setdefault("late_skips", [])
+                        lst.append(entry)
+                        del lst[:-30]
+                    skips.append(f"来不及：{verdict['reason']}")
+                    self._say(
+                        f"  价 {self._fmt(price)} · {text!r} —— 来不及"
+                        f"（{verdict['source']} {verdict['remaining_s']:.2f}s"
+                        f" < {late_s}s），跳过不进场", "warn")
+                    continue
                 # **倒计时太短的别买**：来不及把确认框弹出来，等到了也
                 # 多半被别人先买走，白耗一次尝试。0 秒是「已经解锁」，
                 # 不需要等，照买不误（那种经常 4 秒就成交）。
@@ -851,7 +1617,17 @@ class Engine:
                     continue
                 cands.append({"serial": None, "sec": sec,
                               "kind": kind, "text": text,
-                              "x": x, "y": y, "price": price})
+                              "x": x, "y": y, "price": price,
+                              # ==== FEATURE-POOL:SEEN BEGIN ====
+                              # 挂牌时刻反推的两个输入（读到的时刻 / 那刻剩余秒）
+                              "seen_ms": clock_seen_ms,
+                              "seen_lag_s": round(clock_lag_s, 3),
+                              # ==== FEATURE-POOL:SEEN END ====
+                              # ==== FEATURE-GRADE:NAME BEGIN ====
+                              # 卡面原文带上，成交后 _record 才能按品阶计数
+                              "name": row.get("text") or "",
+                              # ==== FEATURE-GRADE:NAME END ====
+                              })
                 self._say(f"  价 {self._fmt(price)} · {text!r} [{kind}]")
             return cands, skips
 
@@ -869,19 +1645,26 @@ class Engine:
                 raise Aborted(f"界面导航失败：{e}")
             cands, skips = scan_first_page()
             best = choose_countdown_target(cands, tried)
-        if best is None and not refresh:
-            # 一件都没挑到才补刷一次。用户定的「没抢到再去点刷新」——
-            # 每轮都刷会一直闪，刷新期间那件还可能正好解锁，刷完就错过了。
-            self._say("第一页没有「X分Y秒后解锁购买」，刷新再看一次", "warn")
-            nav.ons_refresh()
+        # ---- feature:scan.repeat BEGIN ----
+        while (best is None and not self._stop.is_set()
+               and repeat_refresh("第一页没有「X分Y秒后解锁购买」，")):
+            # 每件独立预算：抽到几次就最多刷几次；0/0 一次都不刷。
             cands, skips = sweep()
             best = choose_countdown_target(cands, tried)
+        # ---- feature:scan.repeat END ----
         if skips:
             # 一件都不合格时必须说清是价格读不出还是真超区间 —— 否则用户只
             # 看到「没有一件」，无从判断该改条件还是该修 OCR。
             self._say(f"跳过 {len(skips)} 行：" + "；".join(skips[:4])
                       + ("…" if len(skips) > 4 else ""))
         if best is None:
+            # ---- feature:scan.repeat BEGIN ----
+            # 预算用尽就明确进下一步（返回 None，由上层换任务/收工），不无限刷。
+            repeat_settle("")
+            if rep_budget and rep_used >= rep_budget:
+                self._say(f"每件刷新预算用尽（{rep_used}/{rep_budget}）"
+                          f"—— 不再刷，进入下一步", "warn")
+            # ---- feature:scan.repeat END ----
             self._say("没有一件是「X分Y秒后解锁购买」", "warn")
             return None
 
@@ -901,10 +1684,34 @@ class Engine:
             exclude.add(mark)
             best = choose_countdown_target(cands, exclude)
             if best is None:
+                # ---- feature:scan.repeat BEGIN ----
+                repeat_settle("")
                 self._say("剩下的都已经试过了", "warn")
+                # ---- feature:scan.repeat END ----
                 return None
         self._say(f"选中 {best['serial'] or '(编号未读出)'}，"
                   f"{best['sec']} 秒后解锁", "hit")
+        # ---- feature:scan.repeat BEGIN ----
+        repeat_settle(best.get("text") or "")
+        # ---- feature:scan.repeat END ----
+        # ==== FEATURE-POOL:CLOCK2 BEGIN ====
+        # 残影交叉校验：列表上第一次读到的倒计时可能是上一件留下的旧帧。
+        # 选中/读编号之后（~2–3s）再读一次，剩余秒的下降应该≈墙钟差；
+        # 对不上就在 pooltrace 里判无效（listed_at 写 null），不按正常值记账。
+        if (best.get("kind") == "unlock" and best.get("sec")
+                and 0 < int(best["sec"]) and best.get("seen_ms") is not None):
+            try:
+                t2 = time.perf_counter()
+                words2 = self._ocr_clock(screen, clock_px)
+                lag2 = time.perf_counter() - t2
+                v2 = skip_late.judge_words(late_s, words2)
+                if v2["kind"] == "unlock" and v2["display_sec"] is not None:
+                    best["seen2_ms"] = int(time.time() * 1000)
+                    best["seen2_s"] = int(v2["display_sec"])
+                    best["seen2_lag_s"] = round(lag2, 3)
+            except Exception:               # noqa: BLE001 二次读数失败就当没做
+                pass
+        # ==== FEATURE-POOL:CLOCK2 END ====
         return best
 
     def _bar_price(self, cfg, screen):
@@ -949,7 +1756,8 @@ class Engine:
         m = re.search(r"\d{6,}", ocr.read_text(big))
         return m.group(0) if m else ""
 
-    def _watch_countdown(self, cfg, screen, already_unlocked=False):
+    def _watch_countdown(self, cfg, screen, already_unlocked=False,
+                         mouse=None, buy_click=None):
         """循环读倒计时，归零即返回；界面切走或停更则中止。
 
         `already_unlocked`：进弹窗时列表上就写着「0分0秒后解锁购买」，
@@ -968,13 +1776,33 @@ class Engine:
             raise RuntimeError("倒计时模式需要先在界面上框选「倒计时」区域")
         px = screen.norm_to_px(expand(region, 0.1))
         cd = countdown.Clock()
+        # ==== FEATURE:telemetry BEGIN ====
+        # 本轮没有可信零点时，台账 offset_ms 必须写 null（0 会被当成完美卡点）。
+        self._zero_perf = None
+        self._zero_primed = False
+        # ==== FEATURE:telemetry END ====
+        # ---- feature:mouse.idle BEGIN ----
+        roam = getattr(self, "_roam", None)
+        if roam is not None:
+            roam.begin_attempt()
+        # ---- feature:mouse.idle END ----
         t_beat = time.perf_counter()
         t_boot = t_beat
         # 第一次认出这是哪一种倒计时后就不再改判：解锁瞬间文字会变成
         # 「剩余：2天23小时」，那时必须继续用公示期的估计开点。
         target_kind = None
+        # 边界调用（截图 / OCR）连续失败从什么时候开始。偶发失败不放弃，
+        # 持续失败才中止 —— 见 OCR_ERROR_ABORT_S 的说明。
+        grab_err_since = None
+        ocr_err_since = None
+        # ---- feature:mouse.human BEGIN ----
+        preheated = False
+        # 开火前的收尾短移只做一次（但不早于 due 前 tail_reserve）。
+        tail_closed = False
+        # ---- feature:mouse.human END ----
 
         while not self._stop.is_set():
+            self._hb.beat()
             self._failsafe(bool(cfg["failsafe"]))
             # **等倒计时的几十秒里也要盯着前台。** 这段时间用户切出去看别
             # 的东西、或者别的窗口抢了焦点，截图抓到的就是那个窗口 ——
@@ -983,7 +1811,25 @@ class Engine:
             if self._target_hwnd and Mouse.foreground() != self._target_hwnd:
                 if not Mouse.ensure_foreground(self._target_hwnd, screen=screen):
                     raise Aborted("游戏窗口抢不到前台 —— 别切走，或者手动点一下游戏")
-            crop = screen.grab(px)
+            t_frame = time.perf_counter()
+            try:
+                crop = screen.grab(px)
+            except Exception as e:                    # noqa: BLE001
+                # 截图驱动/显示器拔掉/显存耗尽都会在这里抛。抛出去会把整轮
+                # 任务炸掉；偶发失败先当作空帧继续盯，持续失败才放弃。
+                crop = None
+                if grab_err_since is None:
+                    grab_err_since = t_frame
+                    self._say(f"截图失败：{type(e).__name__}: {e}", "warn")
+                elif t_frame - grab_err_since >= GRAB_ERROR_ABORT_S:
+                    raise Aborted(f"连续 {GRAB_ERROR_ABORT_S:.0f} 秒抓不到画面"
+                                  "（截图驱动异常），这一轮放弃")
+                time.sleep(0.05)
+                continue
+            else:
+                if grab_err_since is not None:
+                    self._say("截图恢复", "info")
+                    grab_err_since = None
             if getattr(crop, "size", 0) == 0:
                 time.sleep(0.005)
                 continue
@@ -994,7 +1840,20 @@ class Engine:
                               "秒数 —— 检查框选区域是否只框住了"
                               "「剩余：X分Y秒」这行字")
             big = upscale(crop, 2)
-            words = ocr.read_words(big)
+            try:
+                words = ocr.read_words(big)
+            except Exception as e:                    # noqa: BLE001
+                words = []
+                if ocr_err_since is None:
+                    ocr_err_since = t_frame
+                    self._say(f"OCR 失败：{type(e).__name__}: {e}", "warn")
+                elif t_frame - ocr_err_since >= OCR_ERROR_ABORT_S:
+                    raise Aborted(f"连续 {OCR_ERROR_ABORT_S:.0f} 秒 OCR 都失败，"
+                                  "这一轮放弃（服务/驱动可能挂了）")
+            else:
+                if ocr_err_since is not None:
+                    self._say("OCR 恢复", "info")
+                    ocr_err_since = None
             sec = countdown.parse_words(words)
             k = countdown.kind_words(words)
             if target_kind is None and k is not None:
@@ -1024,12 +1883,78 @@ class Engine:
                 self._say(f"倒计时 {cd.info()['last']} 秒 · "
                           + ("预计归零 --" if left is None
                              else f"预计 {left:.2f}s 后归零"))
+            # ---- feature:mouse.idle BEGIN ----
+            # 放在 due 之前：一旦 remaining <= FIRE_LEAD_S + return_s，
+            # 这一帧先归位，再决定开点；归位后 _settled 会挡住后续移动。
+            if roam is not None:
+                roam.tick(now, cd)
+            # ---- feature:mouse.idle END ----
+            # ---- feature:mouse.human BEGIN ----
+            # 开火零位移：在 due 之前把光标预热到购买按钮上。
+            # 这里离真正开点还有 0.3~1s，足够走完一整条 move_ms 曲线；
+            # 开点那一刻只做 down/up，不再花时间移动光标。
+            if mouse is not None and buy_click and not preheated:
+                left_now = cd.remaining(now)
+                move_s = 0.0
+                trj = getattr(self, "_traj", None)
+                try:
+                    move_s = float(trj.spec.get("move_ms") or 0) / 1000.0
+                except (AttributeError, TypeError, ValueError):
+                    move_s = 0.0
+                if left_now is not None \
+                        and left_now <= FIRE_LEAD_S + max(0.30, move_s + 0.12):
+                    pre = getattr(mouse, "preheat", None)
+                    if pre is not None:
+                        try:
+                            ready = pre(*buy_click)
+                        except Exception as e:               # noqa: BLE001
+                            ready = False
+                            self._say(f"拟人轨迹：预热失败 {type(e).__name__}: "
+                                      f"{e}；开火按瞬时直线落点", "warn")
+                        if ready:
+                            self._say("拟人轨迹：光标已预热到购买按钮，"
+                                      "开火瞬间零位移", "info")
+                    preheated = True
+            # 按钮在预热后被列表刷新移位：在 due 之前用 8~20ms 短移补回，
+            # 开火点击仍是零位移。放在开火瞬间做就会把按下时刻拖后，
+            # 所以宁可提前到 due 前 tail_reserve_s 这一小段。
+            if mouse is not None and buy_click and not tail_closed:
+                try:
+                    reserve = float(mouse.tail_reserve_s())
+                except Exception:                            # noqa: BLE001
+                    reserve = 0.0
+                if reserve > 0.0:
+                    left_tail = cd.remaining(now)
+                    # 留 20ms 余量：OCR 一帧可能吃掉几十毫秒，卡在最后一帧
+                    # 才收尾会来不及，短移就会被拖到开火之后。
+                    if left_tail is not None \
+                            and left_tail <= FIRE_LEAD_S + reserve + 0.020:
+                        try:
+                            moved = mouse.close_tail(*buy_click)
+                        except Exception as e:               # noqa: BLE001
+                            moved = False
+                            self._say(f"拟人轨迹：收尾短移失败 "
+                                      f"{type(e).__name__}: {e}", "warn")
+                        if moved:
+                            self._say("拟人轨迹：按钮移位，已在开火前用短移补回"
+                                      "（按下时刻不变）", "info")
+                        tail_closed = True
+            # ---- feature:mouse.human END ----
             if cd.due(now, FIRE_LEAD_S):
                 left = cd.remaining(now) or 0.0
+                # ==== FEATURE:telemetry BEGIN ====
+                z = cd.zero_at()
+                if z is not None:
+                    self._zero_perf = z
+                    self._zero_primed = True
+                # ==== FEATURE:telemetry END ====
                 self._say(f"开点（距归零还有 {left * 1000:.0f}ms），"
                           f"接着连点到弹窗出现", "hit")
                 return
-            if cd.is_stale(now):
+            # OCR 自己连续失败时，读数不动不是「界面切走」，别报那句
+            # 「倒计时停了，界面可能已经切走」的误导文案 —— 交给上面
+            # 的 OCR 熔断说清原因（6 秒都失败 = 服务/驱动挂了）。
+            if ocr_err_since is None and cd.is_stale(now):
                 raise Aborted(f"显示值 {cd.info()['last']} 秒已经 "
                               f"{countdown.STALE_S:.1f} 秒没再跳 —— "
                               "倒计时停了，界面可能已经切走或被买走")
@@ -1050,7 +1975,7 @@ class Engine:
         大量无关卡片。现在导航到位后直接设区间，让游戏自己过滤。
         """
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
-                        snap=screen.grab, log=self._say)
+                        snap=screen.grab, log=self._say, opts=cfg.get("market_entry"))
         # **先把游戏抢到前台**。list 模式以前少了这一步：用户点完「开始抢购」
         # 控制台自己在前台，F4 就发给了控制台（日志「F4 打开市场 变化 5.4%
         # （无响应）」），接着 OCR 抓到的全是控制台画面，页面一直 unknown，
@@ -1154,47 +2079,95 @@ class Engine:
                           " —— 输入没进去，先手动确认筛选面板能正常输入")
         self._say(f"  价格区间：{g_lo or ''}~{g_hi or ''}", "hit")
 
-    def _ons_ready(self, cfg, screen, mouse, nav=None):
-        """把在售列表带到「不显示公示期 + 任务的价格/材质筛选」，并刷新一次。
+    def _count_list_rows(self, screen, cfg):
+        """数一屏在售列表条数（给「筛前/筛后」留证据）。读不出返回 -1。"""
+        try:
+            list_px = screen.norm_to_px(cfg.region("list"))
+            return len(market.scan(screen.grab(list_px)) or [])
+        except Exception:                      # noqa: BLE001
+            return -1
 
-        为什么排除公示期：公示期那批商品到解锁那一刻基本已经被抢光（真机
-        实测：归零后按钮确实变可点，但货早没了），盯着它们纯属浪费时间。
-        只抢已经能买的。
+    def _public_strict(self, cfg):
+        """公示期是否严格模式（只显示公示期）。默认严格。"""
+        try:
+            f = cfg.get("filters") or {}
+            if isinstance(f, dict):
+                v = str(f.get("public_period") or "only").strip().lower()
+                return v not in ("any", "all", "off", "loose")
+        except Exception:                      # noqa: BLE001
+            pass
+        return True
+
+    def _public_fallback(self, cfg):
+        """筛后 0 条时是否允许退回「不限」。默认 False（不许蒙混）。"""
+        try:
+            f = cfg.get("filters") or {}
+            return bool(f.get("public_fallback")) if isinstance(f, dict) else False
+        except Exception:                      # noqa: BLE001
+            return False
+
+    def _ons_public_gate(self, cfg, screen, nav, before):
+        """公示期筛选闸门：严格模式 + 「筛后 0 条」做成明确状态。
+
+        - 筛前/筛后条数都写进日志，作为「无货」的证据；
+        - 严格模式下 0 条不自动放宽，置 `state_code=no_public_stock` 并中止；
+        - 只有 `filters.public_fallback=true`（默认关）才退回「不限公示期」。
+        """
+        strict = self._public_strict(cfg)
+        want = "只显示公示期" if strict else "不显示公示期"
+        nav.pub_filter(want)
+        nav.ons_refresh()
+        after = self._count_list_rows(screen, cfg)
+        name = str((dict(cfg.get("active_task") or {})).get("name") or "").strip()
+        if strict and after == 0:
+            self._say(f"公示期无货：{name or '当前商品'}"
+                      f"（筛前 {before} 条 → 筛后 {after} 条）", "warn")
+            self._set(state_code="no_public_stock")
+            if self._public_fallback(cfg):
+                self._say("filters.public_fallback=true → 退回「不限公示期」继续",
+                          "warn")
+                nav.pub_filter("不限公示期")
+                nav.ons_refresh()
+                return
+            raise Aborted(f"公示期无货：{name or '当前商品'}"
+                          f"（筛前 {before} 条 → 筛后 0 条）；"
+                          "不自动退回「不限」，换货或把 filters.public_fallback "
+                          "打开再跑")
+        self._say(f"公示期筛选：{want}｜筛前 {before} 条 → 筛后 {after} 条")
+
+    def _ons_ready(self, cfg, screen, mouse, nav=None):
+        """把在售列表带到「只显示公示期 + 任务的价格/材质筛选」，并刷新一次。
+
+        公示期筛选是**严格模式**：筛后 0 条记「公示期无货：<皮肤名>」，置
+        `state_code=no_public_stock` 并中止，绝不自动退回「不限」；只有
+        `filters.public_fallback=true`（默认关）才允许放宽。
 
         切完筛选必须刷新 —— 改筛选不会重排已经加载的卡片，旧卡片还带着旧
         状态。
 
         `nav`：`_navigate` 已经导航+筛过时传进来（同一个 Navigator 只能用
-        一次就重建）。那种情况下只补「不显示公示期」和刷新，**不再重设
+        一次就重建）。那种情况下只补公示期闸门和刷新，**不再重设
         价格筛选** —— 那一步逐位敲输入框，实测 18 秒。
         """
         if nav is not None:
-            self._say("列表模式只买已解锁的货（公示期那批解锁时基本已被抢光）；"
-                      "要抢公示期解锁，把「抢购路线」改成「公示期倒计时」", "info")
-            nav.pub_filter("不显示公示期")
-            nav.ons_refresh()
+            before = self._count_list_rows(screen, cfg)
+            self._ons_public_gate(cfg, screen, nav, before)
             return nav
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台 —— 先手动点一下游戏窗口再开始")
         nav = Navigator(screen, mouse, Keyboard(self._target_hwnd, mode=getattr(self, "_input_mode", "interception")),
-                        snap=screen.grab, log=self._say)
+                        snap=screen.grab, log=self._say, opts=cfg.get("market_entry"))
         page = nav.where()[0]
         if page != "onsale":
             # 「推荐」页顶部也有在售/推荐标签，判据分得开，但站错页时先切回来
             self._say(f"当前是 {page} 页，切到「在售」")
             if not nav.to_onsale():
                 raise Aborted("切不到「在售」页 —— 先手动切过去再开始")
-        # 列表模式**只买已经解锁的**，所以这里固定切「不显示公示期」——
-        # 这是模式语义，不是漏读开关（真机实测：公示期那批到解锁那一刻基本
-        # 已经被抢光，盯着它们纯属浪费时间）。
-        # 界面上那个「公示期筛选」开关只对**倒计时路线**生效；想盯公示期
-        # 解锁购买，请把「抢购路线」改成「公示期倒计时」。
-        # 这里必须说一句，否则用户会以为开关没生效（真机上就是这么误解的）。
-        self._say("列表模式只买已解锁的货（公示期那批解锁时基本已被抢光）；"
-                  "要抢公示期解锁，把「抢购路线」改成「公示期倒计时」", "info")
-        nav.pub_filter("不显示公示期")
+        # 公示期筛选走严格模式（只显示公示期），筛后 0 条 = 明确的无货状态，
+        # 不自动退回「不限」；放宽只能显式打开 filters.public_fallback。
         self._apply_price_filter(nav, cfg)     # 价格/材质/颜色/分类
-        nav.ons_refresh()
+        before = self._count_list_rows(screen, cfg)
+        self._ons_public_gate(cfg, screen, nav, before)
         return nav
 
     def _execute_list(self, cfg, screen, mouse, confirm_tpl, nav=None):
@@ -1209,12 +2182,39 @@ class Engine:
         列表一动不动，就再也换不到下一件。
         """
         list_px = screen.norm_to_px(cfg.region("list"))
-        threshold = float(cfg["threshold"])
-        scan_interval = float(cfg.get("list_scan_interval", 0.05))
-        scan_timeout = float(cfg.get("list_scan_timeout", 0))
-        detail_timeout = float(cfg.get("list_detail_timeout", 3.0))
-        max_tries = int(cfg.get("list_max_tries", 20))
+        # ==== FEATURE:telemetry BEGIN ====
+        # 列表路线同样没有倒计时零点，进轮清空，绝不跨轮复用。
+        self._zero_perf = None
+        self._zero_primed = False
+        # ==== FEATURE:telemetry END ====
+        # ---- feature:scan.repeat BEGIN ----
+        # 列表路线按**页**刷新（一页试完刷一次），不是按件。scan.repeat 只在
+        # 倒计时路线生效；这里把路线写进状态并在日志里说一句，避免用户以为
+        # 改了控件没反应。
+        self._set(refresh_route="list")
+        self._repeat_ctx = None
+        self._say("列表路线按页刷新：每件随机刷新次数（scan.repeat）不生效")
+        # ---- feature:scan.repeat END ----
+        # F6：这些数值以前直接 float()/int() 读配置，手改成 NaN/Inf/负数
+        # 会让 sleep 抛错或 max_tries 变成负数。统一走带校验的读取入口。
+        threshold = switches.get(cfg, "fire.threshold")
+        scan_interval = switches.get(cfg, "scan.interval")
+        scan_timeout = switches.get(cfg, "scan.timeout")
+        detail_timeout = switches.get(cfg, "scan.detail_timeout")
+        max_tries = switches.get(cfg, "scan.max_tries")
         failsafe = bool(cfg["failsafe"])
+
+        # 来不及跳过：列表直达路线（用户/自愈流程直接落到列表页）也要生效。
+        # 判定与倒计时路线共用 skip_late.judge_words，不另写一份。
+        try:
+            late_s = skip_late.threshold(cfg)
+        except skip_late.SkipLateConfigError as e:
+            raise Aborted(f"来不及跳过配置不合法：{e}")
+        # 没有倒计时区域就没有「离解锁还剩多久」可读，这条路线不判定
+        # （硬判会把在售剩余时间当解锁时间，反而乱跳）。
+        clock_region = cfg.region("clock")
+        clock_px = (screen.norm_to_px(expand(clock_region, 0.1))
+                    if clock_region else None)
 
         t_start = time.perf_counter()
         t_report = t_start
@@ -1242,6 +2242,7 @@ class Engine:
         self._say(f"列表区域 {list_px[2]}x{list_px[3]} · 条件：{self._describe(task)}")
 
         while not self._stop.is_set():
+            self._hb.beat()
             self._failsafe(failsafe)
             # **每一轮都确认游戏还在前台**。截图抓的是整块屏幕，游戏一旦被
             # 别的窗口盖住（用户切出去看控制台/浏览器，或者别的程序抢焦点），
@@ -1313,6 +2314,26 @@ class Engine:
                         if r.get("price") is not None
                         and spent + r["price"] <= budget]
                 if fresh and not left:
+                    # ==== FEATURE-GRADE:BUDGET BEGIN ====
+                    detail = f"预算用尽（已花 {spent:.0f} / 预算 {budget:.0f}）"
+                    self._mark_stop(cfg, "budget", detail, say=False)
+                    try:
+                        if switches.get(cfg, "env.record"):
+                            budget_extra = {"stop_reason": "budget",
+                                            "stop_detail": detail}
+                            # 总开关关掉时台账里不带品阶字段（本功能完全不参与）
+                            if stop_grade.enabled(stop_grade.settings(cfg)):
+                                budget_extra["grade_counts"] = \
+                                    self._grade_counter().snapshot()
+                            records.add(
+                                name=task.get("name") or "预算停止", price=None,
+                                result="over_budget",
+                                mode=(task.get("mode") or getattr(self, "_mode", "")
+                                      or task.get("workflow") or ""),
+                                quota=quota, extra=budget_extra)
+                    except Exception:      # noqa: BLE001 - 记不下也不能挡住收尾
+                        pass
+                    # ==== FEATURE-GRADE:BUDGET END ====
                     self._say(f"剩下的都超预算（已花 {spent:.0f} / 预算 {budget:.0f}），"
                               f"结束", "warn")
                     break
@@ -1345,6 +2366,21 @@ class Engine:
                 time.sleep(scan_interval)
                 continue
 
+            # ==== FEATURE-GRADE:GATE BEGIN ====
+            # 每次尝试前按当前计数过闸门：scope=all 直接整轮停，scope=grade 只跳这一档。
+            verdict, gk = self._grade_gate(cfg, row.get("text") or "")
+            if verdict == "abort":
+                s = stop_grade.settings(cfg)
+                counts = self._grade_counter().snapshot()
+                text = stop_grade.detail(s, counts, [gk])
+                self._mark_stop(cfg, "grade", text + "，再次开抢前整轮停止")
+                raise Aborted(f"品阶达标：{text}，按设置整轮停止")
+            if verdict == "skip":
+                tried.add((round(row["x0"]), round(row["y0"])))
+                self._say(f"{stop_grade.CN[gk]} 已达目标件数，跳过「"
+                          f"{(row.get('text') or '')[:30]}」，其余品阶继续", "info")
+                continue
+            # ==== FEATURE-GRADE:GATE END ====
             tries += 1
             self._say(f"候选：「{row['text'][:50]}」 价格 {self._fmt(row['price'])} · {why}", "hit")
             tried.add((round(row["x0"]), round(row["y0"])))
@@ -1355,7 +2391,66 @@ class Engine:
             target_y = int(list_px[1] + int(row["cy"]))
 
             self._set_state(WATCH)
+            if self._dry:
+                # 卡片的 bbox 就是这一行在屏幕上的矩形；落点必须落在里面。
+                self._dry_note_point(
+                    screen, "list_card", target_x, target_y,
+                    bbox=(int(list_px[0] + row["x0"]), int(list_px[1] + row["y0"]),
+                          int(list_px[0] + row["x1"]), int(list_px[1] + row["y1"])))
             self._click(mouse, target_x, target_y)
+
+            # 来不及跳过：点进详情后首读这一帧就判。走列表直达路线时以前没有
+            # 这道闸，同一件明明来不及也会硬进场 —— 两条路径一个跳一个不跳，
+            # 真机上就是「有时候跳有时候不跳」。
+            list_clock = None
+            if clock_px is not None and late_s > 0:
+                # 先让详情面板渲染出来，读到的才是它的钟，不是列表残留。
+                time.sleep(min(0.55, detail_timeout))
+                t_clock = time.perf_counter()
+                words = self._ocr_clock(screen, clock_px)
+                clock_lag_s = time.perf_counter() - t_clock
+                clock_seen_ms = int(time.time() * 1000)
+                reading = " ".join(w["text"] for w in words)
+                verdict = skip_late.judge_words(late_s, words)
+                if verdict["kind"] == "unlock" and verdict["display_sec"]:
+                    # 详情页读到的是「X分Y秒后解锁购买」才反推挂牌时刻；
+                    # 「剩余：X天」是上架剩余，不是解锁倒计时，不进公式。
+                    # 读数前有 0.55s 面板渲染等待（残影防护），这段也是误差来源，
+                    # 必须算进 ±：否则 listed_at 会显得比实际更准。
+                    panel_wait = min(0.55, detail_timeout)
+                    # 残影防护（复核第二轮第 8 条）：列表直达路线也要二次读数，
+                    # 只把 0.55s 面板等待并进误差是不够的 —— 残影会让两次读数
+                    # 的剩余秒差不等于墙钟差，`derive_listed` 据此判无效。
+                    second = None
+                    try:
+                        time.sleep(0.12)
+                        t2 = time.perf_counter()
+                        words2 = self._ocr_clock(screen, clock_px)
+                        lag2 = time.perf_counter() - t2
+                        v2 = skip_late.judge_words(late_s, words2)
+                        if v2["kind"] == "unlock" and v2["display_sec"]:
+                            second = (int(time.time() * 1000), v2["display_sec"],
+                                      round(lag2 + panel_wait, 3))
+                    except Exception:                  # noqa: BLE001 二次读数失败按单次
+                        second = None
+                    list_clock = (clock_seen_ms, verdict["display_sec"],
+                                  round(clock_lag_s + panel_wait, 3), second)
+                if verdict["skip"]:
+                    sec, kind = verdict["display_sec"], verdict["kind"]
+                    entry = skip_late.stats_entry(
+                        row.get("text") or reading, verdict, sec, kind)
+                    with self._lock:
+                        lst = self._stats.setdefault("late_skips", [])
+                        lst.append(entry)
+                        del lst[:-30]
+                    # 不入账：这次根本没进场，不算一次尝试，也不记失败。
+                    tries -= 1
+                    self._say(
+                        f"  「{(row.get('text') or '')[:30]}」 —— 来不及"
+                        f"（{verdict['source']} {verdict['remaining_s']:.2f}s"
+                        f" < {late_s}s），跳过不进场", "warn")
+                    self._set_state(SCAN)
+                    continue
 
             # 点进详情页后购买按钮应当立刻可点（东西本来就在卖）。
             # 给它 detail_timeout 秒；没等到就退回列表换下一条。
@@ -1398,6 +2493,11 @@ class Engine:
             if switches.get(cfg, "follow.before_buy"):
                 self._follow(nav, cfg, True)
             buy_click = self._center(screen, cfg.region("buy"))
+            # ==== FEATURE-POOL:ATTEMPT BEGIN ====
+            self._pooltrace.begin()
+            if list_clock:
+                self._pooltrace.observe_clock(*list_clock)
+            # ==== FEATURE-POOL:ATTEMPT END ====
             if self._fire_and_confirm(cfg, screen, mouse, confirm_tpl, buy_click, t_start,
                                       item=row.get("text") or "", price=row.get("price")):
                 self._fails_in_row = 0
@@ -1410,7 +2510,14 @@ class Engine:
                     # 已经买到的没必要还留在「我的关注」里，下次扫列表还得
                     # 再看它一遍
                     self._follow(nav, cfg, False)
+                # ==== FEATURE-GRADE:AFTER-HIT BEGIN ====
+                # 成交入账后按品阶收口：scope=all 抛 Aborted，scope=grade 只放掉该档。
+                self._grade_after_hit(cfg)
+                # ==== FEATURE-GRADE:AFTER-HIT END ====
                 if bought >= quota:
+                    # ==== FEATURE-GRADE:QUOTA BEGIN ====
+                    self._mark_stop(cfg, "quota", f"总量达标（已抢 {bought}/{quota} 件）")
+                    # ==== FEATURE-GRADE:QUOTA END ====
                     self._set_state(DONE)
                     return
                 # 没抢够：回列表从头再来（列表已经变了，重新扫）
@@ -1422,7 +2529,7 @@ class Engine:
             # 连续失败计数：界面改版/被风控/挂单全是别人的，都会表现为
             # 「一直没抢到」。连败到阈值就停，别让它空转到天亮。
             self._fails_in_row += 1
-            limit = int(cfg.get("stop_after_fails") or 0)
+            limit = switches.get(cfg, "stop.on_fail")
             if limit and self._fails_in_row >= limit:
                 raise Aborted(f"连续 {self._fails_in_row} 次没抢到，"
                               f"按设置停下（stop_after_fails={limit}）")
@@ -1500,10 +2607,37 @@ class Engine:
         big = upscale(crop, 2)
         return "不足" in ocr.read_text(big)
 
+    def _calibrate_confirm_once(self, cfg, screen):
+        """确认弹窗第一次出现时现场标定一次（本次运行只做一次）。
+
+        启动阶段不碰 confirm：弹窗不在画面里，模板分只有 0.2x，拿它当启动
+        锚点等于每轮必 fallback。这里等弹窗真的出现了再标，命中就把 ROI
+        写进配置缓存，下一次直接读。失败不拦流程，沿用原坐标。
+        """
+        if self._confirm_calibrated:
+            return None
+        self._confirm_calibrated = True
+        t0 = time.perf_counter()
+        try:
+            from . import autocalib as _autocalib
+            res = _autocalib.calibrate_confirm(cfg, screen.grab(),
+                                               size=screen.size)
+        except Exception as e:                       # noqa: BLE001
+            self._say(f"确认区现场标定跳过（{type(e).__name__}: {e}）", "warn")
+            return None
+        ms = (time.perf_counter() - t0) * 1000.0
+        if not res.get("ok"):
+            level = "info" if res.get("manual") else "warn"
+            self._say(f"确认区现场标定未采用（{res.get('msg')}，"
+                      f"{ms:.0f}ms）；本次沿用原确认坐标", level)
+            return None
+        self._say(f"{res['msg']}（{ms:.0f}ms）", "hit")
+        return res
+
     def _fire_and_confirm(self, cfg, screen, mouse, confirm_tpl, buy_click, t_start,
                           item="", price=None):
         """点购买直到弹窗出现，再点确认。返回是否成功。"""
-        threshold = float(cfg["threshold"])
+        threshold = switches.get(cfg, "fire.threshold")
         confirm_region = cfg.region("confirm")
 
         # 半自动：定位、筛选、进详情都做了，就是不点最后那一下 —— 留给用户
@@ -1512,6 +2646,13 @@ class Engine:
             self._say("半自动：已停在购买按钮前 —— 请在游戏里自己点这一下",
                       "warn")
             raise Aborted("半自动模式，已就位，未点击")
+        self._attempt_no += 1
+
+        if self._dry:
+            # 影子开火：真实定位完坐标，只记事件；不点、不数成交。
+            self._dry_note_fire(cfg, screen, buy_click)
+            self._say("dry-run：记录开火落点，不注入（本次不计成交）", "warn")
+            return False
 
         if confirm_region is None:
             # 没有框「确认」= 这版界面没有确认弹窗，点价格按钮直接成交。
@@ -1524,10 +2665,10 @@ class Engine:
 
         confirm_px = screen.norm_to_px(expand(confirm_region, 0.25))
         confirm_click = self._center(screen, confirm_region)
-        interval = 1.0 / max(1, int(cfg["click_hz"]))
-        fire_timeout = float(cfg["fire_timeout_s"])
-        confirm_clicks = max(1, int(cfg["confirm_clicks"]))
-        confirm_gap = max(0.0, float(cfg["confirm_interval_ms"]) / 1000.0)
+        interval = 1.0 / max(1, switches.get(cfg, "fire.hz"))
+        fire_timeout = switches.get(cfg, "fire.timeout")
+        confirm_clicks = max(1, switches.get(cfg, "fire.confirm_clicks"))
+        confirm_gap = max(0.0, switches.get(cfg, "fire.confirm_gap") / 1000.0)
         failsafe = bool(cfg["failsafe"])
 
         # ---- 开点前的那点延迟 ----
@@ -1535,17 +2676,65 @@ class Engine:
         # fire_delay_ms 是固定的那一段；fire_jitter_ms 是额外随机量（避免每轮
         # 节奏完全一样）；fire_adaptive 按上一轮实测的「点下去→弹窗出现」
         # 耗时反推该提前还是推后（最多只吃掉一半，防止来回震荡）。
-        delay = max(0.0, float(cfg.get("fire_delay_ms", 0)) / 1000.0)
+        delay = max(0.0, switches.get(cfg, "fire.delay") / 1000.0)
         adaptive = bool(switches.get(cfg, "fire.adaptive"))
         if adaptive and self._fire_lag > 0:
             delay = max(0.0, delay - self._fire_lag * 0.5)
-        jitter = max(0.0, float(cfg.get("fire_jitter_ms", 0)) / 1000.0)
+        jitter = max(0.0, switches.get(cfg, "fire.jitter") / 1000.0)
         if jitter:
             delay += random.uniform(0, jitter)
-        if delay > 0.0005:
-            self._say(f"开点前等 {delay * 1000:.0f}ms"
-                      + ("（含自适应）" if adaptive and self._fire_lag else ""), "info")
-            time.sleep(delay)
+        # ---- feature:mouse.human BEGIN ----
+        # 预热：把光标在提前量窗口内走到购买按钮，开火只做 down/up。
+        # budget_s=delay 是关键 —— 提前量不够就不硬走，避免 120ms 轨迹
+        # 直接盖掉卡点。预热花掉的时间从 delay 里扣，开火绝对时刻不变。
+        pre = getattr(mouse, "preheat", None)
+        tail_s = 0.0
+        if pre is not None:
+            t_pre = time.perf_counter()
+            try:
+                ready = pre(*buy_click, budget_s=delay)
+            except TypeError:
+                ready = pre(*buy_click)
+            except Exception as e:                           # noqa: BLE001
+                ready = False
+                self._say(f"拟人轨迹：预热失败 {type(e).__name__}: {e}；"
+                          "开火按瞬时直线落点", "warn")
+            spent = time.perf_counter() - t_pre
+            if delay > 0.0005:
+                delay = max(0.0, delay - spent)
+            # 分段预热会预留 8~20ms 收尾窗口：从等待里扣掉，按下时刻不变。
+            # 只有拿到绝对截止时刻（_fire_deadline）才能扣 —— 倒计时路线的
+            # 收尾是 close_tail 在 due 之前做的，扣掉等待会让按下提前。
+            reserve = getattr(mouse, "tail_reserve_s", None)
+            if reserve is not None \
+                    and getattr(mouse, "_fire_deadline", None) is not None:
+                try:
+                    tail_s = max(0.0, float(reserve() or 0.0))
+                except Exception:                            # noqa: BLE001
+                    tail_s = 0.0
+            if ready:
+                seg = bool((getattr(mouse, "_last_path", None) or {})
+                           .get("segment"))
+                if seg:
+                    self._say(f"拟人轨迹：分段预热完成（{spent * 1000:.1f}ms），"
+                              f"停在按钮前，开火前用 {tail_s * 1000:.0f}ms "
+                              "短移收尾（按下时刻不变）", "info")
+                else:
+                    self._say(f"拟人轨迹：预热完成（{spent * 1000:.1f}ms），"
+                              f"距开火还有 {delay * 1000:.0f}ms，"
+                              "开火瞬间零位移", "info")
+            elif pre is not None:
+                self._say("拟人轨迹：本次开火存在瞬移特征（预热塞不进提前量，"
+                          "已计入 stats.trajectory.fire.degrade）", "warn")
+        # ---- feature:mouse.human END ----
+        sleep_for = max(0.0, delay - tail_s)
+        if sleep_for > 0.0005:
+            self._say(f"开点前等 {sleep_for * 1000:.0f}ms"
+                      + (f"（含尾部预留 {tail_s * 1000:.0f}ms）" if tail_s else "")
+                      + ("（含自适应）"
+                         if ((adaptive and self._fire_lag) and not tail_s) else ""),
+                      "info")
+            time.sleep(sleep_for)
 
         # ---- 点购买，边点边等弹窗 ----
         self._set_state(FIRE)
@@ -1556,13 +2745,96 @@ class Engine:
         if switches.get(cfg, "env.foreground") and not mouse.ensure_foreground(
                 self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台，没法开点")
+        # ---- feature:mouse.human BEGIN ----
+        # 标记卡点第一击：把「卡点降级率」和「连点降级数」拆开统计。
+        try:
+            setattr(mouse, "_fire_first", True)
+        except Exception:                                    # noqa: BLE001
+            pass
+        # ---- feature:mouse.human END ----
         got_confirm = False
-        while time.perf_counter() - t_fire < fire_timeout:
+        # ==== FEATURE:telemetry BEGIN ====
+        # 本 attempt 的「第一下点击」时刻：没点过就保持 None，台账写 null。
+        # 零点只认紧挨着这次开火、由 _watch_countdown 反推出来的那个；
+        # 其它路线（详情/列表）没有倒计时零点，一律清空，绝不拿上一轮的零点。
+        if not getattr(self, "_zero_primed", False):
+            self._zero_perf = None
+        self._zero_primed = False
+        self._click_perf = None
+
+        def _click_buy(hold=None):
+            if self._click_perf is None:
+                self._click_perf = time.perf_counter()
+            # 连点阶段会把「按住多久」传进来；普通开火不传，保持原调用形态
+            if hold is None:
+                return self._click_fire(mouse, *buy_click)
+            return self._click_fire(mouse, *buy_click, hold=hold)
+        # ==== FEATURE:telemetry END ====
+        # ==== FEATURE:click.burst BEGIN ====
+        # 连点参数（click.burst.*）：抽签模型下只缩短「没中之后再次进池」的
+        # 等待，不提高单次中签概率。append = 完全保持下面的 click_hz 节奏，
+        # 本组参数一下都不多点；burst = 开点瞬间按「每次按住 hold_ms、两次
+        # 之间隔 interval_ms」反复点，window 用尽、或确认弹窗出现，立刻回到
+        # 原来的 click_hz 节奏。
+        # 点击只走 self._click → Mouse.click（三通道 / 零位移通道），
+        # 不另起注入，也不绕过游戏自己的排队。
+        burst_plan = click_burst.begin(cfg, say=self._say)
+        if burst_plan and not got_confirm:
+            rep = click_burst.run(
+                burst_plan, t_fire=t_fire, fire_timeout=fire_timeout,
+                click=_click_buy,
+                dialog=lambda: match(to_gray(screen.grab(confirm_px)),
+                                     confirm_tpl)[0] >= threshold,
+                stop=self._stop.is_set,
+                guard=lambda: self._failsafe(failsafe),
+                beat=self._hb.beat,
+            )
+            clicks += int(rep.get("clicks") or 0)
+            self._set(clicks=clicks, burst=rep)
+            if rep.get("stopped_by") == "dialog":
+                self._fire_lag = time.perf_counter() - t_fire
+                self._say(f"连点阶段确认弹窗出现，共 {clicks} 次 / "
+                          f"{self._fire_lag:.2f}s", "hit")
+                got_confirm = True
+        # ==== FEATURE:click.burst END ====
+        # ---- 失活自愈（开火阶段，引擎级） ----
+        # 3 秒内一次确认弹窗都没出现，且上一击「已受理但落地不可观测」，
+        # 才判定游戏丢了操作状态：提示 → 停 3 秒 → 自动重试 1 次（沿用同一
+        # 注入方式）→ 第二个 3 秒窗口仍无弹窗就停，报「请手动点击…重新开始」。
+        # 停的 3 秒不计入开火窗口（fire_timeout 顺延），否则判定还没做完就超时。
+        dead_checked = False
+        dead_retry_deadline = None
+        while not got_confirm and time.perf_counter() - t_fire < fire_timeout:
+            self._hb.beat()
             t_iter = time.perf_counter()
             if self._stop.is_set():
                 raise Aborted("用户停止")
+            if dead_retry_deadline is not None \
+                    and time.perf_counter() >= dead_retry_deadline:
+                blind, last = self._input_lost(mouse)
+                dead_retry_deadline = None
+                if blind:
+                    raise Aborted("请手动点击游戏画面后重新开始")
+            if not dead_checked and time.perf_counter() - t_fire >= 3.0:
+                dead_checked = True
+                blind, last = self._input_lost(mouse)
+                if blind:
+                    self._notify_idle_input("开火", last)
+                    self._say("暂停 3 秒等用户点一下游戏画面；随后自动重试 1 次"
+                              "（不换注入方式）", "warn")
+                    time.sleep(3.0)
+                    fire_timeout += 3.0
+                    cscore, _ = match(to_gray(screen.grab(confirm_px)),
+                                      confirm_tpl)
+                    if cscore >= threshold:
+                        self._fire_lag = time.perf_counter() - t_fire
+                        self._say(f"失活暂停期间确认弹窗已出现"
+                                  f"（相关度 {cscore:.3f}）", "hit")
+                        got_confirm = True
+                        break
+                    dead_retry_deadline = time.perf_counter() + 3.0
             self._failsafe(failsafe)
-            self._click(mouse, *buy_click)
+            _click_buy()
             clicks += 1
             self._set(clicks=clicks)
             # 钱不够时弹的是「三角币不足」，右边那个按钮是「充值」。
@@ -1599,10 +2871,78 @@ class Engine:
                 break
 
         if not got_confirm:
-            self._say(f"{fire_timeout}s 内没等到确认弹窗，中止", "warn")
+            # ==== FEATURE:buy.followup BEGIN ====
+            # 假购买补刀：开火超时没等到确认弹窗，界面可能只是卡住/被遮挡/
+            # 点空了。判定为「疑似没点成」时，在同一购买点再补 1 次点击，
+            # 补完再看一眼确认弹窗；还是没有就按 miss 记（不会无限重试）。
+            # 生效条件：开关开 + 连点没开 + 有确认区域（无弹窗版式在上面的
+            # _buy_without_dialog 已经分流） + 非半自动（半自动更早就 Abort 了）。
+            followup_enabled = bool(switches.get(cfg, "buy.followup.enabled"))
+            # 互斥判定复用第 6 路（连点参数）的 begin() 结果：只有它真的
+            # 进 burst 阶段才算「连点开着」，append（含没写/被拒回落）都放行。
+            followup_effective = followup_enabled and not burst_plan
+            self._followup_used = False
+            self._set(followup={"enabled": followup_enabled,
+                                "effective": followup_effective, "used": False})
+            if followup_enabled and burst_plan:
+                # 前端在连点区块下方也能看到同一句（/api/switches 的 warnings），
+                # 这里留 info 是为了让「为什么这次没补刀」在日志里也查得到。
+                self._say(click_burst.MUTEX_REASON, "info")
+            if followup_effective:
+                self._say("疑似没点成：在同一购买点补 1 次点击", "warn")
+                _click_buy()
+                self._followup_used = True
+                # 补刀后最多看 0.25s：弹窗出现就接着走确认流程，仍没有就认输。
+                t_fu = time.perf_counter()
+                while time.perf_counter() - t_fu < 0.25:
+                    if self._stop.is_set():
+                        raise Aborted("用户停止")
+                    cscore, _ = match(to_gray(screen.grab(confirm_px)), confirm_tpl)
+                    if cscore >= threshold:
+                        got_confirm = True
+                        self._say("补刀后确认弹窗出现", "hit")
+                        break
+                    time.sleep(0.004)
+                self._set(followup={"enabled": True, "effective": True, "used": True})
+            # ==== FEATURE:buy.followup END ====
+            if not got_confirm:
+                self._say(f"{fire_timeout}s 内没等到确认弹窗，中止", "warn")
+                self._record(cfg, screen, item=item, price=price,
+                             elapsed=time.perf_counter() - t_start, result="miss")
+                return False
+
+        # ---- 确认区现场标定（每次运行只做一次）----
+        # 弹窗这时才真的在画面里，标出来的 ROI 才是可信的；成功就换成
+        # 新坐标，后面等解锁、连点确认、判弹窗关闭都用这套值。
+        conf_cal = self._calibrate_confirm_once(cfg, screen)
+        if conf_cal and conf_cal.get("norm"):
+            confirm_region = conf_cal["norm"]
+            confirm_px = screen.norm_to_px(expand(confirm_region, 0.25))
+            confirm_click = self._center(screen, confirm_region)
+
+        # ---- 确认框价格超出任务预算：不点确认，先取消再停手 ----
+        # 筛选层已经拦过一轮，这里是最后一道闸：真出现价不对的确认框，
+        # 宁可少买一件，也不把预算点穿。
+        task = cfg.get("active_task", {}) or {}
+        try:
+            budget = float(task.get("budget") or 0)
+        except (TypeError, ValueError):
+            budget = 0.0
+        if price is not None and budget > 0 and float(price) > budget:
+            try:
+                res = popup.scan(screen.grab())
+                pt = popup.cancel_point(res)
+                if pt is not None:
+                    self._click(mouse, *pt)
+                    self._say("确认框价格超出预算，已点「取消」", "warn")
+            except Exception:                # noqa: BLE001  取消失败也不能点确认
+                pass
+            self._force_scene(sg.SC_CONFIRM_UNEXPECTED,
+                              {"confirm_price": float(price),
+                               "budget": budget, "expected_item": item})
             self._record(cfg, screen, item=item, price=price,
                          elapsed=time.perf_counter() - t_start, result="miss")
-            return False
+            raise Aborted("确认价格超出预算，没有点确认")
 
         # ---- 等弹窗里的共享倒计时归零，再点确认 ----
         # 真机流程（2026-10-23）：T-5s 点购买弹出确认页，倒计时和列表共享，
@@ -1629,15 +2969,20 @@ class Engine:
         # 现在每点一下就看一眼确认弹窗还在不在：没了立刻收手。
         # 还开着就继续点，最多点到 confirm_timeout_s —— 覆盖「按钮比
         # 倒计时晚亮」的情况（这正是原来那个固定 sleep(0.6) 想解决的）。
-        confirm_timeout = max(0.2, float(cfg.get("confirm_timeout_s", 2.0)))
+        confirm_timeout = max(0.2, switches.read(
+            cfg, "confirm_timeout_s", 2.0, "float", 0.05, 600.0,
+            key="confirm_timeout_s"))
         t_conf = time.perf_counter()
+        # 证据探针的耗时单独累计：它不属于「抢购耗时」，不能算进 elapsed。
+        self._probe_s = 0.0
         confirm_done = False
         conf_clicks = 0
         while not self._stop.is_set():
+            self._hb.beat()
             # 连点次数用完、兜底时间也过了，才真的收手
             if conf_clicks >= confirm_clicks and time.perf_counter() - t_conf >= confirm_timeout:
                 break
-            self._click(mouse, *confirm_click)
+            self._click_fire(mouse, *confirm_click)
             conf_clicks += 1
             # 连点次数用完之后降速：还在说明按钮没亮（或认错了），
             # 这时每 50ms 补一下足够，没必要 500Hz 猛砸 —— 真要是弹窗
@@ -1677,7 +3022,12 @@ class Engine:
             self._say("成交校验已关闭，按「点了就算」记（记录里标 verified=false）",
                       "warn")
         else:
-            for _ in range(6):
+            # PERF:flow 观察窗仍是 1.5s，但节拍前紧后松：结算弹窗通常几十毫秒
+            # 就出来，以前每拍先睡 0.25s 再看，最坏白等 250ms 才第一次看见它。
+            # 现在第一拍立刻看，后面几拍 0.1/0.1/0.2/0.35/0.75 秒 —— 6 次判定、
+            # 总时长不变，只是把「等」挪到确定还没有弹窗之后。
+            gaps = (0.0, 0.1, 0.1, 0.2, 0.35, 0.75)
+            for i in range(6):
                 if self._stop.is_set():
                     break
                 if self._bought_dialog(screen):
@@ -1692,12 +3042,18 @@ class Engine:
                     self._say(f"没读到结算弹窗，但余额 {before_balance} → {got}，"
                               "按成交记", "info")
                     break
-                time.sleep(0.25)
+                time.sleep(gaps[i])
+        # 证据探针只读一次，且放在校验循环之后：单次实测三档 —— 本地 RapidOCR
+        # 中位 215.5ms（181–247）；PP-OCR 服务在线 805–1218ms；冷启动 3229ms。
+        # 放进循环里会把 1.5s 判定窗吃掉大半。这里读一次就够，读到有效 toast
+        # 后 `_probe_toast` 自己会短路后续重复。
+        self._probe_toast(cfg, screen, item)
         # 成交判定方式要落到记录里：以前只写 verified=开关状态，
         # 「弹窗确认」和「余额下降」两种可信度完全不同的成交混在一起（D2）。
         self._verified_by = by if bought else ""
 
-        elapsed = time.perf_counter() - t_start
+        # 探针耗时不算抢购耗时：从 elapsed 里扣掉（下限 0，防止时钟回拨）。
+        elapsed = self._elapsed_since(t_start)
         self._set(elapsed=round(elapsed, 2))
         if bought:
             self._say(f"成交，总用时 {elapsed:.2f}s", "hit")
@@ -1730,8 +3086,8 @@ class Engine:
         便利，不是成交的必要条件。点不动就点不动，别为此停下。
         """
         try:
-            retries = max(0, int(cfg.get("follow_retry", 2)))
-            wait = max(0.05, float(cfg.get("follow_wait_ms", 450)) / 1000.0)
+            retries = max(0, switches.get(cfg, "follow.retry"))
+            wait = max(0.05, switches.get(cfg, "follow.wait_ms") / 1000.0)
             skip_done = bool(switches.get(cfg, "follow.skip_done"))
             for i in range(retries + 1):
                 got = nav.set_follow(want, wait=wait, skip_done=skip_done)
@@ -1744,6 +3100,44 @@ class Engine:
             self._say(f"关注失败（不影响抢购）：{type(e).__name__}: {e}", "warn")
         return None
 
+    def _probe_toast(self, cfg, screen, item=""):
+        """读顶部 toast，把入池/抽签事实记进本次尝试的证据（core/pooltrace.py）。
+
+        只读一小块 ROI（N_TOAST，约 880×36），但**单次实测三档**：
+          · 本地 RapidOCR：中位 215.5ms（181–247）；
+          · PP-OCR 服务在线：805–1218ms；
+          · 后端冷启动：3229ms（首次调用）。
+        所以：
+          · 每次尝试最多读一次，读到有效 toast 后 `has_toast()` 直接短路；
+          · 调用点放在确认连点结束之后，不占「点得快」的那段窗口；
+          · 耗时累加到 `_probe_s`，由 elapsed 扣掉 —— 探针不能抬高成交耗时。
+        **不参与成交判定**，读不出来静默返回 None；证据缺失按 null/unknown 记。
+        """
+        if self._pooltrace.has_toast():
+            return None
+        t_probe = time.perf_counter()
+        try:
+            px = screen.norm_to_px(cfg.region("toast") or TOAST_N)
+            frame = screen.grab(px)
+            if frame is None or not getattr(frame, "size", 0):
+                return None
+            text = ocr.read_text(upscale(frame, 2)) or ""
+            if not text.strip():
+                return None
+            self._pooltrace.observe_toast(text, int(time.time() * 1000),
+                                          name=item)
+            return text
+        except Exception:                   # noqa: BLE001 证据读取失败不影响抢购
+            return None
+        finally:
+            self._probe_s = getattr(self, "_probe_s", 0.0) + (
+                time.perf_counter() - t_probe)
+
+    def _elapsed_since(self, t_start):
+        """抢购耗时（秒）：把证据探针的累计耗时扣掉，探针不抬高 elapsed。"""
+        return max(0.0, time.perf_counter() - t_start
+                   - getattr(self, "_probe_s", 0.0))
+
     def _bought_dialog(self, screen):
         """屏幕上是不是成交后的奖励弹窗 —— 这是唯一可靠的成交信号。
 
@@ -1755,8 +3149,11 @@ class Engine:
         整块不渲染，余额永远读空（实测）；「拥有」在两个弹窗里位置不一样，
         死区域会漏读。所以只认弹窗本身的文字。
         """
-        for region, marks in ((REWARD_N, ("获得", "拥有")),
-                              (SKIP_N, ("跳过",))):
+        # PERF:flow 先读「跳过」再读奖励文案。两处是「或」关系，判定集合不变；
+        # 常见的「弹窗还在」路径从 抓屏+OCR 540x260（约 340ms）降到 100x55
+        # （约 32ms）。负例（弹窗不在）成本不变，仍然是两处都读。
+        for region, marks in ((SKIP_N, ("跳过",)),
+                              (REWARD_N, ("获得", "拥有"))):
             try:
                 crop = screen.grab(screen.norm_to_px(region))
                 if crop is None or not getattr(crop, "size", 0):
@@ -1855,6 +3252,26 @@ class Engine:
         self._say("等弹窗解锁超时，照着点一次试试", "warn")
         return False
 
+    def _skip_shown(self, screen):
+        """奖励弹窗底部那个「跳过」还在不在（100x55，约 32ms）。"""
+        try:
+            crop = screen.grab(screen.norm_to_px(SKIP_N))
+            if crop is None or not getattr(crop, "size", 0):
+                return False
+            return "跳过" in (ocr.read_text(upscale(crop, 2)) or "")
+        except Exception:                        # noqa: BLE001
+            return False
+
+    def _list_back(self, screen, list_px):
+        """回到在售列表了没有 —— 认卡片线（真机列表帧 20/20 稳定认出 ≥2 张）。"""
+        try:
+            frame = screen.grab(list_px)
+            if frame is None or not getattr(frame, "size", 0):
+                return False
+            return len(cards.locate_cards(frame)) >= 2
+        except Exception:                        # noqa: BLE001
+            return False
+
     def _close_reward(self, screen, mouse):
         """成交后收掉奖励流程：「跳过」→ 全屏展示页「继续」→ 回在售列表。
 
@@ -1863,6 +3280,15 @@ class Engine:
         列表。不收掉这层，下一轮抢购的筛选检查会挂在展示页上白跑。
 
         屏幕上没有奖励痕迹就一下都不点 —— 没成交也来收尾就是乱点。
+
+        PERF:flow 这一段以前是整条流程里最贵的一步：
+            sleep(2.0) → 整屏 OCR（1.4~2.5s）→ 点继续 → sleep(2.5) → 整屏 OCR
+        合计约 5.3s，其中 4.5s 是固定睡眠。改成三个条件等待：
+            1) 盯「跳过」按钮消失（32ms/拍）—— 代替 sleep(2.0)；
+            2) 只读「继续」按钮周围那条窄带（约 60ms）—— 代替整屏 OCR；
+            3) 盯列表卡片线出现（约 20ms/拍）—— 代替 sleep(2.5)；
+        语义没变：判据还是那两处文字/按钮，2.0s 与 2.5s 仍是上界；
+        窄带读不到时退回原来的整屏 OCR 兜底（版式不同也不会漏点）。
         """
         if not self._bought_dialog(screen):
             return
@@ -1870,15 +3296,35 @@ class Engine:
             self._say("游戏窗口抢不到前台，奖励弹窗收不掉", "warn")
             return
         self._click(mouse, *self._center(screen, SKIP_N))
-        time.sleep(2.0)
-        words = ocr.read_words(screen.grab())
+        gone = False
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < 2.0:
+            if self._stop.is_set():
+                return
+            if not self._skip_shown(screen):
+                gone = True
+                break
+            time.sleep(0.04)
+        list_px = screen.norm_to_px(LIST_N)
+        words = ocr.read_words(
+            upscale(screen.grab(screen.norm_to_px(CONT_STRIP)), 2))
         joined = "".join(w["text"] for w in words)
-        if "获得" in joined or "继续" in joined:
+        if "继续" not in joined and "获得" not in joined:
+            # 兜底：窄带没读到（版式不同 / 字被整行跳过），退回整屏认一次。
+            joined = "".join(w["text"] for w in ocr.read_words(screen.grab()))
+        back = False
+        if "继续" in joined or "获得" in joined:
             self._click(mouse, *CONT_CLICK)
-            time.sleep(2.5)
-            words = ocr.read_words(screen.grab())
-            joined = "".join(w["text"] for w in words)
-        back = "只显示公示期" in joined
+            t1 = time.perf_counter()
+            while time.perf_counter() - t1 < 2.5:
+                if self._stop.is_set():
+                    return
+                if self._list_back(screen, list_px):
+                    back = True
+                    break
+                time.sleep(0.04)
+        else:
+            back = self._list_back(screen, list_px)
         self._say("奖励流程已收掉，" + ("已回在售列表" if back else "未确认回到列表"),
                   "info" if back else "warn")
 
@@ -1911,6 +3357,13 @@ class Engine:
         """
         cfg = Config.load()
         self._set_state(FIRE)
+        # ==== FEATURE:telemetry BEGIN ====
+        # 这一版没有确认弹窗，也记「第一下点击」的时刻给 offset_ms 用。
+        # 零点沿用 _fire_and_confirm 交接过来的那个（倒计时路线可能有）。
+        self._click_perf = None
+        # 证据探针耗时单独累计，elapsed 里扣掉。
+        self._probe_s = 0.0
+        # ==== FEATURE:telemetry END ====
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台，没法开点")
         before = self._balance(screen)
@@ -1926,7 +3379,11 @@ class Engine:
                 break
             # 两次落点错开：正中 + 略偏，用户明确要求「两次不在一个位置」
             px, py = buy_click if attempt == 0 else (buy_click[0] + 35, buy_click[1] + 12)
-            self._click(mouse, px, py)
+            # ==== FEATURE:telemetry BEGIN ====
+            if self._click_perf is None:
+                self._click_perf = time.perf_counter()
+            # ==== FEATURE:telemetry END ====
+            self._click_fire(mouse, px, py)
             clicks += 1
             self._set(clicks=clicks)
             # 点完立刻认屏幕：结算弹窗出来得比余额变化快得多
@@ -1944,11 +3401,35 @@ class Engine:
                     ok = True
                     by = "balance"
                     break
-            if ok:
-                break
-        elapsed = time.perf_counter() - t_start
+        # 这一版没有确认弹窗，toast 往往就是唯一能读到「已进池 / 排队已满 /
+        # 抽签点数」的地方。只在校验循环之后读一次（单次 181–247ms / PP-OCR
+        # 805–1218ms / 冷启动 3229ms），读到就停。
+        self._probe_toast(cfg, screen, item)
+        elapsed = self._elapsed_since(t_start)
         self._set(elapsed=round(elapsed, 2))
         if ok:
+            # ---- 误买止损：余额掉得比目标价多，立刻停手并记事故 ----
+            # 正常成交只应该掉「一件的价」；掉超过 1.2 倍说明数量或价格不对。
+            # 这里不做任何补偿操作，只冻结、还原、记录，然后硬停。
+            try:
+                after = self._balance(screen)
+                if (before is not None and after is not None and price
+                        and (before - after) > float(price) * 1.2 + 0.01):
+                    self._force_scene(sg.SC_MISBUY, {
+                        "balance_before": before,
+                        "balance_after": after,
+                        "expected_price": float(price),
+                        "bought_delta": 1,
+                    })
+                    self._say(f"余额 {before} → {after}，比目标价 {price} 多，"
+                              "按误买处理", "error")
+                    self._record(cfg, screen, item=item, price=price,
+                                 elapsed=elapsed, result="hit")
+                    raise Aborted("买到的价格或数量和设置不一致，已停手")
+            except Aborted:
+                raise
+            except Exception:                # noqa: BLE001  核对失败不影响正常记账
+                pass
             self._say(f"成交（结算弹窗已出现），点了 {clicks} 下，"
                       f"用时 {elapsed:.2f}s", "hit")
             # 这次的成交是靠「结算弹窗 / 余额下降」判出来的，记下来 ——
@@ -1962,12 +3443,135 @@ class Engine:
                          elapsed=elapsed, result="miss")
         return ok
 
+    # ==== FEATURE-GRADE:HELPERS BEGIN ====
+    def _grade_counter(self):
+        if getattr(self, "_grade", None) is None:
+            self._grade = stop_grade.Counter()
+        return self._grade
+
+    def _grade_quote(self, cfg):
+        """(设置, 计数快照, 已达标品阶) —— 每次现读，界面改完 2 秒内生效。"""
+        s = stop_grade.settings(cfg)
+        counts = self._grade_counter().snapshot()
+        return s, counts, stop_grade.reached(s, counts)
+
+    def _grade_on_hit(self, cfg, text):
+        """校验成交之后才调用：计一档 + 写 stats + 生成台账 extra。
+
+        总开关关掉（默认）时整个功能不参与：不计数、不写品阶字段，
+        只保留「总量达标」这种与品阶无关的台账信息。
+        """
+        s = stop_grade.settings(cfg)
+        extra = {}
+        if stop_grade.enabled(s):
+            gk = stop_grade.grade_key(text)
+            if gk == stop_grade.UNKNOWN:
+                # 契约 §2.5：读不出品阶的件不参与闸门、不计数，日志一条 info，不许猜
+                self._say("这件读不出品阶：不参与品阶闸门，也不计入任何目标", "info")
+            counts = self._grade_counter().record(gk)
+            self._set(grade_counts=counts)
+            _s, counts, hits = self._grade_quote(cfg)
+            extra = {"grade": gk, "grade_counts": counts}
+            if hits and s["scope"] == "all":
+                extra["stop_reason"] = "grade"
+                extra["stop_detail"] = stop_grade.detail(s, counts, hits) + "，整轮停止"
+            elif hits:
+                extra["grade_reached"] = stop_grade.detail(s, counts, hits)
+        # 台账里也要能看出「这一件抢完总量就达标了」（品阶已停时仍然记一条）
+        if "stop_reason" not in extra:
+            task = cfg.get("active_task") or {}
+            quota = max(1, int(task.get("quota") or 1))
+            after = int(self._stats.get("bought") or 0) + 1
+            if after >= quota:
+                extra["stop_reason"] = "quota"
+                extra["stop_detail"] = f"总量达标（已抢 {after}/{quota} 件）"
+        return extra
+
+    def _grade_gate(self, cfg, text):
+        """每次尝试前的品阶闸门：返回 (verdict, 品阶)；verdict ∈ ok/skip/abort。"""
+        s = stop_grade.settings(cfg)
+        if not stop_grade.armed(s):
+            return "ok", None
+        gk = stop_grade.grade_key(text)
+        if gk == stop_grade.UNKNOWN:
+            return "ok", gk
+        _s, _c, hits = self._grade_quote(cfg)
+        if gk in hits:
+            return ("abort" if s["scope"] == "all" else "skip"), gk
+        return "ok", gk
+
+    def _mark_stop(self, cfg, reason, detail, say=True):
+        """把停止原因落到 stats（status 可见），并留一条日志。"""
+        self._set(stop_reason=reason, stop_detail=detail)
+        if say:
+            self._say(f"停止原因：{detail}", "warn")
+
+    def _grade_after_hit(self, cfg):
+        """成交入账后按 scope 决定：整轮停（Aborted）或只停该品阶。"""
+        s, counts, hits = self._grade_quote(cfg)
+        if not stop_grade.armed(s) or not hits:
+            return
+        text = stop_grade.detail(s, counts, hits)
+        if s["scope"] == "all":
+            self._mark_stop(cfg, "grade", text + "，整轮停止")
+            raise Aborted(f"品阶达标：{text}，按设置整轮停止")
+        self._say(f"品阶达标：{text}；只停该品阶，其余继续抢", "warn")
+    # ==== FEATURE-GRADE:HELPERS END ====
+
     def _record(self, cfg, screen, item="", price=None, elapsed=None, result="hit"):
         """留图 + 记账。两件事都不许影响抢购：失败了只记一条警告。
 
         只有成交才留图 —— 开关叫「成交后存截图」，没抢到也存就是在骗人。
         """
-        shot = self._save_shot(cfg, screen, tag=item) if result == "hit" else None
+        # ==== FEATURE:telemetry:EXTRA BEGIN ====
+        # 台账补两列（遥测那边已按这两个名字读，只追加、不改既有字段）：
+        #   offset_ms = 第一下点击时刻 − 反推的理论零点（归零=解锁），毫秒整数，
+        #               可正可负；没有可用零点必须写 null —— 0 会被统计成
+        #               「完美卡点」，绝不拿 0 充数。
+        #   tier      = 项目既有判阶结果（bricks.find_skin 的 tier）；
+        #               判不出来写「未标注」，不默认成任何一档。
+        offset_ms = None
+        _click_at = getattr(self, "_click_perf", None)
+        _zero_at = getattr(self, "_zero_perf", None)
+        if _click_at is not None and _zero_at is not None:
+            try:
+                offset_ms = int(round((float(_click_at) - float(_zero_at)) * 1000.0))
+            except (TypeError, ValueError, OverflowError):
+                offset_ms = None
+        # 消费过就清掉，别串到下一次购买
+        self._click_perf = None
+        self._zero_perf = None
+        self._zero_primed = False
+        tier = "未标注"
+        try:
+            from . import bricks
+            _name = ((item if isinstance(item, str) else "")
+                     or ((cfg.get("active_task", {}) or {}).get("name") or ""))
+            _hit = bricks.find_skin(_name)
+            tier = str((_hit or {}).get("tier") or "未标注")
+        except Exception:                   # noqa: BLE001 判阶失败不能影响记账
+            tier = "未标注"
+        # ==== FEATURE:telemetry:EXTRA END ====
+        # ==== FEATURE-POOL:EVIDENCE BEGIN ====
+        # 入池/抽签证据：8 列事实 + 2 列辅助（推算误差 + 结果来源），
+        # 严格追加在 tier 之后（行尾契约）。
+        # 先取走再清空，保证无论 records.add 成功与否都不会串到下一件。
+        pool_extra = self._pooltrace.evidence()
+        self._pooltrace.begin()
+        # ==== FEATURE-POOL:EVIDENCE END ====
+        shot = None
+        if result == "hit":
+            # 成交那一刻就把画面任务投进后台队列：只投递，不抓屏、不写盘。
+            shot = self._save_shot(
+                cfg, screen, tag=item, price=price, elapsed=elapsed, tier=tier,
+                badge=("进池" if pool_extra.get("pool_joined_at") else "成交"))
+        # ==== FEATURE-GRADE:COUNT BEGIN ====
+        # 只有校验成交通过才会以 result="hit" 走到这里；miss/未校验不计数。
+        grade_extra = {}
+        if result == "hit":
+            grade_extra = self._grade_on_hit(
+                cfg, item or (cfg.get("active_task", {}) or {}).get("name") or "")
+        # ==== FEATURE-GRADE:COUNT END ====
         if not switches.get(cfg, "env.record"):
             return shot
         task = cfg.get("active_task", {}) or {}
@@ -1976,6 +3580,9 @@ class Engine:
         mode = (task.get("mode") or getattr(self, "_mode", "")
                 or task.get("workflow") or "")
         verified_by = getattr(self, "_verified_by", "")
+        # ---- feature:scan.repeat BEGIN ----
+        _rc = getattr(self, "_repeat_ctx", None) or {}
+        # ---- feature:scan.repeat END ----
         try:
             records.add(name=item or task.get("name") or "", price=price,
                         result=result, elapsed=elapsed,
@@ -1985,34 +3592,97 @@ class Engine:
                         # 具体靠什么判定成交（结算弹窗 / 余额下降 / 关了校验）
                         # 放进 extra，否则两种可信度完全不同的成交分不开（D2）。
                         verified=bool(switches.get(cfg, "fire.verify")),
-                        extra={"verified_by": verified_by})
+                        extra={"verified_by": verified_by,
+                               # 这次成交/失败前有没有补过刀（只记事实，不影响金额）
+                               "followup_used": bool(getattr(self, "_followup_used", False)),
+                               # ---- feature:scan.repeat BEGIN ----
+                               # 这一件刷新用了几次 / 本轮给它抽了几次（0 = 没刷）
+                               "refresh_budget": int(_rc.get("refresh_budget") or 0),
+                               "refresh_used": int(_rc.get("refresh_used") or 0),
+                               # ---- feature:scan.repeat END ----
+                               # ==== FEATURE-SKIP-LATE:EXTRA BEGIN ====
+                               # 本轮因「来不及」跳过的件数（契约 §4.3 追加字段）
+                               "late_skips": len(self._stats.get("late_skips") or []),
+                               # ==== FEATURE-SKIP-LATE:EXTRA END ====
+                               # ==== FEATURE-BURST:EXTRA BEGIN ====
+                               # 连点阶段实际点了几下（只记事实，不代表中签概率）
+                               "burst_clicks": int((self._stats.get("burst") or {}).get("clicks") or 0),
+                               # ==== FEATURE-BURST:EXTRA END ====
+                               # ==== FEATURE-GRADE:EXTRA BEGIN ====
+                               # 本件的品阶 / 本轮各档计数 / 停止原因（契约 §4.3）
+                               **grade_extra,
+                               # ==== FEATURE-GRADE:EXTRA END ====
+                               # ==== FEATURE:telemetry:EXTRA BEGIN ====
+                               # 台账两列：点击相对理论零点的毫秒偏差 / 商品品阶
+                               "offset_ms": offset_ms,
+                               "tier": tier,
+                               # ==== FEATURE:telemetry:EXTRA END ====
+                               # ==== FEATURE-POOL:EVIDENCE BEGIN ====
+                               **pool_extra,
+                               # ==== FEATURE-POOL:EVIDENCE END ====
+                               })
         except Exception as e:
             self._say(f"记录没写进去：{type(e).__name__}", "warn")
         return shot
 
-    def _save_shot(self, cfg, screen, tag=""):
-        """成交后存一张整屏截图。存不下来不能影响抢购，只记一条警告。"""
-        if not cfg.get("save_shots", True):
-            return None
+    def _shot_worker(self):
+        """截图后台线程（惰性创建；第一次成交才起，平时不占资源）。"""
+        w = getattr(self, "_shot_worker_obj", None)
+        if w is None:
+            from . import shotproof
+            w = shotproof.Worker(say=self._say)
+            self._shot_worker_obj = w
+        return w
+
+    def _save_shot(self, cfg, screen, tag="", price=None, elapsed=None,
+                   tier="", badge=""):
+        """成交后异步留一张带品牌水印的客户区截图。
+
+        主线程这里只做三件轻活：读配置、拼真实数据、投递任务。抓屏 / 绘图 /
+        PNG 编码 / 目录清理全在 shotproof 的工作线程里跑，成交路径不等待。
+        截图失败只记一条警告，不影响点击与下一轮。
+        """
         try:
-            frame = screen.grab()
-            if frame is None or not getattr(frame, "size", 0):
+            from . import shotproof
+            opts = shotproof.settings(cfg)
+            if not opts["enabled"]:
                 return None
-            name = cfg.get("active_task", {}).get("name") or tag or "成交"
-            safe = re.sub(r'[\\/:*?"<>|\s]+', "_", str(name))[:40] or "成交"
-            # 截图写在 exe 同级目录（冻结时 __file__ 指向临时解包目录，
-            # 写那儿退出即丢）。
-            d = os.path.join(DATA_DIR, "shots")
-            os.makedirs(d, exist_ok=True)
-            path = os.path.join(d, f"{time.strftime('%Y%m%d_%H%M%S')}_{safe}.jpg")
-            if not imwrite(path, frame):
-                self._say("成交截图没存下（写文件失败）", "warn")
+            rect = dict(getattr(screen, "base_rect", None) or {})
+            if not rect.get("width") or not rect.get("height"):
+                self._say("截图失败：拿不到游戏客户区", "warn")
                 return None
-            self._say(f"成交截图：{os.path.basename(path)}", "hit")
-            return path
-        except Exception as e:
-            self._say(f"成交截图没存下：{type(e).__name__}", "warn")
+            ts = time.time()
+            item = (tag if isinstance(tag, str) else "") \
+                or ((cfg.get("active_task", {}) or {}).get("name") or "")
+            meta = {
+                "item": item or "—",
+                "tier": (tier or "未标注") if tier not in ("", "未标注") else "—",
+                "price": price,
+                "elapsed_ms": (float(elapsed) * 1000.0
+                               if elapsed is not None else None),
+                "round": int(getattr(self, "_attempt_no", 0) or 0),
+                "ts": ts,
+                "uid": opts.get("uid") or "—",
+                "badge": badge or "成交",
+            }
+            name = shotproof.file_name(meta)
+            meta["_name"] = name
+            if not self._shot_worker().submit(rect, meta, opts):
+                self._say("截图失败：任务队列已满", "warn")
+                return None
+            return os.path.join(opts["dir"], name)
+        except Exception as e:              # noqa: BLE001 截图失败不许影响抢购
+            self._say(f"截图失败：{type(e).__name__}", "warn")
             return None
+
+    def _shot_worker_close(self):
+        w = getattr(self, "_shot_worker_obj", None)
+        if w is not None:
+            self._shot_worker_obj = None
+            try:
+                w.close()
+            except Exception:               # noqa: BLE001
+                pass
 
     def _guard_insufficient(self, screen, mouse, tries=3, gap=0.35):
         """点完确认后查「三角币不足」弹窗。命中就点「取消」并中止整场。
@@ -2034,6 +3704,9 @@ class Engine:
 
             msg = popup.describe(result)
             self._say(f"余额不足：{msg}", "error")
+            # 账户级问题：不重试购买，直接进第 4 级（取消 + 一句话 + 唯一按钮）
+            self._force_scene(sg.SC_INSUFFICIENT,
+                              {"purchase_blocked": True, "why": msg})
             point = popup.cancel_point(result)
             if point is None:
                 # 认出了弹窗但没定位到「取消」。此时绝不能猜坐标：猜错就是「充值」。

@@ -11,32 +11,30 @@
 解析故意做得宽松：认不出的字段留 None，由过滤决定「跳过」还是「放行」，
 绝不猜。宁可漏一件，不可买错一件——买错一件的损失比漏十件大。
 """
+import collections
+import json
+import math
+import os
 import re
 
 import cv2
+import numpy as np
 
-from . import bricks, cards as cardmod, ocr
+from . import bricks, cards as cardmod, money, ocr
 from . import vision
 
-# 交易行里价格是带千位逗号的整数（15,000 / 9,999,999），磨损是 0~10 的小数
-# （0.583）。所以逗号必须当千位分隔符去掉，不能当小数点 —— 早期版本把
-# `15,000` 解析成 15.0，价格整体错 1000 倍。
+# 价格/磨损的文本语法只有一份，在 `core/money.py`（N11）。这里只保留
+# 「价格判定」的策略：下限、型号 token 排除、磨损与价格怎么分工。
 #
-# Windows OCR 对千位逗号有三种破坏方式（都在实测截图里出现过）：
-#   1. 整个丢掉、分成两个词   15,000 -> `15` + `000`
-#   2. 认成汉字               15,000 -> `15` + `囤` + `00`
-#   3. 换成一个空格           15,000 -> `15 000`（放大后常见）
-# 所以下面先把数字串里的空格挤掉，再按逗号当千位分隔符解析。
-_NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
-_CURRENCY = re.compile(r"[¥￥]\s*(\d[\d,]*(?:\.\d+)?)")
+# 以前这里还自带一套正则（挤空格、逗号当千位、句点当千位），和
+# `ocr_chain.price_from_text` / `cards._price_token_in` 各写一份，同一个
+# `15 252` 三处读出三个值（252 / 15252 / 252），`¥12 345` 换行 `678`
+# 又被拼成 12345678。语法收敛后本模块只做两步：按行切开（跨行不拼），
+# 再把 money 给出的候选按下面的策略挑一个价格。
 
-# 数字之间的空格（可能连着 OCR 认错的单字，如 `15 囤 00`）
-_DIGIT_GAP = re.compile(r"(?<=\d)\s*[\u4e00-\u9fff]?\s*(?=\d)")
-# 「小数 + 间隔 + 一笔价格」的数字串：小数段要先保护起来，见 _squeeze_digits。
-# 条件是后面那笔数至少 4 位（或带千位逗号），否则它更像是磨损值被 OCR 拆开
-# 了（`0.583 172` 应该合成 `0.583172`，不能挤出一个 172 的价格）。
-_DECIMAL_TAIL = re.compile(
-    r"(\d[\d,]*\.\d+)(\s*[\u4e00-\u9fff]?\s*)(?=\d[\d,]{3,}|\d+,\d)")
+# OCR 把千位逗号认成汉字：`15 囤 000`。只在**行内**把「数字-单个汉字-数字」
+# 的空隙换成空格，交给 money 按千分位分组校验；分不了组的照样拒识。
+_GAP_GLYPH = re.compile(r"(?<=\d)[ \t]*[\u4e00-\u9fff][ \t]*(?=\d)")
 
 # 型号 token：字母开头、内部含数字（QBZ95-1 / M250 / MP7 / KC17 / S2）。
 # 这些数字**不是价格**，必须先从文本里摘掉再取数。
@@ -55,119 +53,142 @@ _MODEL_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9.\-]*\d[A-Za-z0-9.\-]*")
 # 也不能让它冒充最便宜的一条。
 _MIN_PRICE = 100
 
-
-def _squeeze_digits(text):
-    """把数字串中间的空格和 OCR 误认的单字挤掉。
-
-    `15 000` -> `15000`；`15 囤 00` -> `15000`；`015 252` -> `015252`。
-    只处理「空格/单个汉字夹在两个数字之间」的情况，不动正常文字。
-
-    **小数不能被挤。** `0.120 9,500`（磨损 + 价格）里的空格左边属于磨损值
-    `0.120`，挤掉就变成 `0.1209,500`，切出 `0.1209` 和 `500` —— 价格读成
-    500，pick() 立刻挑中它去买贵的。所以先把小数整段保护起来，挤完再还原。
-    """
-    if not text:
-        return text
-    held = []
-
-    def _hold(m):
-        held.append(m.group(1))
-        # 只把小数段换成占位符，中间的空格原样留着 —— 挤空格时占位符
-        # 左边不是数字，`(?<=\d)` 就不会跨过小数和小数后面那笔价格。
-        return f"\x00{len(held) - 1}\x00" + m.group(2)
-
-    tmp = _DECIMAL_TAIL.sub(_hold, text)
-    prev = None
-    cur = tmp
-    # 反复挤，直到稳定（`15 囤 000` 这类可能要两轮）
-    while cur != prev:
-        prev = cur
-        cur = _DIGIT_GAP.sub("", cur)
-    for i, tok in enumerate(held):
-        cur = cur.replace(f"\x00{i}\x00", tok)
-    return cur
+# ---- 整幅兜底的保守判据（静默错价比拒识危险得多）----
+# 背景：早期整幅兜底「取最大 ≥ _MIN_PRICE 的整数」。列表/详情整帧里同时存在
+# `编号 000104429` 这类字段，编号比价格大时兜底就把编号当价格，抢购场景会直接
+# 下成错价单（实测 9,999,999 被读成 104,429）。下面这套判据只接受**能确认是价格
+# 语义**的数，认不出来就返回 None。
+_PRICE_LABEL_WORDS = ("售价", "价格")           # 行内标签：命中即认价格语义
+_ID_LINE = re.compile(r"编号|序号|(?:^|[^A-Za-z])ID(?:[^A-Za-z]|$)")
+_MAX_PRICE_DIGITS = 8      # 价格本体最多 8 位；更长的纯数字串按编号处理
+_ID_LEADING_ZEROS = 2      # 连续 ≥2 个前导 0 按编号处理（单个 0 是 OCR 补位）
+_PRICE_REF_TOL = 0.01      # 与结构化价格比对时的相对容差（1%）
+PRICE_UNREAD = "价格未识别"
 
 
-def _to_number(tok):
-    """把 OCR 出来的数字 token 转成 float。
+def _is_id_token(tok):
+    """token 是不是编号类：位数超长，或带 ≥2 个前导 0。"""
+    digits = re.sub(r"\D", "", tok or "")
+    if not digits:
+        return True
+    if len(digits) > _MAX_PRICE_DIGITS:
+        return True
+    return len(digits) - len(digits.lstrip("0")) >= _ID_LEADING_ZEROS
 
-    千位逗号去掉：`15,000` -> 15000。小数点保留：`0.583` -> 0.583。
-    两者都出现时（`1,234.5`）逗号仍是千位分隔符。
-    """
-    if tok is None:
+
+def _ref_value(ref_price):
+    """把面板拼条/结构化块给的价格转成数值；转不动就当没有参照。"""
+    if ref_price is None or isinstance(ref_price, bool):
         return None
-    cleaned = tok.replace(",", "")
+    if isinstance(ref_price, (int, float)):
+        return float(ref_price) or None
+    tok = str(ref_price).strip().replace(",", "").replace(" ", "")
+    if not re.fullmatch(r"\d+(?:\.\d+)?", tok):
+        return None
     try:
-        return float(cleaned)
+        return float(tok) or None
     except ValueError:
         return None
 
 
-def _is_decimal_token(tok):
-    """这个 token 是小数（磨损）还是整数（价格）。
+# ---- 帧 memo 埋点（只统计、不改判据）----
+# 灰度差小于它当「没变」。这是**统计**口径，不参与任何复用决策：
+# 要不要复用上一帧仍然只看「整帧逐字节相同」。
+MEMO_NOISE = 12
+MEMO_WINDOW = 24      # 学「时间列」用的帧窗口
+MEMO_FLUSH = 200      # 每多少帧往台账写一行累计比例
 
-    判据是「有没有小数点」，不是「有没有逗号」——逗号是千位分隔符。
+
+def _squeeze_digits(text):
+    """只做一件事：把「数字-汉字-数字」的间隔换成空格（`15 囤 000`）。
+
+    这里**不再**挤掉数字之间的空格本身：那一格是不是千分位由 money 的
+    分组规则判（`15 252` 合法 → 15252，`12 34` 非法 → 拒识）。以前那条
+    启发式会把 `12 34` 直接拼成 1234，读出一个"看起来合理"的错值。
     """
-    return "." in tok
+    return _GAP_GLYPH.sub(" ", text or "")
 
 
-def parse_row(text):
+def _clean_lines(text):
+    """逐行 clean，行尾保留换行。`ocr.clean` 会把 `\\n` 压成空格 ——
+    价格解析的窗口不能跨行，压平了就等于把两行拼成一个数（N11）。"""
+    return "\n".join(ln for ln in (ocr.clean(x) for x in money.split_lines(text)) if ln)
+
+
+def parse_row(text, ref_price=None, whole_frame=False):
     """把一行文字解析成可过滤的字段。
 
-    返回 {text, price, craft, wear, wear_value, numbers}
-    认不出的就是 None —— 调用方要按「未知」处理，不能当 0。
+    返回 {text, price, craft, wear, wear_value, numbers, price_note}
+    认不出的 price 就是 None，并把 price_note 标成「价格未识别」——
+    调用方要按「未知」处理，不能当 0，更不能拿一个看着合理的错值去下单。
 
-    解析只用文本：放大后的 OCR 会把 `15,000` 当成一个词（内部带空格），
-    按词框拼接反而拼不出来，所以统一在文本层用 _squeeze_digits 处理。
+    整幅兜底只在**能确认价格语义**的行上取值：
+      1. 行内带 `售价` / `价格` 标签，或带 ¥ / ￥ 货币符；
+      2. 行内数值与调用方给的 ref_price（面板拼条/结构化块）在 1% 容差内一致。
+    其余一律拒识。`编号` / `序号` / `ID` 行、位数超长或带 ≥2 个前导 0 的数字串
+    显式排除——它们是编号，不是价格。整幅兜底必须传 whole_frame=True：
+    整帧里同时有编号、倒计时、数量，取最大整数就是静默错价（实测
+    `编号 000104429` 把 9,999,999 顶成 104,429）。单卡行文本仍保留
+    「多候选取最大」的历史行为，那条路径的候选只在同一张卡的字段里。
+
+    跨行不拼：文本按行切开，每行各自解析。`¥12 345` 换行 `678` 只读
+    第一行的 12345，不会变成 12345678（N11）。
     """
     if not text:
         return {"text": "", "price": None, "craft": None, "wear": None,
-                "wear_value": None, "numbers": []}
+                "wear_value": None, "numbers": [], "price_note": PRICE_UNREAD}
 
-    text = _squeeze_digits(text)
+    lines = [_squeeze_digits(ln) for ln in money.split_lines(text)]
 
     price = None
-    m = _CURRENCY.search(text)
-    if m:
-        price = _to_number(m.group(1))
-
-    # 先把型号 token 整段摘掉，剩下的数字才是价格/磨损的候选。
-    # 不摘的话 `QBZ95-1` 的 951、`M250` 的 250、`M7` 的 7 都会被当成价格，
-    # 而 pick() 按价格升序挑，这些假低价会挤掉真挂单。
-    rest = _MODEL_TOKEN.sub(" ", text)
-
-    ints, floats, float_toks = [], [], []
-    for tok in _NUM.findall(rest):
-        v = _to_number(tok)
-        if v is None:
+    labeled_ints = []
+    ints, floats = [], []
+    for line in lines:
+        if not line.strip():
             continue
-        if _is_decimal_token(tok):
-            floats.append(v)
-            float_toks.append(tok)
-        else:
-            ints.append(v)
+        # 编号类整行不作价格候选（`编号 000104429` 是货号，不是价签）
+        if _ID_LINE.search(line):
+            continue
+        # 带货币符号的行走整段解析：失败就整行作废，不回落去抓行内数字
+        # （`−¥250` 不能读成 250）。金额分支仍要求整数、≥ 下限。
+        if any(ch in money.SYMBOLS for ch in line):
+            v, tok = money.parse_line(line, strip_leading_zeros=True)
+            if v is None or "." in tok:
+                continue
+            if _is_id_token(tok):
+                continue
+            if v >= _MIN_PRICE and price is None:
+                price = v
+            continue
 
-    # 价格没带 ¥ 时取最大的整数：列表里通常只有价格和数量两种整数，
-    # 价格远大于数量。低于 _MIN_PRICE 的不算候选（见该常量的注释）。
-    if price is None and ints:
+        # 先把型号 token 整段摘掉，剩下的数字才是价格/磨损的候选。
+        labeled = any(w in line for w in _PRICE_LABEL_WORDS)
+        rest = _MODEL_TOKEN.sub(" ", line)
+        for item in money.find_numbers(rest, strip_leading_zeros=True,
+                                       dot3_as_thousands=True, max_frac=6):
+            if item["decimal"]:
+                floats.append(item["value"])
+                continue
+            if _is_id_token(item["token"]):
+                continue
+            ints.append(item["value"])
+            if labeled and item["value"] >= _MIN_PRICE:
+                labeled_ints.append(item["value"])
+
+    # 整幅兜底：只认标签行 / 与 ref_price 一致的数，绝不取最大整数。
+    # 单卡行文本保留历史行为（候选都在同一张卡的字段里，取最大不会撞编号）。
+    ref = _ref_value(ref_price)
+    if price is None and ref is not None and ints:
+        tol = max(1.0, ref * _PRICE_REF_TOL)
+        hit = [v for v in ints if abs(v - ref) <= tol]
+        if hit:
+            price = max(hit)
+    if price is None and not whole_frame and ints:
         cand = [v for v in ints if v >= _MIN_PRICE]
         if cand:
             price = max(cand)
-
-    # 千位分隔符被认成句点：`9,000` -> `9.000`。
-    # 2026-11-01 换 PP-OCRv5 之后才出现（Windows OCR 是丢逗号/认成汉字），
-    # 而 `_to_number` 会把它当小数 —— 9000 变 9，pick() 立刻挑中它去买。
-    # 只在这个前提下才当分隔符：
-    #   · 整数部分 > 5（磨损值是 0~5 的小数，价格不可能 6 块以下）
-    #   · 小数部分正好三位
-    # 两条都满足才转换，宁可少认一个价，也不能把磨损当成价格。
-    if price is None:
-        for tok in float_toks:
-            ip, _, fp = tok.replace(",", "").partition(".")
-            if len(fp) == 3 and ip.isdigit() and 1 <= len(ip) <= 3 and int(ip) > 5:
-                v = int(ip + fp)
-                if v >= _MIN_PRICE and (price is None or v > price):
-                    price = v
+    if price is None and labeled_ints:
+        price = labeled_ints[0]
 
     # 磨损值：优先取 0~5 之间的小数，排除掉价格本身
     wear_value = None
@@ -180,7 +201,8 @@ def parse_row(text):
     wear = bricks.parse_wear(text)
 
     return {"text": text, "price": price, "craft": craft, "wear": wear,
-            "wear_value": wear_value, "numbers": ints + floats}
+            "wear_value": wear_value, "numbers": ints + floats,
+            "price_note": None if price is not None else PRICE_UNREAD}
 
 
 def _grid_cards(words, width, card_height, rows, cols, col_split):
@@ -254,16 +276,29 @@ class Scanner:
     用法：scanner = Scanner(); rows = scanner.scan(frame)
     """
 
-    def __init__(self, upscale=1, read_text=None, delta=None):
+    def __init__(self, upscale=1, read_text=None, delta=None, bottom_half=False):
         self.upscale = upscale
         self.read_text = read_text
         self.delta = delta
+        self.bottom_half = bottom_half   # 只在下半屏找线（网格照样铺满全屏）
         self.prev = None
         self.cards = []
         self.cache = {}
         self.ocr_calls = 0        # 测试用：数一共认了几张卡
         self._grid_prev = None    # 整屏 OCR 兜底：上一帧的图与结果
         self._grid_rows = []
+        # PERF:flow 整帧完全相同时的结果复用（见 scan 开头）
+        self._memo_img = None
+        self._memo_gray = None
+        self._memo_rows = []
+        # PERF:memo 埋点（只统计、不改判据）
+        self.memo_stat = {"total": 0, "same": 0, "time_only": 0,
+                          "diff": 0, "noise": 0, "first": 0, "warming": 0}
+        self._memo_hist = collections.deque(maxlen=MEMO_WINDOW)
+        self._memo_band = None
+        # 首帧预热：把 OCR 冷启动（模型加载 + 首次前向，约 1.2s）挪出扫描
+        if read_text is None:
+            cardmod.warm()
 
     def reset(self):
         """列表刷新/翻页后调用：上一帧的缓存全作废。"""
@@ -272,11 +307,37 @@ class Scanner:
         self.cache.clear()
         self._grid_prev = None
         self._grid_rows = []
+        self._memo_img = None
+        self._memo_gray = None
+        self._memo_rows = []
+        self._memo_hist.clear()
+        self._memo_band = None
+
+    def memo_stats(self):
+        """当前累计的帧分类计数（same/time_only/diff/noise/first/total）。"""
+        return dict(self.memo_stat, band=self._memo_band)
 
     def scan(self, img):
         if img is None or getattr(img, "size", 0) == 0:
             return []
-        found = cardmod.locate_cards(img)
+        self.memo_stat["total"] += 1
+        # PERF:flow 整帧逐字节相同 → 直接回上一帧结果（约 0.6ms），省掉
+        # locate_cards + changed_cards。判据是「完全相同」而不是阈值：
+        # 阈值会漏掉单个数字变化，而那正是抢购要抓的东西。
+        # 抓屏本身没变、列表也没变（列表只在倒计时跳秒时变）时命中率很高。
+        if (self._memo_img is not None
+                and getattr(img, "shape", None) == self._memo_img.shape
+                and cv2.norm(img, self._memo_img, cv2.NORM_L1) == 0.0):
+            self.memo_stat["same"] += 1
+            self._memo_flush()
+            return [dict(r) for r in self._memo_rows]
+        # 灰度图只在未命中时才转：整帧相同时连这 0.3ms 都不花
+        gray = vision.to_gray(img) if img.ndim == 3 else img
+        self._memo_note(gray)
+        # 灰度图若就是原图本身（已是单通道），留一份拷贝，防止调用方原地改写
+        memo_gray = gray if gray is not img else gray.copy()
+        found = cardmod.locate_cards(img, gray=gray,
+                                     bottom_half=self.bottom_half)
         if not found:
             # 找不到卡片线，退回整屏 OCR（2×，1× 会漏小字）。
             # 整屏一帧 1.4~2.5s，静止帧直接复用上一帧结果 —— 兜底路径大多
@@ -293,6 +354,10 @@ class Scanner:
             rows = scan(img, **kw)
             self._grid_prev = sig
             self._grid_rows = [dict(r) for r in rows]
+            self._memo_img = img.copy()
+            self._memo_gray = memo_gray
+            self._memo_rows = [dict(r) for r in rows]
+            self._memo_flush()
             return rows
 
         kw = {} if self.delta is None else {"delta": self.delta}
@@ -300,27 +365,43 @@ class Scanner:
         # 对应，否则会把上一批的缓存（名字、价格）当成新卡用。
         changed = cardmod.changed_cards(self.prev, img, found,
                                         prev_cards=self.cards, **kw)
-        read = self.read_text            # None 时 read_card 走整卡一次
+        fresh = self._read_fresh(img, found, changed)
 
         rows = []
         for i, rect in enumerate(found):
-            if i not in changed and i in self.cache:
+            if i not in fresh and i in self.cache:
                 row = dict(self.cache[i])
                 x0, y0, x1, y1 = rect
                 row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
             else:
-                got = cardmod.read_card(img, rect, upscale=self.upscale, read_text=read)
-                self.ocr_calls += 1
-                text = ocr.clean(got["text"])
-                if not text:
+                got = fresh.get(i) or {}
+                # 和 _scan_cards 同一口径：结构化块优先，批量 text_batch 只展示。
+                name = (got.get("name") or "").strip()
+                grade = got.get("grade") or ""
+                price_tok = got.get("price") or ""
+                if got.get("text_reliable", True) is not False:
+                    text = _clean_lines(got.get("text") or "")
+                    # 结构化块有价就把它当参照：整幅文字里与它一致的数才认价
+                    row = parse_row(text, ref_price=price_tok)
+                    row["name"] = name
+                    row["name_source"] = ("structured" if name
+                                          else ("text" if text else "none"))
+                else:
+                    row = _row_from_blocks(name, grade, price_tok,
+                                           _clean_lines(got.get("text_batch") or ""))
+                if not (row["text"] or name or price_tok):
                     self.cache.pop(i, None)
                     continue
-                row = parse_row(text)
-                price = _price_from_block(got["price"], img, rect,
-                                          read or ocr.read_text)
+                if self.read_text is None:
+                    # 批量补认已经把底带的价格写回 got["price"]；这里不再
+                    # 逐卡触发 read_card_bottom（那会把批量收益吃掉）。
+                    price = _price_from_block(got.get("price"))
+                else:
+                    price = _price_from_block(got.get("price"), img, rect,
+                                              self.read_text)
                 if price is not None:
                     row["price"] = float(price)
-                wear = bricks.parse_wear_loose(got["grade"]) or row.get("wear")
+                wear = bricks.parse_wear_loose(grade) or row.get("wear")
                 if wear:
                     row["wear"] = wear
                 x0, y0, x1, y1 = rect
@@ -329,33 +410,233 @@ class Scanner:
             rows.append(row)
 
         self.prev = img.copy()
+        self._memo_img = self.prev          # 只读共用，少一次整帧拷贝
+        self._memo_gray = memo_gray
         self.cards = found
         rows.sort(key=lambda r: (r["y0"], r["x0"]))
+        self._memo_rows = [dict(r) for r in rows]
+        self._memo_flush()
         return rows
+
+    def _read_fresh(self, img, found, changed):
+        """认出「这一帧需要重认」的卡，返回 {卡片下标: read_card 结果}。
+
+        生产路径（read_text=None）把全部待认卡拼成一张图走**一次** OCR；
+        注入假 OCR 的测试路径逐张调用（测试要数调用次数）。
+        """
+        if not changed:
+            return {}
+        if self.read_text is not None:
+            out = {}
+            for i in changed:
+                out[i] = cardmod.read_card(img, found[i], upscale=self.upscale,
+                                           read_text=self.read_text)
+                self.ocr_calls += 1
+            return out
+
+        idx = list(changed)
+        recs = [found[i] for i in idx]
+        got = cardmod.read_cards(img, recs, upscale=self.upscale)
+        self.ocr_calls += len(idx)
+        # 价格块没读出数 → 底带补认。缺几张就补几张，但只走一次拼图；
+        # 逐张补认在「六张卡全换货」时等于多扫一整轮。
+        need = [k for k, g in enumerate(got)
+                if _price_from_block(g["price"]) is None]
+        if need:
+            bots = cardmod.read_bottoms(img, [recs[k] for k in need])
+            for k, bot in zip(need, bots):
+                got[k]["price"] = bot.get("price") or ""
+        return {i: g for i, g in zip(idx, got)}
+
+    # ---------- 帧 memo 埋点：只统计，不参与任何判定 ----------
+
+    def _memo_note(self, gray):
+        """把「这一帧和上一帧差在哪」记到 memo_stat 的一张账上。
+
+        三类：整帧相同（same，含只有噪声级差异）、只有时间列变化
+        （time_only）、完全不同（diff）。另有 first（还没有上一帧）、
+        noise（差异全部低于 MEMO_NOISE）、warming（时间列还没学出来，
+        前 8~12 帧归不了类）三个辅助桶。
+
+        **判据没动**：要不要复用上一帧的结果仍然只看「整帧逐字节相同」。
+        这里只是记账 —— 阈值化会把「价格少了一位」也当成没变，那正是
+        抢购要抓的东西，所以这条必须留给人决策。
+        """
+        st = self.memo_stat
+        if self._memo_gray is None or self._memo_gray.shape != gray.shape:
+            st["first"] += 1
+            return
+        d = cv2.absdiff(gray, self._memo_gray)
+        mask = d >= MEMO_NOISE
+        anyc = mask.any(axis=0)
+        cols = np.flatnonzero(anyc)
+        if not cols.size:
+            st["noise"] += 1
+            return
+        self._memo_hist.append(anyc)
+        if len(self._memo_hist) >= 8 and st["total"] % 4 == 0:
+            self._memo_learn_band()
+        band = self._memo_band
+        if band is None:
+            # 时间列还没学出来（开跑前 8~12 帧），此时归不了类。
+            # 记成 warming 而不是硬算 diff，否则会把「前面几帧」算成翻页噪声。
+            st["warming"] += 1
+        elif int(cols.min()) >= band[0] and int(cols.max()) <= band[1]:
+            st["time_only"] += 1
+        else:
+            st["diff"] += 1
+
+    def _memo_learn_band(self):
+        """从最近 MEMO_WINDOW 帧的变化列里学「时间列」的 x 区间（纯统计）。
+
+        倒计时那一列几乎每帧都在动，价格列只在换货时才动 —— 取「最近 24 帧
+        里 60% 以上都动过」的最长连续列段，作为「时间列」。宽度限制在
+        4px~25% 屏宽，否则宁可不算（学歪了只会让比例失真，不影响抢购）。
+        """
+        counts = np.sum(np.array(self._memo_hist, dtype=np.int16), axis=0)
+        thr = max(3, int(0.6 * len(self._memo_hist)))
+        xs = np.flatnonzero(counts >= thr)
+        if not xs.size:
+            self._memo_band = None
+            return
+        best, start, prev = (0, 0), xs[0], xs[0]
+        for x in xs[1:]:
+            if x - prev > 2:
+                if prev - start > best[1] - best[0]:
+                    best = (start, prev)
+                start = x
+            prev = x
+        if prev - start > best[1] - best[0]:
+            best = (start, prev)
+        w = self._memo_gray.shape[1]
+        wide, narrow = int(best[1] - best[0]), w * 0.25
+        # 转成 python int：band 会进 JSON 台账，numpy int64 不能直接序列化
+        self._memo_band = ((max(0, int(best[0]) - 2), int(best[1]) + 2)
+                           if 4 <= wide <= narrow else None)
+
+    def _memo_flush(self):
+        """每 MEMO_FLUSH 次扫描往台账追加一行累计比例（不改判据）。
+
+        **默认不落盘**：只有显式设置 `DAFORS_MEMO_STATS=<路径>` 才写文件。
+        缺省去写仓库 `data/` 会污染工作树（混进 git status），而这份台账
+        只是统计，不该成为运行时的副作用；不设环境变量时计数只留在内存里，
+        由调用方 `memo_stats()` 取。
+        """
+        st = self.memo_stat
+        if st["total"] % MEMO_FLUSH:
+            return
+        path = os.environ.get("DAFORS_MEMO_STATS")
+        if not path:
+            return
+        n = st["total"]
+        rec = dict(st, band=self._memo_band,
+                   same_ratio=round(st["same"] / n, 3),
+                   time_only_ratio=round(st["time_only"] / n, 3),
+                   diff_ratio=round(st["diff"] / n, 3),
+                   noise_ratio=round(st["noise"] / n, 3),
+                   warming_ratio=round(st["warming"] / n, 3))
+        try:
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError:
+            return        # 台账写不进去不影响扫描
+
+
+def _row_from_blocks(name, grade, price_tok, debug_text=""):
+    """批量路径的行：**只**由结构化字段拼出来。
+
+    批量 rec 的词流（`text_batch`）与单卡路径不是逐字一致的（窄块被补宽后
+    分隔符会丢），所以这里不拿它解析任何字段：
+      - `name` 来自名称块，匹配与点击只认它；
+      - 价格 / 做工 / 成色由调用方用价格块、成色块覆盖；
+      - 磨损小数从**结构化 grade 块**里取（不是从拼好的整行里刮）；
+      - `text` 只是给界面/日志看的展示串，不参与判据；
+      - `name_source` 记名字出处（structured / text_batch / none），
+        `check()` 据此拦下降级行，不让它参与自动购买。
+    """
+    meta = parse_row(grade or "")
+    if not name and debug_text:
+        # 结构化名称空了、只剩批量文本：降级，只展示不决策
+        return {"text": debug_text, "price": None, "craft": None, "wear": None,
+                "wear_value": meta["wear_value"], "numbers": meta["numbers"],
+                "name": "", "name_source": "text_batch"}
+    display = "\n".join(x for x in (name, grade, price_tok) if x)
+    return {"text": display, "price": None, "craft": None, "wear": None,
+            "wear_value": meta["wear_value"], "numbers": meta["numbers"],
+            "name": name, "name_source": "structured" if name else "none"}
 
 
 def _scan_cards(img, found, upscale=1, read_text=None):
-    """逐张卡片认字，拼成和 _scan_grid 一样的行结构。
+    """批量认卡，拼成和 _scan_grid 一样的行结构。
 
-    upscale 只对注入 read_text 的测试路径有意义；生产路径（read_text=None）
-    走 cards.read_card 内部的整卡一次 read_words，不再放大。
+    生产路径（read_text=None）把这一帧所有卡拼成一张图走一次 OCR，
+    缺价格/成色的卡再拼一张底带图补认一次 —— 不再「一张卡一次推理」。
+    upscale 只对注入 read_text 的测试路径有意义。
+
+    行字段的取值顺序：**结构化块（name / price / grade）优先**；
+    只有单卡路径那份可靠词流（`text`）才允许参与 parse_row 兜底。
+    批量路径的 `text_batch` 绝不进决策链路（见 `_row_from_blocks`）。
     """
-    out = []
-    for rect in found:
-        got = cardmod.read_card(img, rect, upscale=upscale, read_text=read_text)
-        text = ocr.clean(got["text"])
-        if not text:
+    found = [tuple(int(v) for v in r) for r in found]
+    if not found:
+        return []
+    if read_text is None:
+        got_all = cardmod.read_cards(img, found, upscale=upscale)
+    else:
+        got_all = [cardmod.read_card(img, rect, upscale=upscale,
+                                    read_text=read_text) for rect in found]
+
+    # 先解析一遍：缺价格/成色的卡记下来，后面一次拼图补齐
+    parsed, miss = [], []
+    for k, (rect, got) in enumerate(zip(found, got_all)):
+        # 名字/成色/价格一律取结构化块；批量路径的 text_batch 只当展示串。
+        name = (got.get("name") or "").strip()
+        grade = got.get("grade") or ""
+        price_tok = got.get("price") or ""
+        reliable = got.get("text_reliable", True) is not False
+        if reliable:
+            # 单卡 / 注入 read_text 的路径：text 是可靠词流，可以兜底解析
+            text = _clean_lines(got.get("text") or "")
+            row = parse_row(text, ref_price=price_tok)
+            row["name"] = name
+            row["name_source"] = ("structured" if name
+                                  else ("text" if text else "none"))
+        else:
+            row = _row_from_blocks(name, grade, price_tok,
+                                   _clean_lines(got.get("text_batch") or ""))
+        if not (row["text"] or name or price_tok):
+            parsed.append(None)
             continue
-        row = parse_row(text)
-        # 价格是单独一块认出来的，直接用它，别让 parse_row 在拼起来的
-        # 整段文字里猜 —— 名字里的型号数字（QBZ95 / M250）会被当成价格。
+        # 价格是单独一块认出来的，直接用它，别在拼起来的整段文字里猜 ——
+        # 名字里的型号数字（QBZ95 / M250）会被当成价格。
         price = _price_from_block(got["price"])
         craft, wear = _grade_from_block(got["grade"])
+        parsed.append([row, price, craft, wear, got])
         # 缺字段才补认，而且一卡最多补一次：价格和成色挤在同一条底带上，
         # 分开补等于把同一块图放大读两遍（u3 15 张卡，光补认就多吃 1.4s）。
-        if (price is None or not wear) and img is not None and rect is not None:
-            bottom = cardmod.read_card_bottom(
-                img, rect, upscale=3, read_text=read_text or ocr.read_text)
+        if (price is None or not wear) and img is not None:
+            miss.append(k)
+    bots = {}
+    if miss:
+        if read_text is not None:
+            bots = {k: cardmod.read_card_bottom(img, found[k], upscale=3,
+                                                read_text=read_text)
+                    for k in miss}
+        else:
+            bots = dict(zip(miss, cardmod.read_bottoms(img, [found[k] for k in miss],
+                                                       upscale=3)))
+
+    out = []
+    for k, (rect, got) in enumerate(zip(found, got_all)):
+        item = parsed[k]
+        if item is None:
+            continue
+        row, price, craft, wear, _got = item
+        bottom = bots.get(k)
+        if bottom is not None:
             if price is None:
                 price = _price_from_block(bottom.get("price"))
             craft = craft or bricks.parse_craft(bottom.get("grade"))
@@ -407,7 +688,7 @@ def _price_from_block(text, img=None, rect=None, read_text=None):
     退路 `_scan_grid` 那条路上仍然按 _MIN_PRICE 兜底，因为那里是从整段文字里猜。
     """
     def digits(t):
-        return ocr.digits_only(t, strip_zeros=True)
+        return money.digits_first_line(t)
 
     d = digits(text)
     if d and len(d) <= 8:
@@ -441,7 +722,9 @@ def _scan_grid(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None):
 
     out = []
     for card in _grid_cards(words, src.shape[1], ch, rows, cols, split):
-        text = ocr.clean(" ".join(w["text"] for w in card))
+        # 按行拼：同一行用空格、跨行用换行。`" ".join` 会把两行的数字
+        # 拼成一行，解析时跨行吞位（N11）。
+        text = _clean_lines("\n".join(r["text"] for r in ocr.rows(card)))
         if not text:
             continue
         rect = _rect_of(card)
@@ -458,13 +741,31 @@ def _scan_grid(img, min_row_h=8, upscale=2, card_h=206, cols=2, col_split=None):
     return out
 
 
+def _match_text(row):
+    """匹配商品名用的文本：只认结构化名称（或单卡路径的可靠词流）。
+
+    批量路径的 `text_batch` 与单卡路径的词流不是逐字一致的（窄块被补宽后
+    分隔符会丢），用它匹配就可能匹配到错的名字、点错商品 —— 这里明确排除：
+    `name_source` 为 text_batch / none 的行直接给空串（`check()` 也先一步
+    拦掉了，这里是第二道闸）。`_scan_grid` 的退路行没有 `name_source`，
+    行为保持原样（整行文字本来就是那条路径唯一的来源）。
+    """
+    src = row.get("name_source")
+    if src in ("text_batch", "none"):
+        return ""
+    name = (row.get("name") or "").strip()
+    if name:
+        return name
+    return row.get("text") or ""
+
+
 def _matches_name(row, task):
     """名称匹配：任务名或任一别名，模糊比对。"""
     names = [task.get("name") or ""] + list(task.get("keywords") or [])
     names = [n for n in names if n]
     if not names:
         return True, 1.0
-    hit, score = ocr.best_match(row["text"], names, floor=0.55)
+    hit, score = ocr.best_match(_match_text(row), names, floor=0.55)
     return hit is not None, round(score, 3)
 
 
@@ -477,7 +778,7 @@ def _matches_brick(row, task):
     season = (task.get("season") or "").strip()
     if not season:
         return True, "不限赛季"
-    info = bricks.identify(row["text"])
+    info = bricks.identify(_match_text(row))
     if not info.get("ok"):
         return False, "认不出赛季"
     seasons = {o["season"] for o in info["options"]}
@@ -486,14 +787,38 @@ def _matches_brick(row, task):
     return False, f"不是 {season}（认成 {'/'.join(sorted(seasons))}）"
 
 
+def _task_number(task, key):
+    """任务里的数值参数：有限且非负才算数。
+
+    审查 R03-N14：`float("nan")` 会让 `lo and price < lo` 恒为假，等于把
+    上下限静默关掉；`-100` 的下限同理。脏值按「未设置」处理。
+    """
+    try:
+        v = float(task.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(v) or v < 0:
+        return 0.0
+    return v
+
+
 def check(row, task):
-    """一行是否符合任务条件。返回 (ok, 原因)。"""
+    """一行是否符合任务条件。返回 (ok, 原因)。
+
+    降级行（`name_source` 为 `text_batch` / `none`：结构化名字块没认出来，
+    只剩批量调试文本或什么都没有）**一律不参与自动购买**，只展示。
+    批量词流与单卡词流不是逐字一致的，拿它匹配商品名就可能点错货。
+    """
+    src = row.get("name_source")
+    if src in ("text_batch", "none"):
+        return False, f"降级：name_source={src}，仅展示不购买"
+
     ok, score = _matches_name(row, task)
     if not ok:
         return False, f"名称不符（{score}）"
 
-    lo = float(task.get("min_price") or 0)
-    hi = float(task.get("max_price") or 0)
+    lo = _task_number(task, "min_price")
+    hi = _task_number(task, "max_price")
     if row["price"] is None:
         # **价格读不出来就默认拦掉。** 只有显式配置 allow_unknown_price 才放行。
         # 以前只在配了上下限时才拦：没配限价（最常见）的行价一律放行，OCR 读
@@ -502,10 +827,16 @@ def check(row, task):
         if not task.get("allow_unknown_price"):
             return False, "价格没读出来"
     else:
-        if lo and row["price"] < lo:
-            return False, f"价格 {row['price']:.0f} 低于下限 {lo:.0f}"
-        if hi and row["price"] > hi:
-            return False, f"价格 {row['price']:.0f} 高于上限 {hi:.0f}"
+        price = row["price"]
+        if not math.isfinite(price):
+            return False, "价格不是有限数字"
+        # 0 元/负价只可能是解析残片，绝不能因为「最便宜」被挑中（审查 R03-N07）
+        if price <= 0:
+            return False, f"价格 {price:g} 不可信"
+        if lo and price < lo:
+            return False, f"价格 {price:.0f} 低于下限 {lo:.0f}"
+        if hi and price > hi:
+            return False, f"价格 {price:.0f} 高于上限 {hi:.0f}"
 
     craft = (task.get("craft") or "").strip()
     if craft:
@@ -526,7 +857,7 @@ def check(row, task):
         if row["wear"] != wear:
             return False, f"成色是 {row['wear']}，要 {wear}"
 
-    max_wear = float(task.get("max_wear") or 0)
+    max_wear = _task_number(task, "max_wear")
     if max_wear:
         if row["wear_value"] is None:
             return False, "磨损值没读出来"
@@ -566,10 +897,13 @@ def pick(rows, task, exclude=None):
     hits = []
     for row in rows:
         if any(_same_spot(row, spot) for spot in exclude):
-            diag.append({"text": row["text"], "ok": False, "why": "已经点过"})
+            diag.append({"text": row.get("text") or "", "ok": False,
+                         "why": "已经点过",
+                         "name_source": row.get("name_source")})
             continue
         ok, why = check(row, task)
-        diag.append({"text": row["text"], "ok": ok, "why": why})
+        diag.append({"text": row.get("text") or "", "ok": ok, "why": why,
+                     "name_source": row.get("name_source")})
         if ok:
             hits.append(row)
 

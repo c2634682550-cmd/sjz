@@ -30,7 +30,9 @@ def _number(values, key, default, errors):
         return default
     try:
         n = float(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # 400 位整数（如 `10**400`）float() 直接 OverflowError：这是「超出
+        # 可表示范围」，必须变成可读的 400，不能让接口抛 500（N9/E7）。
         errors.append(f"「{LABELS[key]}」必须是有限数字")
         return default
     if not math.isfinite(n):
@@ -55,7 +57,7 @@ def _real(values, key, default, errors):
         return default
     try:
         n = float(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         errors.append(f"「{LABELS[key]}」必须是有限数字")
         return default
     if not math.isfinite(n):

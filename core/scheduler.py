@@ -28,6 +28,7 @@ import uuid
 from collections import deque
 
 from . import timesync
+from . import watchdog as wd_mod
 from .config import (Config, ConfigLoadError, drop_task_dir, mode_for_workflow,
                      normalize_workflow, task_workflow)
 from .validate import check_conditions
@@ -40,6 +41,25 @@ PENDING, ARMED, RUNNING, DONE, FAILED, SKIPPED = (
 WORKFLOW_CN = {"countdown": "公示期倒计时", "list": "在售列表", "detail": "商品页按钮"}
 
 ARM_LEAD = 20.0      # 提前 20 秒装载模板、进入布防
+
+# 看门狗：引擎心跳超过这么久没跳就认定卡死（截图驱动/OCR 服务把线程堵住）。
+# 60 秒足够宽 —— 正常倒计时循环每几毫秒 beat 一次，真卡住才能到 60。
+WATCHDOG_STALL_S = 60.0
+# 卡死在「还在盯」阶段时自动重开一轮；最多这么多次，之后交给人。
+WATCHDOG_MAX_RESTARTS = 2
+
+# S9：调度级看门狗（core/watchdog.py 的 Heartbeat / Watchdog）。
+# 以前这个模块根本没被调度器引用，等于摆设：调度线程卡在 borrow_config /
+# engine.start 这类同步调用里时，引擎心跳没人读，整条队列到天亮没动静。
+#   · step_s  引擎心跳（某一步）超过这么久 = 某一步卡住／死循环；
+#   · round_s 调度线程自己的心跳（整轮）超过这么久 = 整轮卡住；
+#   · confirm 连续确认次数，防抖（慢但还在推进不算卡死）；
+#   · poll_s  监督线程采样间隔。
+# 可在 config.json 的 "watchdog" 段覆盖（测试用极小值）。
+WD_STEP_S = 25.0
+WD_ROUND_S = 90.0
+WD_CONFIRM = 3
+WD_POLL_S = 1.0
 
 
 def _same_file(a, b):
@@ -76,6 +96,9 @@ def sync_template(cfg, name, tid):
     return os.path.isfile(dst)
 
 
+GUARD_BLOCKING = ("halted", "waiting_human")
+
+
 class Scheduler:
     """任务队列 + 调度器。
 
@@ -100,6 +123,25 @@ class Scheduler:
         self._queue_cache = []
         self._cfg_error = None
         self._cfg_error_said = None
+        # 队列硬停锁（审查 B02）：非空 = 已安全停止/需要人处理，下一次派发
+        # 前必须先看守卫；只有用户显式「继续」或守卫自行恢复到 ok 才清。
+        self._halt_reason = ""
+        self._halt_hard = False
+        self._halt_said = ""
+        # S9：调度级看门狗。心跳由调度线程打点，监督线程只读心跳 + 处置，
+        # 这样「调度线程自己卡死」也能被外面看见。
+        self._hb = wd_mod.Heartbeat()
+        self._wd_step = None
+        self._wd_round = None
+        self._wd_cfg = {"step_s": WD_STEP_S, "round_s": WD_ROUND_S,
+                        "confirm": WD_CONFIRM, "poll_s": WD_POLL_S}
+        self._wd_thread = None
+        self._wd_cancel = threading.Event()
+        self._stall_records = deque(maxlen=20)
+        # 监督线程判定「本轮某一步卡死」后按下的标记：告知 `_drive_task`
+        # 这一轮是被看门狗打断的，不是普通失败 —— 否则它会当成「未抢到」
+        # 收场，重开策略永远走不到。
+        self._wd_kill = None
         self._recover_stale_tasks()
 
     def _recover_stale_tasks(self):
@@ -157,7 +199,7 @@ class Scheduler:
 
     # ---------------- 队列管理 ----------------
 
-    def _read_queue(self):
+    def _read_queue(self, load=None):
         """读队列，成功时更新快照。返回 `(队列, 读盘是否成功, 错误说明)`。
 
         读失败时返回**上一次成功读到的**队列（不是空列表）：空列表会被
@@ -165,7 +207,7 @@ class Scheduler:
         （review R1）。
         """
         try:
-            cfg = Config.load()
+            cfg = (load or Config.load)()
         except Exception as e:               # noqa: BLE001
             err = f"{type(e).__name__}: {e}"
             self._cfg_error = err
@@ -179,10 +221,35 @@ class Scheduler:
         self._cfg_error = err
         return [dict(t) for t in self._queue_cache], False, err
 
+    def _poll_queue(self):
+        """界面轮询用的队列：和 `_read_queue` 同契约，但配置走内存快照。
+
+        `Config.transaction()` 落盘时要 fsync，忙盘时能持 `_save_lock`
+        130ms+；界面 1s 一次的轮询以前就压在它上面（长时报告里的 185ms
+        顿点）。跑单逻辑仍然用 `_read_queue()` —— 那里必须看到最新队列。
+        """
+        load = getattr(Config, "load_cached", Config.load)
+        return self._read_queue(load)
+
     def tasks(self):
         with self._lock:
-            queue, _ok, _err = self._read_queue()
-            return queue
+            queue, _ok, _err = self._poll_queue()
+            return [self._with_route_hint(t) for t in queue]
+
+    @staticmethod
+    def _with_route_hint(task):
+        """给界面一个「这条任务用的是旧路线」的提示（审查 R3）。
+
+        全局路线切换后，任务自己钉住的路线不会跟着变；静默不一致正是这次
+        返工要消掉的东西，所以 API 里显式给一句话，前端直接显示即可。
+        """
+        if task.get("route_stale"):
+            wf = task.get("workflow_effective") or task.get("workflow") or ""
+            task["route_hint"] = (f"该任务使用旧路线："
+                                  f"{WORKFLOW_CN.get(wf, wf or '未知')}")
+        else:
+            task.pop("route_hint", None)
+        return task
 
     def tasks_status(self):
         """队列 + 读盘状态。给 /api/tasks 用：界面能看出「配置读失败」。
@@ -190,8 +257,9 @@ class Scheduler:
         只有 `config_ok=False` 时 `tasks` 才是上一次的快照，可能比盘上旧。
         """
         with self._lock:
-            queue, ok, err = self._read_queue()
-            return {"tasks": queue, "config_ok": ok, "config_error": err}
+            queue, ok, err = self._poll_queue()
+            return {"tasks": [self._with_route_hint(t) for t in queue],
+                    "config_ok": ok, "config_error": err}
 
     def add(self, name, keywords=None, fire_at=0, note="", regions=None, template_from=None,
             mode=None, min_price=0, max_price=0, max_wear=0,
@@ -263,6 +331,11 @@ class Scheduler:
                 "mode": mode,
                 # 走哪条抢购路线（countdown / list / detail）；mode 是它的派生
                 "workflow": wf,
+                # 路线来源（审查 R3）：没显式选过就跟着全局走，切全局时重新派生
+                "workflow_explicit": bool(workflow not in (None, "")),
+                "workflow_source": ("task" if workflow not in (None, "") else "global"),
+                "workflow_effective": wf,
+                "route_stale": False,
                 "regions": regions,
                 "fire_at": float(fire_at or 0),
                 "status": PENDING,
@@ -356,23 +429,17 @@ class Scheduler:
 
         条件改了就该把旧任务删掉：留着它，调度器会按老条件再跑一遍 ——
         老条件可能是「不限价」，那就是真金白银的事故。
+
+        模板目录一起删：不删的话 data/ 只涨不落（实测堆了 799 个目录、53MB，
+        而队列里通常只有 1-2 条）。
         """
         with self._lock, Config.transaction() as cfg:
             before = len(cfg["queue"])
             cfg["queue"] = [t for t in cfg["queue"] if t.get("id") != task_id]
             removed = before - len(cfg["queue"])
         if removed:
-            self._drop_task_dir(task_id)
+            drop_task_dir(task_id)
         return removed
-
-    @staticmethod
-    def _drop_task_dir(task_id):
-        """删任务时把它的模板目录一起删掉。
-
-        不删的话 data/ 只涨不落：实测堆了 799 个目录、53MB，而队列里
-        通常只有 1-2 条。
-        """
-        drop_task_dir(task_id)
 
     def clear_finished(self):
         with self._lock, Config.transaction() as cfg:
@@ -382,7 +449,7 @@ class Scheduler:
                             if t["status"] not in (DONE, FAILED, SKIPPED)]
             left = len(cfg["queue"])
         for tid in gone:
-            self._drop_task_dir(tid)
+            drop_task_dir(tid)
         return left
 
     def update(self, task_id, **fields):
@@ -397,6 +464,11 @@ class Scheduler:
             if wf:
                 fields["workflow"] = wf
                 fields["mode"] = mode_for_workflow(wf)
+                # 用户在这条任务上显式改路线 = 钉住，不再跟随全局（审查 R3）
+                fields["workflow_explicit"] = True
+                fields["workflow_source"] = "task"
+                fields["workflow_effective"] = wf
+                fields["route_stale"] = False
         with self._lock, Config.transaction() as cfg:
             for t in cfg["queue"]:
                 if t["id"] == task_id:
@@ -409,74 +481,108 @@ class Scheduler:
     # ---------------- 运行 ----------------
 
     def start(self):
-        """启动一轮（只有实战一种路径）。"""
-        if self._thread and self._thread.is_alive():
-            if not self._stop.is_set():
-                return False, "调度器已在运行"
-            # 上一轮 stop() 的 join 超时了，旧线程可能还在点鼠标。共享一个
-            # 鼠标，绝不能让两轮并行 —— 先再收一次，收不干净就拒绝（审查 S14）。
-            # 以前这里直接放行新一轮，旧线程还在点，点击就叠在一起了。
-            self.stop()
+        """启动一轮（只有实战一种路径）。
+
+        存活判断、守卫检查、`self._engine` 替换、建线程**全在同一临界区**
+        （审查 R01 #1）：以前 is_alive() 在锁外，6 条线程同时调用会起 6 条
+        调度线程、构造 7 个 Engine，只有最后一个可达，旧引擎仍在点鼠标。
+        """
+        with self._stop_guard:
             if self._thread and self._thread.is_alive():
-                return False, "上一轮还在收尾，稍等两秒再开始"
-        with self._lock:
-            cfg = Config.load()
-            if not getattr(cfg, "load_ok", True):
-                # 读失败时这份 cfg 是默认值：queue 是空的、区域也没了。
-                # 直接报错比「按默认配置点鼠标」安全，也不写盘。
-                return False, (f"{getattr(cfg, 'last_error', None) or '配置读不出来'}"
-                               "，先别开抢（关掉占着 config.json 的程序后重试）")
-            if not cfg["queue"]:
-                return False, "队列是空的"
-            # 开跑前先把「模板在不在」查一遍。缺模板的话任务会在后台线程里
-            # 立刻失败，而接口已经回了「已启动」—— 用户看到的就是点了没反应。
-            first = [t for t in cfg["queue"]
-                     if t.get("status") in (PENDING, ARMED) and t.get("enabled", True)]
-            if not first:
-                # 失败/跳过的任务，再点一次开始就是「重跑」，自动复位；
-                # **已完成（DONE）的绝不能在这里复活** —— 换目标后旧任务
-                # 还留在队列里，一点开始就把上一个目标重新抢一遍。
-                # 要重跑 DONE，必须在队列页显式确认（前端 update 成 pending）。
-                with Config.transaction() as cur:
-                    revived = False
-                    for t in cur["queue"]:
-                        if (t.get("enabled", True)
-                                and t.get("status") in (FAILED, SKIPPED)):
-                            t["status"] = PENDING
-                            t["result"] = None
-                            revived = True
-                if not revived:
-                    return False, ("队列里只剩已完成的任务 —— 要重跑请先在"
-                                   "队列页点「重跑」并确认")
+                if not self._stop.is_set():
+                    return False, "调度器已在运行"
+                # 上一轮 stop() 的 join 超时了，旧线程可能还在点鼠标。共享一个
+                # 鼠标，绝不能让两轮并行 —— 先再收一次，收不干净就拒绝（S14）。
+                self.stop()
+                if self._thread and self._thread.is_alive():
+                    return False, "上一轮还在收尾，稍等两秒再开始"
+            # 硬停是持久状态：没有用户显式「继续」，**任何**启动都不能绕过（B02）
+            if self._halt_reason:
+                return False, (f"{self._halt_reason} —— 先在异常弹层点「继续」，"
+                               "再开始")
+            try:
+                g = self.guard_status().get("guard") or {}
+            except Exception:                # noqa: BLE001
+                g = {}
+            if g.get("state") in GUARD_BLOCKING or g.get("halt_latched"):
+                self._set_halt(g.get("message") or "当前处于安全停止状态",
+                               hard=bool(g.get("state") == "halted"
+                                         or g.get("halt_latched")))
+                return False, (g.get("message")
+                               or "当前处于安全停止状态，请先点「继续」")
+            # 上一轮线程/引擎异常退出会留下 RUNNING 的任务；两边都确认死了
+            # 才能复位，否则就是把「还在点的任务」再排一遍（S17）。
+            self._recover_orphans()
+            with self._lock:
                 cfg = Config.load()
+                if not getattr(cfg, "load_ok", True):
+                    # 读失败时这份 cfg 是默认值：queue 是空的、区域也没了。
+                    # 直接报错比「按默认配置点鼠标」安全，也不写盘。
+                    return False, (f"{getattr(cfg, 'last_error', None) or '配置读不出来'}"
+                                   "，先别开抢（关掉占着 config.json 的程序后重试）")
+                if not cfg["queue"]:
+                    return False, "队列是空的"
+                # 开跑前先把「模板在不在」查一遍。缺模板的话任务会在后台线程里
+                # 立刻失败，而接口已经回了「已启动」—— 用户看到的就是点了没反应。
                 first = [t for t in cfg["queue"]
-                         if t.get("status") in (PENDING, ARMED)
-                         and t.get("enabled", True)]
-            if first:
-                task = first[0]
-                # 模板要求按 **workflow** 判，和引擎 preflight 完全一致（审查 P0-4）：
-                #   list      → 只要 buy 模板（无弹窗版式，不要求确认）
-                #   countdown → 只要 confirm 模板（归零直接点购买，不认按钮长相）
-                #   detail    → buy + confirm 都要
-                wf = task_workflow(task, cfg.get("workflow") or "countdown")
-                need = {"list": ("buy",),
-                        "countdown": ("confirm",),
-                        "detail": ("buy", "confirm")}[wf]
-                missing = [n for n in need
-                           if not (os.path.isfile(cfg.template_path(n, task.get("id")))
-                                   or os.path.isfile(cfg.template_path(n)))]
-                if missing:
-                    return False, (f"缺少模板：{'、'.join(missing)}"
-                                   "（先在游戏里重新截一次再开始）")
-        self._say("执行模式：实战（会真实点击）")
-        self._stop.clear()
-        self._engine = Engine()
-        # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器。
-        # 必须投递到新线程：回调发生在引擎线程里，直接 join 自己会炸（审查 S11）。
-        self._engine.on_hit = self._hit_stop
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-        return True, "调度器已启动"
+                         if t.get("status") in (PENDING, ARMED) and t.get("enabled", True)]
+                if not first:
+                    # 失败/跳过的任务，再点一次开始就是「重跑」，自动复位；
+                    # **已完成（DONE）的绝不能在这里复活**。需要人处理的
+                # （needs_human，比如开火阶段被打断）也不许自动重排，否则
+                    # 就是重复下单。
+                    with Config.transaction() as cur:
+                        revived = False
+                        for t in cur["queue"]:
+                            if (t.get("enabled", True)
+                                    and not t.get("needs_human")
+                                    and t.get("status") in (FAILED, SKIPPED)):
+                                t["status"] = PENDING
+                                t["result"] = None
+                                revived = True
+                    if not revived:
+                        return False, ("队列里只剩已完成或需要人工处理的任务 —— "
+                                       "要重跑请先在队列页点「重跑」并确认")
+                    cfg = Config.load()
+                    first = [t for t in cfg["queue"]
+                             if t.get("status") in (PENDING, ARMED)
+                             and t.get("enabled", True)]
+                if first:
+                    task = first[0]
+                    # 模板要求按 **workflow** 判，和引擎 preflight 完全一致（P0-4）
+                    wf = task_workflow(task, cfg.get("workflow") or "countdown")
+                    need = {"list": ("buy",),
+                            "countdown": ("confirm",),
+                            "detail": ("buy", "confirm")}[wf]
+                    missing = [n for n in need
+                               if not (os.path.isfile(cfg.template_path(n, task.get("id")))
+                                       or os.path.isfile(cfg.template_path(n)))]
+                    if missing:
+                        return False, (f"缺少模板：{'、'.join(missing)}"
+                                       "（先在游戏里重新截一次再开始）")
+            self._say("执行模式：实战（会真实点击）")
+            self._stop.clear()
+            self._engine = Engine()
+            # 「抢到就停」靠这个回调通知调度器自己停 —— 引擎不认识调度器。
+            # 必须投递到新线程：回调发生在引擎线程里，直接 join 自己会炸（S11）。
+            self._engine.on_hit = self._hit_stop
+            # S9：把看门狗真正接进来。心跳/阈值按这份配置装；监督线程
+            # 与调度线程同生共死 —— 调度线程卡住时，只有它还能动。
+            self._arm_watchdog(cfg)
+            try:
+                self._thread = threading.Thread(target=self._run, daemon=True)
+                self._thread.start()
+                self._start_watchdog()
+            except Exception as e:               # noqa: BLE001
+                # 启动失败要回滚：线程没起来却把 _thread 指过去，下一次 start
+                # 会永远看到「已在运行」。看门狗起不来同样不能留半套。
+                self._stop.set()
+                t = self._thread
+                if t and t.is_alive() and t is not threading.current_thread():
+                    t.join(timeout=1.0)
+                self._thread = None
+                return False, f"调度线程启动失败：{type(e).__name__}: {e}"
+            return True, "调度器已启动"
 
     def stop(self):
         """停下调度器。**幂等**：连按两下停止不会把状态搞成半截（审查 S26）。
@@ -492,30 +598,98 @@ class Scheduler:
             self._stopping = True
         try:
             self._stop.set()
+            eng_ok, eng_msg = True, ""
             try:
-                self._engine.stop()
+                res = self._engine.stop()
+                if isinstance(res, tuple) and len(res) >= 2:
+                    eng_ok, eng_msg = bool(res[0]), str(res[1])
+                else:
+                    eng_ok = not self._engine_alive()
             except Exception:                # noqa: BLE001
                 traceback.print_exc()
+                eng_ok, eng_msg = False, "引擎停止时报错"
             t = self._thread
             if t and t.is_alive() and t is not threading.current_thread():
                 try:
                     t.join(timeout=3.0)
                 except RuntimeError:
                     pass
+            # **只有真停了才算停**（审查 R01 #3）：引擎线程还在不可打断的
+            # OCR/HTTP 调用里时，返回「已停止」会让上层把任务放回 PENDING、
+            # 再开一轮，于是两个引擎同时点同一个鼠标。
+            # 退出前必须确认输入已释放（审查 R01 #4）：`_bye` 在 stop() 之后
+            # 立刻 os._exit(0)，不给任何守护线程收尾的机会。这里同步做一遍
+            # 强制收尾（冻结 + 释放输入 + 还原光标），释放不掉要把结果说清楚。
+            rel_ok, rel_msg = True, ""
+            try:
+                res = self._engine.force_release_input()
+                if isinstance(res, tuple) and len(res) >= 2:
+                    rel_ok, rel_msg = bool(res[0]), str(res[1])
+            except AttributeError:
+                rel_ok = True
+            except Exception as e:           # noqa: BLE001
+                rel_ok, rel_msg = False, f"强制释放输入失败：{type(e).__name__}: {e}"
+            if not rel_ok:
+                self._set_halt(rel_msg or "输入没能确认释放", hard=True)
+                self._say(f"停止：{rel_msg or '输入没能确认释放'}", "error")
+                return False, (rel_msg or "输入没能确认释放")
+            if not eng_ok or self._engine_alive():
+                self._set_halt(eng_msg or "停止请求已发出，但引擎还没退出", hard=True)
+                self._say("停止请求已发出，引擎还在收尾（队列已锁住）", "warn")
+                return False, "正在停止（引擎还没退出）"
             if t and t.is_alive():
-                # join 没等到：线程可能还在点鼠标。这时候**不能**把状态改回
-                # PENDING，否则下一轮 start() 会以为队列空闲、和旧线程并行
-                # 抢同一个鼠标（审查 S14）。
+                # join 没等到：线程可能还在点鼠标。不能把状态改回 PENDING。
+                self._set_halt("上一轮调度线程还在收尾", hard=True)
                 self._say("停止请求已发出，上一轮还在收尾", "warn")
-                return True, "正在停止（上一轮还在收尾）"
+                return False, "正在停止（上一轮还在收尾）"
             with self._lock, Config.transaction() as cfg:
                 for t in cfg["queue"]:
                     if t["status"] in (ARMED, RUNNING):
                         t["status"] = PENDING
             return True, "已停止"
         finally:
+            self._stop_watchdog()
             with self._stop_guard:
                 self._stopping = False
+
+    def _recover_orphans(self):
+        """把异常退出留下的 RUNNING 放回队列（两边都死了才敢动）。"""
+        if self._thread and self._thread.is_alive():
+            return 0
+        if self._engine_alive():
+            return 0
+        try:
+            with self._lock, Config.transaction() as cfg:
+                fixed = 0
+                for t in cfg["queue"]:
+                    if t.get("status") == RUNNING:
+                        t["status"] = PENDING
+                        t["result"] = "上一轮没跑完，已放回队列"
+                        fixed += 1
+        except Exception:                    # noqa: BLE001
+            # 配置读不出来时由 start() 的 load_ok 分支统一报错，这里不抢答
+            return 0
+        if fixed:
+            self._say(f"复位 {fixed} 条上一轮遗留的「运行中」任务", "warn")
+        return fixed
+
+    def _engine_alive(self):
+        try:
+            return bool(self._engine.status().get("running"))
+        except Exception:                    # noqa: BLE001
+            return False
+
+    def _set_halt(self, reason, hard=False):
+        """锁住队列：非空期间 _run_step 不派发任何任务（B02）。"""
+        with self._lock:
+            self._halt_reason = str(reason or "已安全停止")
+            self._halt_hard = bool(hard or self._halt_hard)
+
+    def _clear_halt(self):
+        with self._lock:
+            self._halt_reason = ""
+            self._halt_hard = False
+            self._halt_said = ""
 
     def _hit_stop(self):
         """引擎「抢到就停」回调。
@@ -528,7 +702,7 @@ class Scheduler:
 
     def status(self):
         with self._lock:
-            tasks, cfg_ok, cfg_err = self._read_queue()
+            tasks, cfg_ok, cfg_err = self._poll_queue()
             active = self._active_id
             log = list(self._log)[-80:]
         return {
@@ -541,8 +715,65 @@ class Scheduler:
             "config_error": cfg_err,
             "log": log,
             "engine": self._engine.status(),
+            "watchdog": {
+                "step_s": self._wd_cfg.get("step_s"),
+                "round_s": self._wd_cfg.get("round_s"),
+                "confirm": self._wd_cfg.get("confirm"),
+                "alive": bool(self._wd_thread and self._wd_thread.is_alive()),
+                "beat_age_s": self._hb.age("tick"),
+                "stalls": list(self._stall_records)[-5:],
+            },
             "clock": timesync.info(),
         }
+
+    def guard_status(self):
+        """场景守卫的对外快照：级别、一句人话、唯一主按钮、现在在做什么。"""
+        try:
+            st = self._engine.status()
+            return {"guard": st.get("guard"), "doing": st.get("doing"),
+                    "engine_state": st.get("state")}
+        except Exception as e:                   # noqa: BLE001
+            return {"guard": None, "doing": "", "error": str(e)}
+
+    def guard_resume(self):
+        """人工段处理完 / 用户点「继续」：清暂停，必要时把队列接着跑起来。
+
+        以前这里只清守卫，调度器若已退出就永远不动 —— 用户点了「继续」，
+        界面显示正常，可队列一条都不再派发（审查 B04/M-12）。
+        """
+        try:
+            snap = self._engine.guard_resume()
+        except Exception:                        # noqa: BLE001
+            snap = {}
+        self._clear_halt()
+        started = False
+        if not (self._thread and self._thread.is_alive()):
+            try:
+                pending = [t for t in self.tasks()
+                           if t.get("status") in (PENDING, ARMED)
+                           and t.get("enabled", True)]
+            except Exception:                    # noqa: BLE001
+                pending = []
+            if pending:
+                ok, _msg = self.start()
+                if ok:
+                    started = True
+                    self._say("继续：调度器接着跑", "hit")
+        out = dict(snap or {})
+        out["resumed"] = True
+        out["queue_running"] = started
+        return out
+
+    def guard_stop(self):
+        """安全停止：冻结、还原光标、写记录、退出，并且锁住整条队列。"""
+        self._set_halt("已安全停止", hard=True)
+        try:
+            snap = self._engine.guard_stop()
+        except Exception:                        # noqa: BLE001
+            snap = {}
+        self._set_halt((snap or {}).get("message") or "已安全停止", hard=True)
+        self._say("安全停止：队列已锁住，等你核对后再点「继续」", "warn")
+        return snap
 
     def busy(self):
         """现在是不是正在跑一轮抢购。
@@ -550,10 +781,7 @@ class Scheduler:
         OCR 服务管家靠它决定「现在能不能重启」—— 蓝绿虽然不断流，但新实例
         加载模型要占显存和带宽，正在抢的那一轮里没必要折腾。
         """
-        try:
-            return bool(self._engine.status().get("running"))
-        except Exception:                        # noqa: BLE001
-            return False
+        return self._engine_alive()
 
     def note(self, msg, level="info"):
         """外部往日志里写一行（热键、启动前检查这些不是任务自己在说的话）。"""
@@ -579,9 +807,186 @@ class Scheduler:
                         t["result"] = result
                     break
 
+    def _settle_task(self, task_id, reason):
+        """把一条没跑成的任务落成 FAILED，返回是否写盘成功（审查 F4）。
+
+        写不进去时不能假装成功：调用方会据此锁队列，并在下一次启动时
+        由 `_recover_orphans` 把 RUNNING 回滚成可重试的 PENDING。
+        """
+        try:
+            self._set_status(task_id, FAILED, reason)
+            return True
+        except Exception as e:                   # noqa: BLE001
+            self._say(f"任务收场写盘失败：{type(e).__name__}: {e}", "error")
+            return False
+
+    # ---------------------------------------------------------------- S9 看门狗
+
+    def _arm_watchdog(self, cfg):
+        """按配置装心跳阈值（测试会传极小的值来实测触发时延）。"""
+        try:
+            w = cfg.get("watchdog") or {}
+        except Exception:                        # noqa: BLE001
+            w = {}
+
+        def num(key, default):
+            try:
+                return max(0.02, float(w.get(key, default)))
+            except (TypeError, ValueError):
+                return default
+
+        step_s = num("step_s", WD_STEP_S)
+        round_s = num("round_s", WD_ROUND_S)
+        confirm = max(1, int(num("confirm", WD_CONFIRM)))
+        self._wd_cfg = {"step_s": step_s, "round_s": round_s,
+                        "confirm": confirm, "poll_s": num("poll_s", WD_POLL_S)}
+        self._hb.reset()
+        self._wd_step = wd_mod.Watchdog(self._hb, limit_s=step_s,
+                                        confirm_times=confirm,
+                                        cooldown_s=max(step_s, 1.0))
+        self._wd_round = wd_mod.Watchdog(self._hb, limit_s=round_s,
+                                         confirm_times=confirm,
+                                         cooldown_s=max(round_s, 1.0))
+
+    def _start_watchdog(self):
+        self._wd_cancel.clear()
+        t = threading.Thread(target=self._watchdog_loop, daemon=True,
+                             name="dafors-watchdog")
+        t.start()
+        self._wd_thread = t
+
+    def _stop_watchdog(self):
+        self._wd_cancel.set()
+        t = self._wd_thread
+        if t and t.is_alive() and t is not threading.current_thread():
+            t.join(timeout=1.0)
+        self._wd_thread = None
+
+    def _watchdog_loop(self):
+        """监督线程：只读心跳、只处置，不参与正常调度。
+
+        这样即使调度线程自己卡在一次同步调用里（写盘、engine.start），
+        它也有机会发现并安全停机。
+        """
+        while not self._wd_cancel.is_set() and not self._stop.is_set():
+            try:
+                self._watchdog_poll_once()
+            except Exception as e:               # noqa: BLE001
+                self._say(f"看门狗自身异常：{type(e).__name__}: {e}", "error")
+            self._wd_cancel.wait(self._wd_cfg.get("poll_s", WD_POLL_S))
+
+    def _watchdog_poll_once(self):
+        if self._halt_reason or not self._wd_round:
+            return None
+        # 整轮卡住优先：调度线程自己不动了，引擎心跳再新也没人推进队列。
+        if self._wd_round.poll(("tick",)):
+            return self._on_round_stall()
+        st = {}
+        try:
+            st = self._engine.status() or {}
+        except Exception:                        # noqa: BLE001
+            return None
+        if not st.get("running"):
+            return None
+        age = st.get("beat_age_s")
+        if age is None:
+            return None
+        if self._wd_step.poll(("tick",), age_override=age):
+            return self._on_step_stall(st, float(age))
+        return None
+
+    def _record_stall(self, kind, age, stage, action):
+        self._stall_records.append({"at": time.time(), "kind": kind,
+                                    "age_s": round(float(age), 3),
+                                    "stage": stage, "action": action,
+                                    "task": self._active_id})
+
+    def _on_round_stall(self):
+        """整轮卡住：调度线程没有推进 —— 一律安全停机，绝不自动重跑。
+
+        无法确认它卡在哪一步，也就无法排除「已经点过确认」，所以保守处理：
+        锁队列 + 当前任务标人工。
+        """
+        age = self._hb.age("tick")
+        reason = (f"整轮卡住：调度心跳 {age:.1f}s 没有推进"
+                  f"（阈值 {self._wd_cfg['round_s']:.1f}s），"
+                  "已安全停机")
+        self._set_halt(reason, hard=True)
+        try:
+            self._engine.guard_stop()
+        except Exception:                    # noqa: BLE001
+            try:
+                self._engine.stop(timeout=2.0)
+            except Exception:                # noqa: BLE001
+                pass
+        if self._active_id:
+            try:
+                self._needs_human(self._active_id, reason)
+            except Exception:                # noqa: BLE001
+                pass
+        self._say(reason, "error")
+        self._record_stall("round", age or 0.0, "unknown", "halt")
+        return "halt"
+
+    def _on_step_stall(self, st, age):
+        """某一步卡死：先看阶段，fire/confirm 之后一律不自动重跑。"""
+        stage = st.get("stage_before_stop") or st.get("state") or "unknown"
+        if stage in ("fire", "confirm"):
+            reason = (f"看门狗：某一步卡死 {age:.1f}s 且已在 {stage} 阶段，"
+                      "不自动重跑")
+            # 告诉 `_drive_task`：这轮是看门狗按下的，而且不许重开。
+            self._wd_kill = {"stage": stage, "retry": False, "age": age}
+            if self._active_id:
+                try:
+                    self._needs_human(self._active_id, reason)
+                except Exception:            # noqa: BLE001
+                    pass
+            self._set_halt(reason, hard=True)
+            try:
+                self._engine.stop(timeout=2.0)
+            except Exception:                # noqa: BLE001
+                pass
+            self._say(reason, "error")
+            self._record_stall("step", age, stage, "no_retry")
+            return "no_retry"
+        # 开火之前：停掉这一轮，交给 `_drive_task` 既有的「重开一轮」策略，
+        # 不在这里改写任务状态，避免与调度线程抢同一份配置。
+        self._say(f"看门狗：某一步卡死 {age:.1f}s（{stage} 阶段），"
+                  "停掉本轮交给既有重开策略", "warn")
+        self._wd_kill = {"stage": stage, "retry": True, "age": age}
+        ok, msg = True, ""
+        try:
+            res = self._engine.stop(timeout=2.0)
+            if isinstance(res, tuple):
+                ok, msg = bool(res[0]), str(res[1])
+        except Exception as e:               # noqa: BLE001
+            ok, msg = False, f"{type(e).__name__}: {e}"
+        if not ok:
+            reason = (f"看门狗：某一步卡死且引擎停不下来（{msg}），已锁队列")
+            self._wd_kill["retry"] = False
+            self._set_halt(reason, hard=True)
+            self._say(reason, "error")
+            self._record_stall("step", age, stage, "halt")
+            return "halt"
+        self._record_stall("step", age, stage, "retry")
+        return "retry"
+
+    def _idle(self, seconds):
+        """调度线程的等待也要打心跳 —— 「在等」不等于「卡死」。"""
+        end = time.monotonic() + float(seconds)
+        while not self._stop.is_set():
+            self._hb.beat("tick")
+            left = end - time.monotonic()
+            if left <= 0:
+                break
+            self._stop.wait(min(left, 0.2))
+
     def _run(self):
         try:
             while not self._stop.is_set():
+                # S9：调度线程每轮打一次心跳；卡在同步调用里心跳就停，
+                # 监督线程据此判定「整轮卡住」。
+                self._hb.beat("tick")
                 try:
                     if not self._run_step():
                         break
@@ -595,11 +1000,37 @@ class Scheduler:
                     if self._stop.wait(0.5):
                         break
         finally:
+            self._stop_watchdog()
             with self._lock:
-                self._active_id = None
+                # 只清本线程那一轮的 active：上一轮残留线程不能在下一轮已开始
+                # 之后把 _active_id 抹掉，否则新任务的「跑着改价」全部失效（R01）。
+                if threading.current_thread() is self._thread:
+                    self._active_id = None
 
     def _run_step(self):
         """挑一条任务、布防、执行。返回 False = 队列空了，可以收工。"""
+        # 派发任何任务之前先看守卫（审查 B02）：硬停/人工等待必须锁住整条
+        # 队列。守卫自行回到 ok（目标达成后 auto_resume）时自动续跑；硬停
+        # 只能由用户点「继续」解除。
+        try:
+            g = self.guard_status().get("guard") or {}
+        except Exception:                    # noqa: BLE001
+            g = {}
+        if (g.get("state") in GUARD_BLOCKING or g.get("halt_latched")) \
+                and not self._halt_reason:
+            self._set_halt(g.get("message") or "当前处于安全停止状态",
+                           hard=bool(g.get("state") == "halted"
+                                     or g.get("halt_latched")))
+        if self._halt_reason:
+            if not self._halt_hard and g.get("state") not in GUARD_BLOCKING:
+                self._clear_halt()
+                self._say("守卫已自行恢复（目标已达成），队列自动续跑", "hit")
+            else:
+                if self._halt_reason != self._halt_said:
+                    self._say(f"队列已暂停：{self._halt_reason}", "warn")
+                    self._halt_said = self._halt_reason
+                self._idle(0.2)
+                return True
         # 先看读盘状态：配置读不出来时**不能**推进状态机 ——
         # 以前这里直接拿默认空队列判「队列跑完了」，盘上的任务还在排着，
         # 调度线程却收工了（review R1）。保持队列、记录 error、等下一轮。
@@ -609,7 +1040,7 @@ class Scheduler:
                 self._say(f"配置读不出来：{cfg_err}；本轮不推进，"
                           f"保持队列 {len(queue)} 条", "error")
                 self._cfg_error_said = cfg_err
-            self._stop.wait(0.5)
+            self._idle(0.5)
             return True
         self._cfg_error_said = None
         pending = [t for t in queue
@@ -632,7 +1063,7 @@ class Scheduler:
                     wait = min(fire_at - ARM_LEAD - now, 30.0)
                     self._say(f"下一条：{self._label(task)}，"
                               f"{fire_at - now:.0f}s 后进入布防")
-                    self._stop.wait(wait)
+                    self._idle(wait)
                     return True
                 self._set_status(task["id"], ARMED)
                 self._say(f"进入布防：{self._label(task)}，"
@@ -649,10 +1080,12 @@ class Scheduler:
         try:
             self._run_task(task)
         except Exception as e:                   # noqa: BLE001
-            self._set_status(task["id"], FAILED,
-                             f"{type(e).__name__}: {e}")
+            reason = f"{type(e).__name__}: {e}"
+            if not self._settle_task(task["id"], reason):
+                self._set_halt(f"任务失败且状态写不进去（{reason}）；"
+                               "重启后会自动回滚为等待", hard=True)
             self._say(f"{self._label(task)}：执行出错 "
-                      f"{type(e).__name__}: {e}，跳过它继续", "error")
+                      f"{reason}，跳过它继续", "error")
             for line in traceback.format_exc().splitlines()[-4:]:
                 self._say(line, "error")
         return True
@@ -721,19 +1154,68 @@ class Scheduler:
         workflow = task_workflow(task, "countdown")
         mode = mode_for_workflow(workflow)
         self._active_id = tid
-        self._set_status(tid, RUNNING)
-        self._say(f"开始执行：{self._label(task)}"
-                  f"{'（' + WORKFLOW_CN.get(workflow, workflow) + '）'}", "hit")
+        # 状态置 RUNNING、清人工标记、借用配置**全在同一个保护段里**（审查 F4）：
+        # 以前借调配置在 try 之外，落盘一失败异常直接冒出去，任务永远停在
+        # RUNNING；而补救的 `_set_status(FAILED)` 同样要写盘，写不进去就没人
+        # 收场。现在借调失败一定走到收场分支，绝不留在 RUNNING。
+        try:
+            self._set_status(tid, RUNNING)
+            if task.get("needs_human"):
+                # 用户显式把这条重排进队列了：人工确认已经发生，清掉标记
+                self.update(tid, needs_human=False)
+            self._say(f"开始执行：{self._label(task)}"
+                      f"{'（' + WORKFLOW_CN.get(workflow, workflow) + '）'}", "hit")
 
         # 借全局配置：把任务的区域和筛选条件套进去，引擎只认配置。
         # 这是**临时借用**，跑完必须还（见 _return_config）—— 以前不还，
         # 用户的全局框选会被某一条任务永久改写，下一个任务和手动定位
         # 都按错的区域去点。
-        saved = self._borrow_config(task)
+            saved = self._borrow_config(task)
+        except Exception as e:                   # noqa: BLE001
+            reason = f"借用配置失败：{type(e).__name__}: {e}"
+            self._say(f"{self._label(task)}：{reason}，任务未开始执行", "error")
+            if not self._settle_task(tid, reason):
+                # 连状态都写不进去（盘满/只读）：锁队列，重启时
+                # `_recover_orphans` 会把 RUNNING 回滚成可重试的 PENDING。
+                self._set_halt(reason + "；配置写不进去，重启后该任务会"
+                                       "自动回滚为等待", hard=True)
+            with self._lock:
+                if self._active_id == tid:
+                    self._active_id = None
+            return
         try:
-            self._drive_task(task, mode, workflow)
+            for attempt in range(0, WATCHDOG_MAX_RESTARTS + 1):
+                outcome = self._drive_task(task, mode, workflow)
+                if outcome != "stalled" or self._stop.is_set():
+                    break
+                if attempt >= WATCHDOG_MAX_RESTARTS:
+                    # 重开次数用完：停在失败，不再自动重试。
+                    self._set_status(tid, FAILED,
+                                     f"看门狗连续 {WATCHDOG_MAX_RESTARTS} 次判定卡死，"
+                                     "停止重试（请看日志）")
+                    self._say(f"{self._label(task)}：连续卡死，停止重试", "error")
+                    break
+                # 只有「还在盯、还没点」的卡死才自动重开。重开前把状态
+                # 复位成 RUNNING，界面上看到的是同一任务在重试而不是新任务。
+                # 真正拉起引擎由下一轮 `_drive_task` 完成 —— 这里再调一次
+                # `engine.start()` 会和它撞车（第二次必然「已经在运行了」）。
+                self._say(f"{self._label(task)}：第 {attempt + 1} 次自动重开"
+                          f"（看门狗判定卡死）", "warn")
+                self._set_status(tid, RUNNING)
         finally:
-            self._return_config(saved)
+            # 引擎线程没退出就**不还原**区域（审查 B10）：旧线程还会读全局
+            # 区域去点按钮，还原得越早，它越会按上一条任务/手动定位的坐标点。
+            alive = True
+            try:
+                alive = bool(self._engine.wait_stop(3.0))
+            except Exception:                    # noqa: BLE001
+                alive = True
+            if alive:
+                self._return_config(saved)
+            else:
+                self._set_halt("引擎线程还没退出，本轮配置先不还原", hard=True)
+                self._say(f"{self._label(task)}：引擎线程仍在退出中，"
+                          "配置不还原，队列已锁住", "error")
 
     def _borrow_config(self, task):
         """把任务的区域 / 筛选条件临时写进全局配置，返回还原用的快照。
@@ -749,6 +1231,21 @@ class Scheduler:
                     cfg.set_region(k, v)
             saved = {"regions": borrowed,
                      "active_task": json.loads(json.dumps(cfg.get("active_task") or {}))}
+            # 模板也要记快照：`_drive_task` 会把任务模板拷到全局位置，跑完
+            # 不还原就会永久留在盘上 —— 下一条没有模板的任务照样过 preflight、
+            # 拿**上一条的模板**去点（审查 B09「模板只进不出」）。
+            templates = {}
+            for name in ("buy", "confirm"):
+                path = cfg.template_path(name)
+                try:
+                    if os.path.isfile(path):
+                        with open(path, "rb") as f:
+                            templates[name] = f.read()
+                    else:
+                        templates[name] = None
+                except OSError:
+                    pass
+            saved["templates"] = templates
             cfg["active_task"] = self._engine_task(task)
         return saved
 
@@ -762,11 +1259,31 @@ class Scheduler:
                     if k in cfg["regions"]:
                         cfg.set_region(k, v)
                 cfg["active_task"] = saved.get("active_task") or {}
+                # 模板：原本有就写回原字节，原本没有就删掉任务刚拷进去的那份
+                for name, data in (saved.get("templates") or {}).items():
+                    path = cfg.template_path(name)
+                    try:
+                        if data is None:
+                            if os.path.isfile(path):
+                                os.remove(path)
+                        else:
+                            cur = None
+                            if os.path.isfile(path):
+                                with open(path, "rb") as f:
+                                    cur = f.read()
+                            if cur != data:
+                                with open(path, "wb") as f:
+                                    f.write(data)
+                    except OSError:
+                        pass
         except Exception:                    # noqa: BLE001
             pass
 
     def _drive_task(self, task, mode, workflow):
         tid = task["id"]
+        # 每一轮开始前清掉上一轮的看门狗标记（S9）：否则上一轮的 kill
+        # 会被这一轮当成「自己又卡死了」，重开次数白烧。
+        self._wd_kill = None
         cfg = Config.load()
 
         # 任务自己的模板同步到全局位置，引擎从那儿读。
@@ -782,9 +1299,6 @@ class Scheduler:
                 self._set_status(tid, FAILED, f"缺少 {name} 模板")
                 self._say(f"{self._label(task)}：缺少 {name} 模板，重新截一次", "error")
                 return
-        if workflow == "list":
-            # 列表模式点进详情页后才用购买模板：有就带上，没有也不拦
-            sync_template(cfg, "buy", tid)
 
         ok, msg = self._engine.start(deadline=_fire_at(task) or None,
                                      mode=mode, workflow=workflow)
@@ -794,6 +1308,7 @@ class Scheduler:
             return
 
         t0 = time.time()
+        stalled = False
         while not self._stop.is_set():
             st = self._engine.status() or {}
             if st.get("state") in ("done", "abort"):
@@ -803,10 +1318,36 @@ class Scheduler:
                 # 没落到 done/abort）。这时再等下去就是死等 —— 整条队列卡死，
                 # 后面的任务永远排不上。
                 break
+            age = st.get("beat_age_s")
+            if age is not None and age >= WATCHDOG_STALL_S:
+                # 线程还在（running=True），但心跳停了 —— 这就是「卡在某个
+                # 同步调用里」的典型样子。stop() 只能尽力收尾，真正恢复靠
+                # 上层重开一轮。
+                self._say(f"看门狗：{self._label(task)} 已 {age:.0f}s "
+                          f"没有心跳，判定卡死", "error")
+                stalled = True
+                self._engine.stop()
+                break
+            # 盯的这一轮也要打调度心跳：引擎忙、调度线程活着 = 单步问题；
+            # 两边都不跳才是整轮卡住（S9）。
+            self._hb.beat("tick")
             time.sleep(0.05)
 
         st = self._engine.status() or {}
-        self._engine.stop()
+        pre_state = st.get("state")
+        try:
+            self._engine.stop()
+        except Exception:                    # noqa: BLE001
+            pass
+        st = self._engine.status() or {}
+        # B01 的根因：stop() 会把 state 改成 abort，之后再读永远看不到
+        # fire/confirm。真实阶段必须在停止**之前**记下来 —— 引擎现在把
+        # 它写在 stage_before_stop 里，这里优先用它。
+        stage_before = st.get("stage_before_stop") or pre_state
+        kill = self._wd_kill
+        if kill:
+            # 监督线程判定的阶段比 stop() 之后读到的更准（它是在卡死当时读的）
+            stage_before = kill.get("stage") or stage_before
         elapsed = round(time.time() - t0, 2)
 
         # 这一轮抢到几件、花了多少，累计回任务上 —— 列表的「已抢」就靠它
@@ -821,7 +1362,50 @@ class Scheduler:
             res = f"完成，{int(stats.get('clicks') or 0)} 次点击，{elapsed}s"
             self._set_status(tid, DONE, res)
             self._say(f"{self._label(task)}：{res}", "hit")
-        elif self._stop.is_set():
+            return "ok"
+
+        # —— 守卫硬停/人工等待：落到任务状态，并且锁住整条队列（B02）
+        g = {}
+        try:
+            g = self._engine.guard_snapshot() or {}
+        except Exception:                    # noqa: BLE001
+            g = st.get("guard") or {}
+        gstate = g.get("state")
+        if gstate in ("halted", "waiting_human"):
+            if stage_before in ("fire", "confirm"):
+                msg = (f"停在{stage_before}阶段（可能已下单），需要人工核对，"
+                       "不自动重跑")
+                self._needs_human(tid, msg)
+                self._set_halt(msg, hard=True)
+            elif gstate == "halted":
+                msg = g.get("message") or "已安全停止，需要人工处理"
+                self._needs_human(tid, msg)
+                self._set_halt(msg, hard=True)
+            else:
+                # 人工等待还没进开火：任务放回等待，用户点「继续」后继续跑
+                self._set_status(tid, PENDING,
+                                 "需要你处理：处理完点「继续」自动接着跑")
+                self._set_halt(g.get("message") or "等待人工处理", hard=False)
+            self._say(f"{self._label(task)}：{self._halt_reason}", "warn")
+            return "halted"
+
+        if stalled or kill:
+            # 卡死在「已经在点购买/确认」阶段时**绝不自动重跑**：可能已经
+            # 下过单，重跑会把同一件再买一次。宁可停在失败等人看一眼。
+            no_retry = ((kill and not kill.get("retry"))
+                        or stage_before in ("fire", "confirm"))
+            if no_retry:
+                msg = (f"看门狗：卡死在{stage_before or '未知'}阶段"
+                       f"（{float((kill or {}).get('age') or 0.0):.1f}s 无心跳），"
+                       "可能已下单，不自动重跑")
+                self._needs_human(tid, msg)
+                self._set_halt(msg, hard=True)
+                self._say(f"{self._label(task)}：{msg}", "error")
+                return "stalled_no_retry"
+            self._set_status(tid, FAILED, "看门狗：心跳停了（卡死），准备重开一轮")
+            self._say(f"{self._label(task)}：卡死，收尾后重开一轮", "warn")
+            return "stalled"
+        if self._stop.is_set():
             self._set_status(tid, PENDING, "被停止")
             self._say(f"{self._label(task)}：被停止", "warn")
         else:
@@ -831,3 +1415,12 @@ class Scheduler:
             res = st.get("error") or self._engine_reason(st) or "未抢到"
             self._set_status(tid, FAILED, res)
             self._say(f"{self._label(task)}：{res}", "warn")
+        return "ok"
+
+    def _needs_human(self, task_id, msg):
+        """落成「需要人处理」：FAILED 可见，并且带 needs_human 不许自动重排。"""
+        self._set_status(task_id, FAILED, msg)
+        try:
+            self.update(task_id, needs_human=True)
+        except Exception:                    # noqa: BLE001
+            pass

@@ -19,16 +19,12 @@ import re
 import cv2
 import numpy as np
 
-from . import vision
+from . import bricks, money, vision
 
 # 相邻帧「变了」的判据：卡片平均灰度差超过这个值才算变。
 # 3 以下基本都是游戏自己的光照闪烁和粒子特效，不是换货。
 CHANGE_DELTA = 6.0
 
-# 价格候选：带千位逗号或小数点的数串
-_PRICE_TOKEN = re.compile(r"\d[\d,]*(?:\.\d+)?")
-# 整条带只有「一个数」（价格单独成带时的样子）
-_PURE_NUMBER = re.compile(r"[¥￥]?\s*(\d[\d,]*(?:\.\d+)?)\s*")
 # 型号 token（QBZ951 / M250）：整段摘掉，免得型号里的数字被当价格
 _MODEL_LIKE = re.compile(r"[A-Za-z][A-Za-z0-9.\-]*\d[A-Za-z0-9.\-]*")
 # 价格下限：和 market._MIN_PRICE 一个口径（两位数是残数字，不是价格）
@@ -38,48 +34,56 @@ _MIN_PRICE = 100
 def _price_token_in(text):
     """从一段混合文字里切出「像价格」的那个数，切不出来返回 ""。
 
-    只认三种写法（其余一律不算价格）：
-      · 三位以上整数：`017000`（前导 0 是金币图标被认成 0）
-      · 带千位分隔符：`2,500` / `12,000`
-      · 千位被认成句点：`9.000`（整数部分 > 5、小数正好三位）
-
-    不认：`05`（成色带里的残数字）、`0.120` / `0.1209`（磨损值）。
-    回归来源：`成色 S 05` 被整条当价格 → price=5 → pick() 以为最便宜。
+    数字/千分位/小数的语法只有一份，在 `core/money.py`（N11）。这里只留
+    「哪一段算价格」的策略：
+      · 整条带只有一个数（`05` / `9.000` / `17 000`）：整条就是价格。
+        真机上确实有两个三角币的挂单，这种两位数字必须认；`0.x` 是磨损，
+        整数段 ≥ 1 才收。
+      · 混在成色带里（`极品 | 成色 S 14,000`）：只认三位以上整数、带千位
+        分隔符、或「句点当千位」（`9.000`，整数段 > 5）的数。
+      · `05` 这种残数字、`0.120` / `0.1209` 磨损值一律不认 —— 05 会让
+        pick() 以为这条最便宜，点进去买的反而是贵的。
+      · 解析窗口不跨行（`¥12 345` 换行 `678` 只读第一行）。
     """
-    if not text:
-        return ""
-    # 价格单独成带时（`05` / `9.000`）整条带就是价格 —— 真机上确实有两个
-    # 三角币的挂单，这种两位数字必须认。判据是「整条带只有一个数」且不是
-    # `0.x`（0.x 是磨损）。混在成色带里的 `05` 走下面的严格规则，不会被认。
-    pure = _PURE_NUMBER.fullmatch(text.strip())
-    if pure:
-        tok = pure.group(1)
-        ip = tok.replace(",", "").split(".")[0]
-        if ip.isdigit() and int(ip) >= 1:
-            return tok
-    rest = _MODEL_LIKE.sub(" ", text)
-    best_tok, best_val = "", None
-    for tok in _PRICE_TOKEN.findall(rest):
-        plain = tok.replace(",", "")
-        ip, _, fp = plain.partition(".")
-        if not ip.isdigit():
+    for line in money.split_lines(text or ""):
+        s = line.strip()
+        if not s:
             continue
-        if not fp:
-            if len(ip) < 3:          # 05 / 2 这种残数字
+        if any(ch in money.SYMBOLS for ch in s):
+            # 带货币符号的行：整行只信这一个金额。解析失败就拒识 ——
+            # `−¥250` 不能回落到行内数字读成 250（负号被吃掉价格语义就反了）。
+            value, tok = money.parse_line(s, strip_leading_zeros=True,
+                                          dot3_as_thousands=True)
+            if value is not None and not isinstance(value, float) and value >= 1:
+                return tok
+            continue
+
+        value, tok = money.parse_amount(s, strip_leading_zeros=True,
+                                        dot3_as_thousands=True)
+        if value is not None and not isinstance(value, float):
+            ip = re.sub(r"\D", "", tok.split(".")[0])
+            if ip.lstrip("0") and int(ip) >= 1:
+                return tok
+
+        rest = _MODEL_LIKE.sub(" ", s)
+        best_tok, best_val = "", None
+        for item in money.find_numbers(rest, strip_leading_zeros=True,
+                                       dot3_as_thousands=True):
+            if item["decimal"]:
+                continue                 # 0.120 / 0.1209 是磨损，不是价格
+            digits = re.sub(r"\D", "", item["token"])
+            if "." not in item["token"] and len(digits) < 3:
+                continue                 # 05 / 2 这种残数字
+            if item["value"] < _MIN_PRICE:
                 continue
-            val = int(ip)
-        elif len(fp) == 3 and 1 <= len(ip) <= 3 and int(ip) > 5:
-            val = int(ip + fp)       # 9.000 → 9000
-        else:
-            continue                 # 0.120 / 0.1209 是磨损，不是价格
-        if val < _MIN_PRICE:
-            continue
-        if best_val is None or val > best_val:
-            best_tok, best_val = tok, val
-    return best_tok
+            if best_val is None or item["value"] > best_val:
+                best_tok, best_val = item["token"], item["value"]
+        if best_tok:
+            return best_tok
+    return ""
 
 
-def _long_lines(img, axis, frac=0.25, need_frac=0.5, edges=None):
+def _long_lines(img, axis, frac=0.25, need_frac=0.5, edges=None, ref_h=None):
     """找「够长的直线」，返回它们在 axis 方向上的坐标。
 
     axis=1 找竖线（卡片左右边框），axis=0 找横线（行与行之间的分隔）。
@@ -87,19 +91,22 @@ def _long_lines(img, axis, frac=0.25, need_frac=0.5, edges=None):
     卡片里的文字也是一条条边，但都不够长，靠这个把它们筛掉。
 
     edges：可传入已经算好的 Canny 边缘图，省一次 Canny（列表模式 20 次/秒）。
+    ref_h：只跑下半屏时传整幅图的高度 —— 门槛按整幅图算，才和全屏扫描同口径
+    （线本身还是有一整张卡那么长，用半屏高度算会把门槛砍掉一半，假线全进来了）。
     """
     h, w = img.shape[:2]
     if edges is None:
         gray = vision.to_gray(img)
         edges = cv2.Canny(gray, 30, 100)
+    hh = ref_h or h
     if axis == 1:
-        k = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, int(h * frac))))
+        k = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, int(hh * frac))))
     else:
         k = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, int(w * frac)), 1))
     lines = cv2.morphologyEx(edges, cv2.MORPH_OPEN, k)
     prof = lines.sum(axis=0 if axis == 1 else 1) / 255.0
     limit = w if axis == 1 else h
-    need = (h if axis == 1 else w) * frac * need_frac
+    need = (hh if axis == 1 else w) * frac * need_frac
     return [int(i) for i in np.where(prof >= need)[0]], limit
 
 
@@ -188,7 +195,8 @@ def _spans(lines, limit, min_size):
             if pts[i + 1] - pts[i] >= min_size]
 
 
-def locate_cards(img, min_w=220, min_h=110, max_cards=16):
+def locate_cards(img, min_w=220, min_h=110, max_cards=16, gray=None,
+                 bottom_half=False):
     """在列表截图里找商品卡片，返回 [(x0, y0, x1, y1), ...]，先上后下、先左后右。
 
     列：卡片左右边框是贯穿整张卡的竖线（_long_lines axis=1）。
@@ -196,38 +204,51 @@ def locate_cards(img, min_w=220, min_h=110, max_cards=16):
         —— 这一屏永远是等高的行，比逐行找边更稳。
 
     一条线索都没有就返回空列表，由调用方退回固定网格，这里不硬猜。
+
+    gray：调用方已经算好的灰度图，省一次 to_gray（列表模式 20 次/秒）。
+    bottom_half：只在**下半屏**上找线。新品从底部插进来，滚动后上半屏的
+        分割线常被内容压断，下半屏反而更干净；像素少一半，开运算也快一半。
+        网格仍然按行距铺满整幅图 —— 只省「找线」的像素，不省卡片覆盖。
     """
     if img is None or getattr(img, "size", 0) == 0:
         return []
     h, w = img.shape[:2]
-    gray = vision.to_gray(img)
+    gray = vision.to_gray(img) if gray is None else gray
     edges = cv2.Canny(gray, 30, 100)      # 只算一次，横竖线共用
+
+    # 下半屏：从 h//2 起算，横线坐标最后加回偏移；门槛用整幅图高度（ref_h）。
+    off, work = 0, edges
+    if bottom_half and h >= 4 * min_h:
+        off = h // 2
+        work = edges[off:]
 
     # 竖线只跨一张卡片的高度（约 1/3 屏），门槛得比横线松
     # 竖线只跨一张卡高（约 0.22 屏高），而且常被图标压断成几截；
     # 0.12 的开运算核会把断口连不起来，实测中间那条列分隔线就是这么丢的。
-    vx, _ = _long_lines(img, axis=1, frac=0.08, need_frac=0.5, edges=edges)
+    vx, _ = _long_lines(img, axis=1, frac=0.08, need_frac=0.5, edges=work,
+                        ref_h=h)
     cols = _spans(_merge_close(vx), w, min_w)
     if not _uniform(cols):
         # 竖线断了、或者混进了卡片内容造成的假竖线（滚动后常见）：
         # 实测滚半屏后得到 (28,670)(670,912)(912,1340) 三列，中间那列
         # 只有 242px 宽 —— 商品卡片是等宽网格，宽度不齐就是误检。
-        pw = _col_pitch(edges, w, min_w)
+        pw = _col_pitch(work, w, min_w)
         alt = _tile_from(w, pw, min_w) if pw else []
         if _uniform(alt):
             cols = alt
     if not cols:
         return []
 
-    hy, _ = _long_lines(img, axis=0, frac=0.25, need_frac=0.5, edges=edges)
+    hy, _ = _long_lines(img, axis=0, frac=0.25, need_frac=0.5, edges=work,
+                        ref_h=h)
     # gap 从 6 放到 12：卡片顶边常常被检测成紧挨着的两条线（实测 8 和 17），
     # 不合并的话这两条会造出一个 9px 的假间距，把行距中位数带偏。
-    hy = _merge_close(hy, gap=12)
+    hy = [y + off for y in _merge_close(hy, gap=12)]
     if not hy:
         return []
 
     # 行距优先用自相关（对断线免疫），算不出来才退回「横线间距中位数」
-    pitch = _row_pitch(edges, h, min_h)
+    pitch = _row_pitch(work, h, min_h)
     if pitch is None:
         if len(hy) >= 2:
             diffs = sorted(b - a for a, b in zip(hy, hy[1:]))
@@ -237,15 +258,19 @@ def locate_cards(img, min_w=220, min_h=110, max_cards=16):
     if pitch < min_h:
         return []
 
-    # 以第一条横线为基准，向上/下按行距铺满整幅图。
-    # hy[0] 有两种含义，得分开处理：
+    # 以第一条横线为基准，按行距铺满整幅图。
+    # hy[0] 有两种含义：
     #   · 列表从画面顶部就开始 → hy[0] 是「第一行的上边界」（值很小）
-    #   · 列表上方还有表头 → hy[0] 是「第一行的下边界」（≈ 一个行高）
+    #   · 列表上方还有表头 / 基准线落在画面中间（下半屏扫描）→ 它只是某条
+    #     分隔线，真实的第一行上边界要往前退到 [0, pitch) 里。
     # 早期用 `base - (base // pitch) * pitch` 反推，要求 base 正好是行距的
     # 整数倍；自相关给出的 206 和实测的 203 差 3px，这个式子就把第一行
-    # 整个丢掉了（1380×630 那张 fixture：6 张卡变 4 张）。
+    # 整个丢掉了（1380×630 那张 fixture：6 张卡变 4 张 —— 203 % 206 = 203，
+    # 直接退成了「第一行从 203 开始」）。
     base = hy[0]
-    first = base - pitch if base >= pitch * 0.8 else base
+    first = base
+    while first >= pitch * 0.8:        # 退到「够不到一个行距」为止
+        first -= pitch
     first = max(0, first)
     rows = []
     y = first
@@ -432,6 +457,38 @@ def card_regions(img, card, upscale=2):
     return out
 
 
+def _card_sub(img, card):
+    """卡片在整图里实际要认的那块（上 -2、下 +12），返回 (子图, 子图上沿 y)。"""
+    x0, y0, x1, y1 = card
+    sy0 = max(0, y0 - 2)
+    sy1 = min(img.shape[0], y1 + 12)
+    return img[sy0:sy1, x0:x1], sy0
+
+
+def _rows_from_words(words, dx=0, dy=0, min_gap=6.0):
+    """按行中心把词聚成行。返回 [(text, box)]，box 已加上 (dx, dy) 偏移。
+
+    min_gap 是同一行的容差：`_whole_rows` 用 6（重排后的整卡词），
+    `_join`/`read_bottom` 那条路用 4（原来 ocr_chain._join 的口径）。
+    """
+    if not words:
+        return []
+    words = sorted(words, key=lambda w: (w["y"] + w["h"] / 2.0, w["x"]))
+    rows, cur, cy = [], [], None
+    for w in words:
+        c = w["y"] + w["h"] / 2.0
+        if cy is not None and abs(c - cy) <= max(min_gap, w["h"] * 0.6):
+            cur.append(w)
+            cy = (cy * (len(cur) - 1) + c) / len(cur)
+        else:
+            if cur:
+                rows.append(_row_of(cur, dx, dy))
+            cur, cy = [w], c
+    if cur:
+        rows.append(_row_of(cur, dx, dy))
+    return rows
+
+
 def _whole_rows(img, card):
     """整卡只做一次 OCR，再按行中心把词聚成行。返回 [(text, box), ...]。
 
@@ -443,29 +500,13 @@ def _whole_rows(img, card):
     """
     from . import ocr
 
-    x0, y0, x1, y1 = card
-    sy0 = max(0, y0 - 2)
-    sy1 = min(img.shape[0], y1 + 12)
-    sub = img[sy0:sy1, x0:x1]
+    sub, sy0 = _card_sub(img, card)
     if sub is None or sub.size == 0:
         return []
     words = ocr.read_words(sub)
     if not words:
         return []
-    words = sorted(words, key=lambda w: (w["y"] + w["h"] / 2.0, w["x"]))
-    rows, cur, cy = [], [], None
-    for w in words:
-        c = w["y"] + w["h"] / 2.0
-        if cy is not None and abs(c - cy) <= max(6, w["h"] * 0.6):
-            cur.append(w)
-            cy = (cy * (len(cur) - 1) + c) / len(cur)
-        else:
-            if cur:
-                rows.append(_row_of(cur, x0, sy0))
-            cur, cy = [w], c
-    if cur:
-        rows.append(_row_of(cur, x0, sy0))
-    return rows
+    return _rows_from_words(words, card[0], sy0)
 
 
 def _row_of(words, dx, dy):
@@ -477,28 +518,23 @@ def _row_of(words, dx, dy):
     return (" ".join(w["text"] for w in words), (x0, y0, x1, y1))
 
 
-def read_card(img, card, upscale=2, read_text=None):
-    """认一张卡片：每条有字的带都认一遍，再按内容分到 名称/成色/价格。
+def _canon_grade(text):
+    """成色块 → 规范形 `做工|成色`（两段都认出时），认不全保留原文。
 
-    价格**只认「像价格」的数**：成色带里常混着价格（`极品 | 成色 S 14,000`），
-    也常混着残数字（`成色 S 05`）和磨损小数（`成色 S 0.1209`）。后两者
-    一律不能当价格 —— 05 会让 pick() 以为这条最便宜，点进去买的反而是贵的。
-
-    read_text: 可注入（测试用假 OCR），默认走 ocr.read_words 整卡一次。
-    注入时仍走逐带放大路径 —— 假 OCR 通常只接受「一条带」的输入，
-    也方便单测精确控制每次调用的文本。
+    批量 rec 会把同一批文字块补齐到同宽，极窄的「|」块被补成一片空白、
+    读成空串 —— 同一张卡走单卡路径与批量路径，grade 文本就差这一个分隔符。
+    业务字段（craft / wear）不受影响，但字节级不一致以后会被依赖分隔符的
+    解析或展示静默踩到。这里统一出规范形：`极品|S`；认不全不猜，保留原文。
     """
-    if read_text is None:
-        texts = _whole_rows(img, card)
-        bands = []
-    else:
-        bands = card_bands(img, card, upscale=upscale)
-        texts = []
-        for b in bands:
-            t = (read_text(b["piece"]) or "").strip()
-            if t:
-                texts.append((t, b["box"]))
+    craft = bricks.parse_craft(text)
+    wear = bricks.parse_wear(text)
+    if craft and wear:
+        return f"{craft}|{wear}"
+    return text or ""
 
+
+def _card_result(card, texts, bands=()):
+    """行文本 → 卡片字段。单卡 `read_card` 与拼图 `read_cards` 共用这一套。"""
     # 名称先定：最长的、带中文的那一条（成色那条往往很短）。
     # 顺序很重要 —— 下面挑价格时要排除名称那条，名称里的 M4A1 会被读成 41。
     cjk = [(len(re.findall(r"[一-鿿]", t)), t) for t, _ in texts
@@ -524,12 +560,36 @@ def read_card(img, card, upscale=2, read_text=None):
     return {
         "card": card,
         "name": name,
-        "grade": grade or (price if "成色" in price else ""),
+        "grade": _canon_grade(grade) or (price if "成色" in price else ""),
         "price": price,
-        "bottom": " ".join(t for t, _ in texts),
-        "text": " ".join(t for t, _ in texts),
+        "bottom": "\n".join(t for t, _ in texts),
+        "text": "\n".join(t for t, _ in texts),
         "bands": [b["box"] for b in bands],
     }
+
+
+def read_card(img, card, upscale=2, read_text=None):
+    """认一张卡片：整卡一次 OCR，再按内容分到 名称/成色/价格。
+
+    价格**只认「像价格」的数**：成色带里常混着价格（`极品 | 成色 S 14,000`），
+    也常混着残数字（`成色 S 05`）和磨损小数（`成色 S 0.1209`）。后两者
+    一律不能当价格 —— 05 会让 pick() 以为这条最便宜，点进去买的反而是贵的。
+
+    read_text: 可注入（测试用假 OCR），默认走 ocr.read_words 整卡一次。
+    注入时仍走逐带放大路径 —— 假 OCR 通常只接受「一条带」的输入，
+    也方便单测精确控制每次调用的文本。
+    """
+    if read_text is None:
+        texts = _whole_rows(img, card)
+        bands = []
+    else:
+        bands = card_bands(img, card, upscale=upscale)
+        texts = []
+        for b in bands:
+            t = (read_text(b["piece"]) or "").strip()
+            if t:
+                texts.append((t, b["box"]))
+    return _card_result(card, texts, bands)
 
 
 def _pad_aspect(piece, min_ratio=10):
@@ -578,7 +638,231 @@ def read_card_bottom(img, card, upscale=3, read_text=None):
         return {"grade": "", "price": "", "text": ""}
     piece = vision.upscale(_pad_aspect(piece), max(1, int(upscale or 1)))
     t = (read_text(piece) or "").strip()
-    return {"grade": t, "price": t, "text": t}
+    return {"grade": _canon_grade(t), "price": t, "text": t}
+
+
+def _engine():
+    """拿到底层 RapidOCR 引擎；换引擎/拿不到时返回 None（调用方退回逐块整读）。
+
+    只用它做「逐块 det + 一次批量 rec」。为什么 det 不能拼：把六张卡拼成
+    一张大图，det 的框会挪 1~2px、个别字直接读错（catalog 上实测
+    「电玩高手」→「电玩高丢」，竖排/2 列/3 列 3 种拼法都复现）。
+    为什么 rec 可以批量：每个文字块是独立前向，批量只影响吞吐 ——
+    30 个文字块逐块 vs 批量，结果逐字相同（实测）。
+    """
+    try:
+        from . import ocr
+        client = ocr._client()
+    except Exception:                      # noqa: BLE001
+        return None
+    rapid = getattr(client, "rapid", None)
+    if rapid is None or not getattr(rapid, "enabled", True):
+        return None
+    try:
+        eng = rapid._engine()
+    except Exception:                      # noqa: BLE001
+        return None
+    if not (hasattr(eng, "detect_and_crop") and hasattr(eng, "recognize_txt")):
+        return None
+    return eng
+
+
+def _det_words(subs):
+    """逐块 det + 一次批量 rec，返回每块 words（拿不到引擎返回 None）。
+
+    rec 输出的顺序与 det 的框一一对应，按每块的框数切回去即可 ——
+    和逐块 `ocr.read_words` 的词表逐字段相同。
+    """
+    eng = _engine()
+    if eng is None:
+        return None
+    chunks, dets = [], []
+    for sub in subs:
+        try:
+            crops, det = eng.detect_and_crop(sub, {})
+        except Exception:                     # noqa: BLE001
+            # 空帧 / 纯色帧 det 没有结果，RapidOCR 直接抛 RapidOCRError。
+            # 这种帧本来就「没有卡」，按 0 个文字块返回，不能让扫描链路崩。
+            crops, det = [], None
+        chunks.extend(crops)
+        dets.append(det)
+    if not chunks:
+        return [[] for _ in subs]
+    res = eng.recognize_txt(chunks)
+    txts = getattr(res, "txts", None)
+    scores = getattr(res, "scores", None)
+    txts = [txts] if isinstance(txts, str) else list(txts) if txts is not None else []
+    if isinstance(scores, (float, int)):
+        scores = [float(scores)]
+    else:
+        scores = list(scores) if scores is not None else []
+    # rec 批量会把同一批的块补到同宽：极窄的块（比如「|」分隔符）会被补成
+    # 一片空白，直接读成空串。空串/低分的块补一次单块前向 —— 块很少，
+    # 不影响批量收益，但能保住原来读得出的那几个字。
+    for i, chunk in enumerate(chunks):
+        if not (txts[i] if i < len(txts) else "") or (
+                i < len(scores) and float(scores[i]) < 0.5):
+            one = eng.recognize_txt([chunk])
+            t = getattr(one, "txts", None)
+            t = t[0] if isinstance(t, (list, tuple)) and t else (t or "")
+            s = getattr(one, "scores", None)
+            s = s[0] if isinstance(s, (list, tuple)) and s else (s or 1.0)
+            if i < len(txts):
+                txts[i] = t
+                if i < len(scores):
+                    scores[i] = s
+            elif t:
+                txts.append(t)
+                scores.append(s)
+    out, k = [], 0
+    for det in dets:
+        boxes = getattr(det, "boxes", None)
+        boxes = [] if boxes is None else list(boxes)
+        words = []
+        for i, box in enumerate(boxes):
+            j = k + i
+            t = ((txts[j] if j < len(txts) else "") or "").strip()
+            if not t:
+                continue
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+            words.append({"x": min(xs), "y": min(ys),
+                          "w": max(xs) - min(xs), "h": max(ys) - min(ys),
+                          "text": t,
+                          "score": float(scores[j]) if j < len(scores) else 1.0})
+        out.append(words)
+        k += len(boxes)
+    return out
+
+
+def read_cards(img, recs, upscale=2, read_text=None):
+    """批量认卡：det 逐张照旧，rec 合成一次前向，再按卡分回文字。
+
+    六张卡逐张整读 = 六次 det + 六次 rec，每次都要重启一遍预处理/后处理；
+    这里 det 仍是逐张（保证裁切与单卡完全一致，结果才不会变），
+    rec 只跑一次（每个文字块独立前向，批量不影响结果）。实测 6 卡
+    457ms → 260ms，字段逐一对齐。
+
+    read_text 注入时退回逐张路径 —— 假 OCR 只接受单卡输入。
+
+    返回字段：批量路径给 `text_batch`（不是 `text`），且 `text_reliable=False`。
+    批量 rec 会把同一批文字块补齐到同宽，极窄的「|」块可能被补成空白读成
+    空串 —— `text_batch` 与单卡路径的原始词流**不是逐字一致的**，只能用于
+    debug/日志，**不可用于解析或断言**；结构化字段（name/price/grade）才是
+    两条路径逐字节一致的那一份。单卡路径的 `text` 才是可靠词流。
+    """
+    recs = [tuple(int(v) for v in r) for r in recs]
+    if not recs:
+        return []
+    if read_text is not None or len(recs) == 1:
+        # 一张卡没有批量收益（实测 86ms → 96ms），直接走原来的整卡路径
+        return [read_card(img, r, upscale=upscale, read_text=read_text)
+                for r in recs]
+    from . import ocr
+
+    subs = [_card_sub(img, r) for r in recs]
+    words_all = _det_words([s for s, _ in subs if s is not None and s.size])
+    if words_all is None:
+        # 引擎内部 API 变了 / 退到别的后端：逐张整读，行为与原来完全一致
+        return [read_card(img, r, upscale=upscale) for r in recs]
+
+    out, j = [], 0
+    for r, (sub, sy0) in zip(recs, subs):
+        if sub is None or sub.size == 0:
+            out.append([r, sy0, []])
+            continue
+        words = words_all[j]
+        j += 1
+        if not words:
+            # 一块字都没读到：走 ocr.read_words（它会按原逻辑降级到 PP-OCR 复核）
+            out.append([r, sy0, ocr.read_words(sub)])
+            continue
+        out.append([r, sy0, words])
+    out = [_card_result(r, _rows_from_words(w, r[0], sy0))
+           for r, sy0, w in out]
+    for d in out:
+        # 批量词流与单卡路径可能差一个「|」，不能顶着 text 这个名字冒充可靠原文
+        d["text_batch"] = d.pop("text", "")
+        d["text_reliable"] = False
+    return out
+
+
+def read_bottoms(img, recs, upscale=3, read_text=None):
+    """批量认卡片底带（成色 + 价格）：det 逐张，rec 一次，口径同 read_card_bottom。
+
+    逐张补认时每张卡都是一次完整推理；缺价格/成色的卡一多，光补认就能吃掉
+    一整个扫描周期。底带的裁切/补边/放大与单张完全一致，只是把 rec 合并。
+
+    同 `read_cards`：批量路径给 `text_batch` + `text_reliable=False`（仅供
+    debug，不可用于解析或断言）；单张路径的 `text` 才可靠。
+    """
+    recs = [tuple(int(v) for v in r) for r in recs]
+    if not recs:
+        return []
+    if read_text is not None or len(recs) == 1:
+        return [read_card_bottom(img, r, upscale=upscale, read_text=read_text)
+                for r in recs]
+    from . import ocr
+
+    pieces = []
+    for r in recs:
+        sub, _sy0 = _card_sub(img, r)
+        piece = None
+        if sub is not None and sub.size:
+            h = sub.shape[0]
+            piece = sub[int(h * 0.62):h, :]
+        if piece is not None and piece.size:
+            piece = vision.upscale(_pad_aspect(piece),
+                                   max(1, int(upscale or 1)))
+        pieces.append(piece if (piece is not None and piece.size) else None)
+    valid = [p for p in pieces if p is not None]
+    if not valid:
+        return [{"grade": "", "price": "", "text_batch": "",
+                 "text_reliable": False} for _ in recs]
+
+    words_all = _det_words(valid)
+    if words_all is None:
+        return [read_card_bottom(img, r, upscale=upscale) for r in recs]
+
+    out, j = [], 0
+    for piece in pieces:
+        if piece is None:
+            out.append({"grade": "", "price": "", "text": ""})
+            continue
+        words = words_all[j]
+        j += 1
+        if not words:
+            words = ocr.read_words(piece)
+        # 和 ocr_chain._join 一个口径：行内空格、行间换行（min_gap=4）。
+        t = "\n".join(x for x, _ in _rows_from_words(words, min_gap=4.0))
+        out.append({"grade": _canon_grade(t), "price": t,
+                    "text_batch": t, "text_reliable": False})
+    return out
+
+
+_WARMED = False
+
+
+def warm():
+    """首帧预热：先跑一次很小的 det+rec，把会话/线程池/内存池建起来。
+
+    冷启动那一次推理要 1.1~1.3 秒（模型加载 + 首次前向）。它落在第一帧上，
+    就是「第一次扫列表要 1.2 秒」，而那正是新品刚出来的时候。挪到
+    Scanner 构造时做（那时还在等页面刷出来），扫描本身就不背这笔开销。
+    只做一次；OCR 引擎重建（ocr.reload）后第一次扫描仍会慢一点。
+    """
+    global _WARMED
+    if _WARMED:
+        return
+    from . import ocr
+    probe = np.full((64, 256, 3), 30, np.uint8)
+    cv2.putText(probe, "1,234", (8, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                (235, 235, 235), 2)
+    try:
+        ocr.read_words(probe)
+    except Exception:                      # noqa: BLE001
+        return                             # OCR 不可用时预热失败不算错
+    _WARMED = True
 
 
 def changed_cards(prev, cur, cards, delta=CHANGE_DELTA, prev_cards=None):

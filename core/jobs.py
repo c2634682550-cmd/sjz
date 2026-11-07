@@ -25,9 +25,12 @@ class Busy(Exception):
 
 
 def _snapshot(job):
+    # 审查 R03-N08：耗时必须走单调时钟。用 time.time() 的话，任务运行期间
+    # 系统时间一回拨，elapsed 会变成负数/巨大值，界面显示"还剩 -3 秒"。
+    end = job["finished"] if job["finished"] is not None else time.monotonic()
     return {"id": job["id"], "name": job["name"], "state": job["state"],
             "result": job["result"], "error": job["error"],
-            "elapsed": round((job["finished"] or time.time()) - job["started"], 2),
+            "elapsed": round(max(0.0, end - job["started"]), 2),
             "log": list(job["log"])}
 
 
@@ -42,7 +45,7 @@ def submit(fn, name=""):
         if _current is not None and _current["state"] == "running":
             raise Busy(_current["name"] or "上一个动作")
         job = {"id": uuid.uuid4().hex[:8], "name": name, "state": "running",
-               "result": None, "error": None, "started": time.time(),
+               "result": None, "error": None, "started": time.monotonic(),
                "finished": None, "log": deque(maxlen=60)}
         _current = job
         _jobs[job["id"]] = job
@@ -72,7 +75,7 @@ def _run(job, fn):
         for line in traceback.format_exc().splitlines()[-4:]:
             job["log"].append(line)
     finally:
-        job["finished"] = time.time()
+        job["finished"] = time.monotonic()
         # `except Exception` 接不住 BaseException（KeyboardInterrupt / SystemExit
         # / 某些库自己抛的）：线程带着 state="running" 就没了，`busy()` 永远为
         # True，之后所有动作都被 Busy 拒掉，只有重启进程才能恢复（审查 S21）。
