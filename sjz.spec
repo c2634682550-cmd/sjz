@@ -1,96 +1,171 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置：单文件、无控制台、内嵌 WebView2 窗口。
+"""PyInstaller 打包配置：**onedir（默认交付形态）**。
 
-2026-11-06 起 OCR 主路径是进程内 RapidOCR（core/ocr_rapid.py）：
-  · 依赖 rapidocr + onnxruntime，约 60MB（不再需要 paddle / winrt / tesseract）；
-  · 模型 PP-OCRv6 small（30MB）放在 core/assets/rapid，随下面那条
-    core/assets 的 datas 一起进 _MEIPASS，离线可直接跑；
-  · onnxruntime 与 rapidocr 是动态导入，必须列进 hiddenimports，
-    否则打包后在 `from rapidocr import RapidOCR` 处报 ModuleNotFoundError。
-  · PP-OCR 服务（core/ocr_ppocr.py）只做价格二次确认，仍只用标准库
-    urllib，不需要任何 hiddenimports，也不把 paddle 放进 exe。
+为什么默认 onedir 而不是 onefile（2026-11-07 实测依据，见 _packaging_license.md）：
+  · 冷启动：onefile 每次启动都要把 ~150MB 解包到 %TEMP%\\_MEIxxxx，实测 5.63s；
+    onedir 直接 mmap 磁盘文件，实测见报告（排序后 2s 量级）。
+  · 杀软：onefile「自解压 + 释放可执行片段 + 注入」是启发式高危组合；
+    onedir 没有运行期解包，误报面小很多。
+  · 更新：onedir 可以只替换变动的 dll/pyz（Inno Setup 差量覆盖）；
+    onefile 运行中不能覆盖自身，只能改名分身再重启。
+  · 残留：onefile 崩溃会留下 %TEMP%\\_MEIxxxx（几十~上百 MB，没人清）；
+    onedir 卸载时删目录即可。
 
-  另外这个 spec 还关心：前端静态资源、砖皮知识库、字模、以及 webview。
+体积裁剪（本 spec 做了三件实事）：
+  1. rapidocr 包**自带**一份同样的 PP-OCRv6 模型（det 9.5MB + rec 20.3MB），
+     和 core/assets/rapid 完全重复 —— 这里过滤掉 .onnx，只保留 yaml；
+     `_MEIPASS/core/assets/rapid` 那份才是运行时真正加载的。
+  2. cv2 的 `opencv_videoio_ffmpeg*.dll`（约 29MB）只服务 VideoCapture/VideoWriter，
+     本项目只用 matchTemplate/cvtColor，直接剔除。
+  3. onnxruntime 的 quantization/tools/transformers/training 是训练侧模块，
+     运行时用不到，排除（capi 里的 dll 保留）。
 
 跑法：uv run pyinstaller sjz.spec --noconfirm
+  产物：dist\\SJZ-Control\\SJZ-Control.exe（整个 dist\\SJZ-Control 目录一起交付）
 """
 import os
-import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = os.path.abspath(os.getcwd())
 
+# 版本资源由 tools/version_sync.py 从 core/version.py 生成（单点）。
+_VER_INFO = os.path.join(ROOT, "build", "version_info.txt")
+
+
+def _require_ver_info():
+    """生成前置缺失就硬失败：静默产出无版本号的 exe 会让更新比对失效。"""
+    if not os.path.exists(_VER_INFO):
+        raise SystemExit(
+            "build/version_info.txt 缺失，EXE 会丢失文件版本/产品版本。\n"
+            "先跑：uv run python tools/version_sync.py --write"
+            "（build.bat 的 [2/7] 已内置这一步）"
+        )
+    return _VER_INFO
+
+# 随包发布的运行时脚本（被 subprocess / importlib 按路径加载，静态分析看不见）：
+#   fire_worker.py  core/fire_proc.py 起的独立自旋进程，缺了抢购降级
+#   calibrate.py    desktop.py --calibrate 用 importlib 加载
+#   OCR_*.yaml      core/ocr_service.py 的 paddlex 流水线配置
+_RUNTIME_TOOLS = [
+    "fire_worker.py",
+    "calibrate.py",
+    "OCR_game.yaml",
+    "OCR_tiny.yaml",
+]
+
 datas = [
     # 前端页面：server.py 用 __file__ 推出 ROOT/web，冻结后落在 _MEIPASS
     (os.path.join(ROOT, "web"), "web"),
-    # 砖皮知识库：core/bricks.py 用 __file__ 找同目录的 bricks.json。
-    # 漏掉它的表现是「静默空库」—— _load() 读不到就返回空 seasons，
-    # 识别永远回「对不上任何赛季砖皮」，而界面上仍写着「11 个赛季」。
-    # 这条路径和 config.json 不同：config 要用户能改，所以放 exe 同级；
-    # bricks.json 是只读数据，跟着 _MEIPASS 走才对。
+    # 砖皮知识库：core/bricks.py 用 __file__ 找同目录的 bricks.json
     (os.path.join(ROOT, "core", "bricks.json"), "core"),
-    # 筛选表：core/skinfilter.py 用 __file__ 找同目录的 skins_raw.csv，
-    # 算出「这件皮肤在筛选面板上点哪儿」。漏掉它的话，打包后所有皮肤都
-    # 只能靠全库扫描找 —— 慢十倍，而且品阶/枪种筛不了。
+    # 筛选表：core/skinfilter.py 用 __file__ 找同目录的 skins_raw.csv
     (os.path.join(ROOT, "core", "skins_raw.csv"), "core"),
-    # 内置字形模板：core/glyphs.py 用 __file__ 找同目录的 assets/glyphs。
-    # 和 templates/ 不是一回事 —— templates/ 是用户自己框选的购买按钮模板
-    # （运行时生成、放在 exe 同级）；这里是游戏字体渲染的只读参考数据，
-    # 漏掉它的表现是 OCR 读不出的小字全部退回网格推断，滚动后可能认错名。
+    # 字形模板 + OCR 模型 + interception.dll（core/assets 整目录）
     (os.path.join(ROOT, "core", "assets"), os.path.join("core", "assets")),
-    # Interception 用户态 DLL：core/input.py 驱动注入走它。DLL 本体只
-    # 14KB，跟着 assets 目录已经带上；这里显式声明是防御 —— 有人把
-    # DLL 挪出 assets 目录时打包还能找到。缺了它的表现：启动检查
-    # 「输入驱动」亮黄灯、自动退 PostMessage，不会崩。
+    # 显式再声明一次 DLL：有人把它挪出 assets 时也能找到
     (os.path.join(ROOT, "core", "assets", "interception.dll"),
      os.path.join("core", "assets")),
+    # 默认模板集（buy/confirm + meta.json）。desktop._seed_missing_assets()
+    # 首次运行时会把它们从 _internal 释放到 exe 同级目录，否则交付包里
+    # templates/ 是空的、装上不能直接用（审查 R09-05）。
+    (os.path.join(ROOT, "templates"), "templates"),
+    # 进化框架：`<runtime> -m evo.cli` 运行，源码 + 自带 json 配置
+    # （runs/fixtures/state 是本机运行产物，不进交付包）
+    (os.path.join(ROOT, "evo", "evo_config.json"), "evo"),
+    # Interception 官方驱动安装器：安装器的可选任务 driver 直接调用
+    (os.path.join(ROOT, "tools", "interception"), os.path.join("tools", "interception")),
 ]
-# RapidOCR 初始化要读包内的 config.yaml / default_models.yaml（模型结构、
-# 预处理开关的默认值都在里面）。只写 hiddenimports 会把 .py 收进去、
-# 却漏掉这两个 yaml，打包后 `from rapidocr import RapidOCR` 能成功、
-# 一调用就抛 FileNotFoundError —— 2026-11-06 真机打包踩过一次。
-datas += collect_data_files("rapidocr")
+
+# 运行时脚本逐个收（不收 tools/ 整目录：里面有几个 MB 的 bench 数据和开发脚本）
+for _name in _RUNTIME_TOOLS:
+    datas.append((os.path.join(ROOT, "tools", _name), "tools"))
+
+# evo 源码 + 自身 json 配置（跳过 runs/fixtures/state 这些本机产物）
+# collect/ 是采集与 bench 产物（events*.jsonl），不是运行时依赖，不能发给用户
+_EVO_SKIP = {"runs", "fixtures", "state", ".state", "collect", "__pycache__"}
+
+
+def _evo_datas():
+    out = []
+    for base, dirs, files in os.walk(os.path.join(ROOT, "evo")):
+        dirs[:] = [d for d in dirs if d not in _EVO_SKIP]
+        for f in files:
+            p = os.path.join(base, f)
+            rel = os.path.relpath(p, ROOT)
+            out.append((p, os.path.dirname(rel)))
+    return out
+
+
+datas += _evo_datas()
+
+# rapidocr 的 yaml 要，模型不要（模型在 core/assets/rapid，避免重复 30MB）
+_rapid = collect_data_files("rapidocr")
+datas += [d for d in _rapid if not d[0].lower().endswith(".onnx")]
 
 HIDDEN = [
     "mss.windows",
     "clr_loader",
     "pythonnet",
-    # OCR 主路径：rapidocr 的引擎/前后处理模块都是按名字动态导入的，
-    # 只写顶层包名不够，必须把子模块收全；onnxruntime 同理（它是 C 扩展，
-    # 还依赖同目录的 onnxruntime_providers_*.dll）。
     "onnxruntime",
+    # 动态/延迟 import 的核心模块，显式钉住（新增模块时同步补这一行）
+    "core.humanmouse",
+    "core.idle_roam",
+    "core.repeat",
+    "core.skip_late",
+    "core.stop_grade",
+    "core.click_burst",
+    "core.money",
+    "core.watchdog",
+    "core.retention",
+    "core.recovery",
+    "core.scene_guard",
+    "core.timesync",
+    "core.ocr_rapid",
+    "core.ocr_chain",
+    "core.fire_proc",
+    "core.version",
 ]
 HIDDEN += collect_submodules("rapidocr")
-# pywebview 的平台后端是按名字动态导入的，只收 Windows 用得到的那个；
-# 全量 collect_submodules 会把 android/gtk/qt 这些本机没有的平台也拉进来报错。
 for _m in collect_submodules("webview"):
     if ".platforms." in _m and not _m.endswith(("edgechromium", "winforms")):
         continue
     HIDDEN.append(_m)
 
-hiddenimports = HIDDEN
+EXCLUDES = [
+    "tkinter", "matplotlib", "pytest", "PyInstaller",
+    "pandas", "scipy", "IPython", "notebook",
+    # 训练/量化侧模块，运行时用不到
+    "onnxruntime.quantization", "onnxruntime.tools",
+    "onnxruntime.transformers", "onnxruntime.training",
+    "onnxruntime.datasets",
+]
 
 a = Analysis(
     ["desktop.py"],
     pathex=[ROOT],
     binaries=[],
     datas=datas,
-    hiddenimports=hiddenimports,
+    hiddenimports=HIDDEN,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "pytest", "PyInstaller"],
+    excludes=EXCLUDES,
     noarchive=False,
 )
+
+# 只保留 CPU 推理需要的 onnxruntime 二进制；顺手删掉 cv2 的 ffmpeg 大件
+_DROP = ("opencv_videoio_ffmpeg",)
+a.binaries = [b for b in a.binaries if not any(x in b[0].lower() for x in _DROP)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="SJZ-Control",
+    version=_require_ver_info(),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -101,4 +176,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="SJZ-Control",
+    contents_directory="_internal",
 )

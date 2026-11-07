@@ -1,0 +1,45 @@
+#!/bin/sh
+# SJZ secret gate: tools/hooks/pre-commit
+# 私钥闸门：暂存区里出现私钥材料（PEM 头 / 32 字节 hex 种子 / 已知生产钥哈希 /
+# 可疑文件名）就阻断提交。安装：python tools/install_hooks.py
+#
+# 这是仓库内的模板；真正的钩子由 install_hooks.py 拷到 .git/hooks/pre-commit。
+# 不进 .git/config：不改 core.hooksPath，也不改任何 git 全局项。
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$ROOT" || exit 0
+
+PY=""
+if [ -x ".venv/Scripts/python.exe" ]; then
+    PY=".venv/Scripts/python.exe"
+elif command -v python >/dev/null 2>&1; then
+    PY="python"
+elif command -v py >/dev/null 2>&1; then
+    PY="py"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="python3"
+fi
+
+if [ -z "$PY" ]; then
+    echo "[secrets] 找不到 Python，本次跳过私钥扫描（请装 .venv 或把 python 放进 PATH）。" >&2
+    exit 0
+fi
+
+if [ ! -f "tools/scan_secrets.py" ]; then
+    echo "[secrets] 缺少 tools/scan_secrets.py，本次跳过私钥扫描。" >&2
+    exit 0
+fi
+
+"$PY" tools/scan_secrets.py --staged
+CODE=$?
+if [ "$CODE" -eq 0 ]; then
+    exit 0
+fi
+
+echo "" >&2
+echo "[secrets] 提交被阻断：暂存区里有私钥/疑似私钥文件（见上面的命中列表）。" >&2
+echo "  1) 把密钥移出仓库：%LOCALAPPDATA%\\SJZ-License-Keys\\（不要删副本了事，先确认哪份是真钥）" >&2
+echo "  2) 从暂存区撤下：git restore --staged <path>（工作树里的文件该删就删）" >&2
+echo "  3) 复核：python tools/scan_secrets.py --staged" >&2
+echo "  只有确认为误报时才用：git commit --no-verify，并在提交说明里写清为什么。" >&2
+exit 1

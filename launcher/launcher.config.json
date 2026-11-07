@@ -1,0 +1,21 @@
+{
+  "_说明": "启动器配置。update_url 留空 = 不检查更新；支持 https:// 与本地路径。",
+  "update_url": "",
+  "python": "runtime\\pythonw.exe",
+  "script": "desktop.py",
+  "driver_dll": "core\\assets\\interception.dll",
+  "game_window_class": "UnrealWindow",
+  "game_processes": [],
+  "max_restarts": 3,
+  "ctrl_port": 8777,
+  "update_require_sig": true,
+  "protected_paths": [
+    "launcher",
+    "launcher.config.json",
+    "config.json",
+    "data",
+    "templates",
+    ".venv",
+    ".venv-vl"
+  ]
+}

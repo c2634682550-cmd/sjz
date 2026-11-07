@@ -1,6 +1,6 @@
 [project]
 name = "sjz"
-version = "0.1.0"
+version = "1.1.0"
 description = "SJZ 抢购控制台：模板匹配 + OCR + 定时抢购"
 requires-python = ">=3.10"
 dependencies = [
@@ -20,9 +20,17 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pillow>=12.3.0",
+    "playwright>=1.40",
     "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
 ]
 
 # 只有 web/ 是静态资源，不是包；core/ 靠 sys.path 直接导入。
 # 不建 build backend，这个项目不发布。
+
+[tool.pytest.ini_options]
+# 根目录直接 `pytest`：只收 tests/。
+# perf/（base、_ref、snapshots 各自的同名测试文件）与 _bmad/、tools/ 里的
+# 工具脚本不在项目测试范围内，且同名文件会在收集阶段互相冲突（1661 个 collection error）。
+testpaths = ["tests"]
+norecursedirs = ["perf", "_bmad", "tools", "node_modules", ".venv*", "data"]
