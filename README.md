@@ -29,7 +29,7 @@ uv sync                 # 或 python -m pip install -e .
 | Edge 或 Chrome | 系统自带（Edge 通常有） | 没有 pywebview 时无窗口可开 | 装 Edge/Chrome |
 | `core/bricks.json` | ✅ 入库 | 皮肤目录为空（界面还显示 11 个赛季，是假象） | 重新采集 |
 | `core/skins_raw.csv` | ✅ 入库 | `/api/skins/plan` 直接 503 | 重新导出 |
-| `templates/`（`buy.png` / `confirm.png`） | ❌ 不入库（游戏截图，按机器/分辨率采集，二进制不适合入库） | 启动闸门「模板」项不过，任务加不上 | 设置页重新框选并截图（`说明.txt`「模板」一节） |
+| `templates/`（`buy.png` / `confirm.png`） | ❌ 不入库（游戏截图，按机器/分辨率采集，二进制不适合入库） | 启动闸门「模板」项不过，任务加不上 | 用 `--calibrate` 重新截模板（`说明.txt`「模板」一节） |
 | `.venv-vl`（PaddleX PP-OCRv6 服务） | ❌ 不入库（2GB+ 依赖，且首次要联网下模型） | 启动闸门「OCR 识别」不过并给出起服务的命令 | 见 `说明.txt` 第九节：`py -3.11 -m venv .venv-vl` → 装 `paddlepaddle-gpu` / `paddleocr[doc-parser]` → `paddlex --install serving` → `paddlex --serve --pipeline tools\OCR_game.yaml` |
 | Interception 驱动 | 随 `tools/interception/` 提供安装器 | 不拦启动，退回旧输入通道（慢且易被拦） | 管理员运行 `install-interception.exe install` 后重启 |
 

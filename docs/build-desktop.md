@@ -1,17 +1,23 @@
 # 打包成桌面 exe
 
-成品是**单文件 exe**，双击即开原生窗口（内嵌系统 WebView2），不需要装 Python，
-也不用开浏览器。生成物在 `dist/SJZ-Control.exe`。
+成品默认是 **onedir 文件夹**：`dist\SJZ-Control\SJZ-Control.exe` 双击即开原生窗口
+（内嵌系统 WebView2），不需要装 Python。交付时把整个 `dist\SJZ-Control` 目录交给
+安装器（Inno Setup）打成 setup，未压缩约 223 MB、559 个文件；单文件版另出，
+在 `dist-onefile\SJZ-Control.exe`（102 MB）。
+
+为什么默认 onedir：冷启动快 2~3 倍、杀软误报面小、可差量更新、崩溃不留
+`%TEMP%\_MEI*` 残留。取舍与实测数字见 `_packaging_license.md`。
 
 ```bat
 build.bat
 ```
 
-`build.bat` 会依次做三件事：同步依赖 → 跑测试 → 打包。**测试不通过就不出 exe。**
-想跳过测试直接打，用：
+`build.bat` 会依次做四件事：同步依赖 → 跑测试 → 打 onedir → 打 onefile。
+**测试不通过就不出包。** 想跳过测试直接打，用：
 
 ```bat
 uv run pyinstaller sjz.spec --noconfirm
+uv run pyinstaller sjz-onefile.spec --noconfirm --distpath dist-onefile
 ```
 
 ## 两个入口的分工
@@ -23,11 +29,15 @@ uv run pyinstaller sjz.spec --noconfirm
 
 两者共用 `core.server` 的全部端点，只有外壳不同。
 
-`desktop.py` 还有 `--doctor`，打印运行时路径和 OCR 自检后退出，排查打包问题时用：
+`desktop.py` 还有 `--doctor`，打印运行时路径、OCR 自检，以及扩展段
+（模型文件 sha256、Interception DLL/内核服务、WebView2 版本、字体、权限级别、
+许可状态）后退出，排查打包问题时用：
 
 ```bat
-"dist\SJZ-Control.exe" --doctor
+"dist\SJZ-Control\SJZ-Control.exe" --doctor
 ```
+
+windowed exe 没有控制台，输出同时写进 exe 同级的 `desktop.log`。
 
 ## 出问题时看日志
 
@@ -133,7 +143,24 @@ pywebview 的 `get_functions()`（`webview/util.py`）会把 js_api 对象的**�
 - 大量 `missing module named pwd/grp/posix/termios/fcntl` —— POSIX 专用模块，
   Windows 上本来就不存在
 
-## 体积
+## 体积（2026-11-07 实测）
 
-约 **66 MB**。主要来自 opencv（抢购主路径的模板匹配必需）、numpy 和
-WebView2 的 .NET 桥（pythonnet/clr-loader）。UPX 关闭 —— 压过的 exe 常被杀软误报。
+| 产物 | 体积 | 冷启动（`--doctor` 全程） |
+|---|---|---|
+| onedir `dist\SJZ-Control\` | 223.4 MB / 559 文件（exe 本体 9.3 MB） | 2.2 s（Python 计时）/ 3.0 s（PowerShell 计时） |
+| onefile `dist-onefile\SJZ-Control.exe` | 102.0 MB | 5.6 s / 5.0 s |
+| 旧 onefile（含重复模型 + cv2 ffmpeg） | 146.9 MB | 5.63 s |
+
+主要构成：cv2 81.9 MB、onnxruntime 37.5 MB、`core/assets`（模型 + 字形模板）30.1 MB、
+numpy 25.9 MB、PIL 12.9 MB。OPENCV 占大头，但模板匹配离不开它。
+UPX 关闭 —— 压过的 exe 常被杀软误报。
+
+两处已做的裁剪（`sjz.spec` / `sjz-onefile.spec` 里都写了注释）：
+
+1. `rapidocr` 包自带的 PP-OCRv6 模型和 `core/assets/rapid` 完全重复（约 30 MB），
+   打包时只收它的 yaml，不收 `.onnx`；
+2. `opencv_videoio_ffmpeg*.dll`（约 29 MB）只服务 VideoCapture/VideoWriter，本项目
+   不用视频 IO，直接剔除。
+
+想再往下压，见 `_packaging_license.md` 的「模型量化」一节：能做，但必须先过
+`tools/ocr_eval.py` 的精度门槛，不能凭感觉换模型。
