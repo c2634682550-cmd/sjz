@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "_说明": "默认模板集。capture_screen / dpi 记录模板是在什么物理像素环境、什么系统缩放下截的；core/vision.py 按 当前屏/采集屏 与 当前DPI/采集DPI 的比例把模板重采样后再匹配。换分辨率或改缩放不需要重新截图，除非游戏界面比例随窗口尺寸变化。单张模板可以带自己的 capture_screen / dpi（重采后由 core/template_heal.py 写入），此时以单图为准。",
+  "capture_screen": [
+    1920,
+    1080
+  ],
+  "dpi": 96,
+  "captured_on": "Windows 10/11，游戏全屏无边框，1920×1080，系统缩放 100%",
+  "regions_note": "框选区域(regions)已有内置默认值（core/region_table.py，1080p 客户区基准），运行时按实际客户区自动换算；模板尺寸/比例与当前屏对不上时由 core/template_heal.py 自动对齐或按当前画面重采，不需要人工标定。tools/calibrate.py 仅作为可选的手动入口保留。",
+  "search_pad": {
+    "buy": 0.15,
+    "confirm": 0.25
+  },
+  "_search_pad_说明": "引擎 matchTemplate 前把区域外扩的比例（engine 里的 expand()）。启动前检查按「外扩后的搜索窗」判模板放不放得下：buy 区域 298×58 外扩 15% = 387×75，315×67 的模板在里面放得下，所以 1920×1080 / 100% 下不该报红。",
+  "auto_heal": [
+    {
+      "at": "2026-11-08 05:01:28",
+      "template": "buy.png",
+      "action": "recaptured",
+      "size_px": [
+        298,
+        58
+      ],
+      "capture_screen": [
+        1920,
+        1080
+      ],
+      "reason": "界面与模板差异过大，按当前画面重采"
+    }
+  ],
+  "templates": {
+    "buy.png": {
+      "role": "购买按钮",
+      "size_px": [
+        298,
+        58
+      ],
+      "capture_screen": [
+        1920,
+        1080
+      ],
+      "dpi": 96,
+      "auto_healed_at": "2026-11-08 05:01:28",
+      "action": "recaptured",
+      "from_score": 0.762,
+      "reason": "界面与模板差异过大，按当前画面重采"
+    },
+    "confirm.png": {
+      "role": "确认按钮",
+      "size_px": [
+        303,
+        70
+      ],
+      "capture_screen": [
+        1920,
+        1080
+      ],
+      "dpi": 96
+    }
+  }
+}
