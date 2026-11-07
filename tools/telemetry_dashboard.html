@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>抢购遥测看板</title>
+<style>
+  :root{
+    --bg:#0f1319; --panel:#171d26; --panel-2:#1d242f; --line:#2a3341;
+    --text:#e8edf4; --muted:#8e9bad; --dim:#67748a;
+    --hit:#3ddc97; --miss:#ff6b6b; --skip:#f0b34d; --accent:#5aa9ff;
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text); overflow-x:hidden;
+    font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",
+         "Noto Sans CJK SC",sans-serif;
+  }
+  .wrap{max-width:1560px;margin:0 auto;padding:16px 20px 40px}
+  .topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:12px 0 16px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .topbar h1{font-size:19px;margin:0;letter-spacing:.5px}
+  .topbar .sub{color:var(--dim);font-size:12px}
+  .spacer{flex:1}
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;
+    transition:.15s background,border-color}
+  .btn:hover{background:#242d3a;border-color:#3a4657}
+  .btn.primary{background:#1f4f86;border-color:#2b6bb3}
+  .btn.primary:hover{background:#255f9e}
+  .btn.ghost{background:transparent}
+  .btn.sm{padding:4px 9px;font-size:12px;border-radius:6px}
+  .chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
+    border:1px solid var(--line);color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .dot.on{background:var(--hit);box-shadow:0 0 8px rgba(61,220,151,.6)}
+  .dot.off{background:#5b6676}
+
+  .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;min-width:0}
+  .card .k{color:var(--muted);font-size:12px;display:flex;gap:6px;align-items:center}
+  .card .v{font-size:26px;font-weight:600;margin-top:6px;letter-spacing:.4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .u{font-size:11px;color:var(--dim);margin-top:2px}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;margin-top:14px;min-width:0}
+  .panel-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    margin-bottom:10px}
+  .panel-head h2{font-size:15px;margin:0;font-weight:600}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;
+    overflow:hidden}
+  .seg button{background:transparent;border:0;color:var(--muted);padding:5px 11px;
+    font-size:12px;cursor:pointer}
+  .seg button.on{background:#26303f;color:var(--text)}
+
+  .tiers{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .tierpill{display:flex;align-items:center;gap:6px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:12px}
+  .tierpill b{font-weight:600}
+  .tierbar{height:4px;width:52px;background:#2b3543;border-radius:3px;overflow:hidden}
+  .tierbar i{display:block;height:100%}
+
+  .chart{width:100%;height:auto;display:block}
+  .legend{display:flex;gap:14px;color:var(--muted);font-size:12px;flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .field{display:flex;align-items:center;gap:6px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+  .field label{color:var(--dim);font-size:12px;white-space:nowrap}
+  .field input,.field select{background:transparent;border:0;color:var(--text);
+    font-size:13px;outline:none;font-family:inherit}
+  .field input[type=date]{color-scheme:dark;width:126px}
+  .field input[type=search]{width:190px}
+  .grow{flex:1}
+
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  thead th{color:var(--muted);font-weight:500;font-size:12px;text-align:left;
+    padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:9px 8px;border-bottom:1px solid #212935;font-size:13px;
+    vertical-align:middle}
+  tbody tr{cursor:pointer;transition:background .12s}
+  tbody tr:hover{background:#1b222c}
+  .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mono{font-family:Consolas,"SF Mono",Menlo,monospace;font-size:12px}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)}
+  .empty{padding:34px 10px;text-align:center;color:var(--dim)}
+  .empty b{display:block;color:var(--muted);margin-bottom:4px}
+  .tiermini{display:flex;gap:4px;flex-wrap:wrap}
+  .tiermini .chip{font-size:10px;padding:0 6px}
+
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);
+    background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow);
+    transform:translateX(102%);transition:transform .22s ease;z-index:40;
+    display:flex;flex-direction:column}
+  .drawer.open{transform:translateX(0)}
+  .drawer-head{padding:14px 16px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .drawer-head h3{margin:0;font-size:15px}
+  .drawer-body{overflow-y:auto;padding:12px 16px 30px}
+  .sec-title{color:var(--muted);font-size:12px;margin:14px 0 8px;
+    letter-spacing:.5px}
+  .timeline{position:relative;margin:0;padding:0 0 0 16px;list-style:none;
+    border-left:1px solid #2c3644}
+  .timeline li{position:relative;padding:7px 0 9px 10px}
+  .timeline li:before{content:"";position:absolute;left:-22px;top:14px;
+    width:9px;height:9px;border-radius:50%;background:var(--dim);
+    box-shadow:0 0 0 3px var(--panel)}
+  .timeline li.hit:before{background:var(--hit)}
+  .timeline li.miss:before{background:var(--miss)}
+  .timeline li.skip:before{background:var(--skip)}
+  .tl-line{display:flex;flex-wrap:wrap;gap:7px;align-items:center;font-size:13px}
+  .tl-time{color:var(--dim);font-variant-numeric:tabular-nums}
+  .tl-sep{color:#4a5568}
+  .res{font-weight:600;font-size:12px}
+  .res.hit{color:var(--hit)} .res.miss{color:var(--miss)} .res.skip{color:var(--skip)}
+  .reason{color:var(--skip);font-size:11px}
+  .tl-sub{color:var(--dim);font-size:11px;margin-top:2px}
+
+  .gate{position:fixed;inset:0;background:rgba(9,12,17,.92);z-index:60;
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .gate .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px;width:min(420px,100%);box-shadow:var(--shadow)}
+  .gate h2{margin:0 0 6px;font-size:17px}
+  .gate p{color:var(--muted);font-size:12px;margin:0 0 14px}
+  .gate input{width:100%;background:var(--panel-2);border:1px solid var(--line);
+    border-radius:8px;padding:9px 11px;color:var(--text);font-family:inherit;
+    font-size:13px;outline:none}
+  .gate .row{display:flex;gap:8px;margin-top:12px}
+  .gate .err{color:var(--miss);font-size:12px;margin-top:8px;min-height:16px}
+
+  .modal{position:fixed;inset:0;background:rgba(9,12,17,.8);z-index:70;
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px;width:min(440px,100%);box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 8px;font-size:16px}
+  .modal p{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .modal input{width:100%;background:var(--panel-2);border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;color:var(--text);outline:none;font-family:inherit}
+  .modal .row{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+    background:#202a36;border:1px solid var(--line);color:var(--text);
+    padding:9px 14px;border-radius:9px;font-size:13px;z-index:80;box-shadow:var(--shadow)}
+  [hidden]{display:none !important}
+
+  @media (max-width:1400px){
+    th.c-ver,td.c-ver{display:none}
+    .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
+  @media (max-width:980px){
+    th.c-skew,td.c-skew,th.c-machine,td.c-machine{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="topbar">
+    <h1>抢购遥测看板</h1>
+    <span class="sub" id="updatedAt">尚未加载</span>
+    <span class="spacer"></span>
+    <span class="chip" id="onlineChip"><span class="dot off"></span> 离线</span>
+    <button class="btn sm" id="btnRefresh">刷新</button>
+    <button class="btn sm ghost" id="btnExportOverview">导出总览 CSV</button>
+    <button class="btn sm ghost" id="btnExportUsers">导出用户 CSV</button>
+    <button class="btn sm ghost" id="btnLogout">换令牌</button>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="k">在线台数 <span class="chip">10 分钟内</span></div>
+      <div class="v" id="kOnline">—</div>
+      <div class="u">有上报的机器数</div>
+    </div>
+    <div class="card">
+      <div class="k">今日成交件数</div>
+      <div class="v" id="kHits">—</div>
+      <div class="u" id="kEvents">今日事件 — 条</div>
+    </div>
+    <div class="card">
+      <div class="k">今日总花费</div>
+      <div class="v" id="kSpent">—</div>
+      <div class="u">只统计成交</div>
+    </div>
+    <div class="card">
+      <div class="k">平均卡点误差</div>
+      <div class="v" id="kSkew">—</div>
+      <div class="u">成交且带误差样本</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>品阶分布 · 今日</h2>
+      <span class="sub muted" id="tierHint"></span>
+      <span class="spacer"></span>
+    </div>
+    <div class="tiers" id="tierList"><span class="muted">暂无数据</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>趋势</h2>
+      <div class="seg" id="bucketSeg">
+        <button data-bucket="hour" class="on">按小时</button>
+        <button data-bucket="day">按天</button>
+      </div>
+      <span class="spacer"></span>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--hit)"></i>成交</span>
+        <span><i class="dot" style="background:var(--miss)"></i>失败</span>
+        <span><i class="dot" style="background:var(--skip)"></i>跳过</span>
+        <span><i class="dot" style="background:var(--accent)"></i>花费（右轴）</span>
+      </div>
+    </div>
+    <svg class="chart" id="trendChart" viewBox="0 0 1000 300"
+         preserveAspectRatio="none" role="img" aria-label="趋势图"></svg>
+    <div class="empty" id="trendEmpty" hidden><b>还没有趋势数据</b>新的事件上报后这里会自动画出来。</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>用户</h2>
+      <span class="sub muted" id="userCount"></span>
+      <span class="spacer"></span>
+    </div>
+    <div class="toolbar">
+      <div class="field">
+        <label for="q">搜索</label>
+        <input id="q" type="search" placeholder="卡密掩码 / 机器码短哈希">
+      </div>
+      <div class="field">
+        <label for="from">从</label><input id="from" type="date">
+      </div>
+      <div class="field">
+        <label for="to">到</label><input id="to" type="date">
+      </div>
+      <div class="field">
+        <label for="sort">排序</label>
+        <select id="sort">
+          <option value="hits">成交数</option>
+          <option value="spent">总花费</option>
+          <option value="last_seen">最后在线</option>
+          <option value="fails">失败数</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="order">方向</label>
+        <select id="order">
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
+      </div>
+      <button class="btn sm" id="btnApply">应用</button>
+      <button class="btn sm ghost" id="btnReset">清空筛选</button>
+    </div>
+    <table>
+      <colgroup>
+        <col style="width:19%"><col style="width:13%"><col style="width:25%">
+        <col style="width:7%"><col style="width:10%"><col style="width:8%">
+        <col style="width:10%"><col style="width:8%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>卡密（掩码）</th>
+          <th class="c-machine">机器码</th>
+          <th>各品阶成交</th>
+          <th class="num">成交</th>
+          <th class="num">总花费</th>
+          <th class="c-skew num">卡点</th>
+          <th>最后在线</th>
+          <th class="c-ver">版本</th>
+        </tr>
+      </thead>
+      <tbody id="userRows"></tbody>
+    </table>
+    <div class="empty" id="userEmpty" hidden>
+      <b>还没有可展示的用户</b>
+      确认客户端已经上报、或把筛选条件放宽一点。
+    </div>
+  </div>
+</div>
+
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h3 id="dTitle">用户详情</h3>
+    <span class="chip" id="dOnline">—</span>
+    <span class="chip" id="dVersion">—</span>
+    <span class="spacer"></span>
+    <button class="btn sm" id="btnExportUser">导出该用户 CSV</button>
+    <button class="btn sm ghost" id="btnReveal">显示完整卡密</button>
+    <button class="btn sm ghost" id="btnCloseDrawer">关闭</button>
+  </div>
+  <div class="drawer-body">
+    <div class="cards" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="card"><div class="k">成交</div><div class="v" id="dHits" style="font-size:20px">—</div></div>
+      <div class="card"><div class="k">总花费</div><div class="v" id="dSpent" style="font-size:20px">—</div></div>
+      <div class="card"><div class="k">平均卡点</div><div class="v" id="dSkew" style="font-size:20px">—</div></div>
+    </div>
+    <div class="sec-title">按天趋势</div>
+    <svg class="chart" id="dailyChart" viewBox="0 0 1000 160"
+         preserveAspectRatio="none"></svg>
+    <div class="empty" id="dailyEmpty" hidden style="padding:14px">
+      <b>还没有按天数据</b>跨天后聚合表才会出现。
+    </div>
+    <div class="sec-title">最近 50 条明细</div>
+    <ul class="timeline" id="timeline"></ul>
+    <div class="empty" id="timelineEmpty" hidden><b>这个用户还没有明细</b></div>
+  </div>
+</aside>
+
+<div class="gate" id="gate">
+  <div class="box">
+    <h2>管理员令牌</h2>
+    <p>管理接口全部需要令牌。令牌在启动 telemetry_server 时通过
+      <code>--admin-token</code> 或环境变量 <code>TELEMETRY_ADMIN_TOKEN</code> 提供。</p>
+    <input id="tokenInput" type="password" placeholder="粘贴 admin token" autocomplete="off">
+    <div class="row">
+      <button class="btn primary" id="btnLogin" style="flex:1">进入看板</button>
+    </div>
+    <div class="err" id="gateErr"></div>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="box">
+    <h3>显示完整卡密</h3>
+    <p>完整卡密等同于激活凭证，泄露后别人可以直接拿去激活。确认只在必要时查看。</p>
+    <input id="confirmInput" placeholder="输入「确认」两个字继续">
+    <div class="row">
+      <button class="btn ghost" id="btnCancelReveal">取消</button>
+      <button class="btn primary" id="btnConfirmReveal">确认显示</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(s){ return document.querySelector(s); };
+  var state = {
+    token: sessionStorage.getItem("telemetry_token") || "",
+    bucket: "hour",
+    users: [],
+    current: null,
+    filters: {q:"", from:"", to:"", sort:"hits", order:"desc"}
+  };
+
+  function el(tag, cls, text){
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function svgEl(tag, attrs){
+    var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function toast(msg){
+    var old = document.querySelector(".toast");
+    if (old) old.remove();
+    var t = el("div", "toast", msg);
+    document.body.appendChild(t);
+    setTimeout(function(){ t.remove(); }, 3200);
+  }
+  function fmtMoney(v){
+    if (v === null || v === undefined) return "—";
+    return "¥" + Number(v).toLocaleString("zh-CN", {maximumFractionDigits:2,
+      minimumFractionDigits:0});
+  }
+  function fmtSkew(v){
+    if (v === null || v === undefined) return "—";
+    var n = Number(v);
+    return (n >= 0 ? "+" : "") + n + "ms";
+  }
+  function fmtTime(ts, withDate){
+    if (!ts) return "—";
+    var d = new Date(ts * 1000);
+    var p = function(n){ return (n < 10 ? "0" : "") + n; };
+    var t = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+    return withDate ? (d.getFullYear() + "-" + p(d.getMonth()+1) + "-" +
+      p(d.getDate()) + " " + t) : t;
+  }
+  function ago(ts){
+    if (!ts) return "—";
+    var s = Math.max(0, Date.now()/1000 - ts);
+    if (s < 60) return Math.floor(s) + " 秒前";
+    if (s < 3600) return Math.floor(s/60) + " 分钟前";
+    if (s < 86400) return Math.floor(s/3600) + " 小时前";
+    return Math.floor(s/86400) + " 天前";
+  }
+  function tierColor(name){
+    var palette = ["#5aa9ff","#b07bff","#ff9f43","#3ddc97","#ff6b9d","#4dd0e1"];
+    var h = 0, s = String(name || "");
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 997;
+    return palette[h % palette.length];
+  }
+
+  // ---------------------------------------------------------------- API
+  function api(path, opts){
+    opts = opts || {};
+    var headers = opts.headers || {};
+    headers["X-Admin-Token"] = state.token;
+    return fetch(path, {method: opts.method || "GET", headers: headers,
+      cache: "no-store"}).then(function(r){
+      if (r.status === 401){
+        showGate("令牌无效或已失效，请重新输入");
+        throw new Error("unauthorized");
+      }
+      if (!r.ok){
+        return r.text().then(function(t){
+          var msg = t;
+          try { msg = JSON.parse(t).error || t; } catch(e){}
+          throw new Error(msg || ("HTTP " + r.status));
+        });
+      }
+      return r;
+    });
+  }
+  function apiJson(path, opts){
+    return api(path, opts).then(function(r){ return r.json(); });
+  }
+
+  // ---------------------------------------------------------------- 登录门
+  function showGate(msg){
+    $("#gate").hidden = false;
+    $("#gateErr").textContent = msg || "";
+    $("#tokenInput").focus();
+  }
+  function hideGate(){ $("#gate").hidden = true; }
+  $("#btnLogin").addEventListener("click", function(){
+    var v = $("#tokenInput").value.trim();
+    if (!v){ $("#gateErr").textContent = "令牌不能为空"; return; }
+    state.token = v;
+    apiJson("/api/admin/overview").then(function(){
+      sessionStorage.setItem("telemetry_token", v);
+      hideGate();
+      reloadAll();
+    }).catch(function(e){
+      if (e.message !== "unauthorized") $("#gateErr").textContent = e.message;
+    });
+  });
+  $("#tokenInput").addEventListener("keydown", function(e){
+    if (e.key === "Enter") $("#btnLogin").click();
+  });
+  $("#btnLogout").addEventListener("click", function(){
+    sessionStorage.removeItem("telemetry_token");
+    state.token = "";
+    $("#tokenInput").value = "";
+    showGate("");
+  });
+
+  // ---------------------------------------------------------------- 总览
+  function renderOverview(ov){
+    $("#kOnline").textContent = ov.online;
+    $("#kHits").textContent = ov.today_hits;
+    $("#kEvents").textContent = "今日事件 " + ov.today_events + " 条";
+    $("#kSpent").textContent = fmtMoney(ov.today_spent);
+    $("#kSkew").textContent = ov.today_skew_avg_ms === null
+      ? "—" : (ov.today_skew_avg_ms + "ms");
+    $("#tierHint").textContent = "统计日 " + ov.today;
+
+    var box = $("#tierList");
+    box.textContent = "";
+    if (!ov.tiers || !ov.tiers.length){
+      box.appendChild(el("span", "muted", "今日还没有成交/失败记录"));
+      return;
+    }
+    var maxHits = 1;
+    ov.tiers.forEach(function(t){ maxHits = Math.max(maxHits, t.hits); });
+    ov.tiers.forEach(function(t){
+      var pill = el("div", "tierpill");
+      var color = tierColor(t.tier);
+      var dot = el("i", "dot");
+      dot.style.background = color;
+      var barWrap = el("div", "tierbar");
+      var bar = el("i");
+      bar.style.width = Math.round((t.hits / maxHits) * 100) + "%";
+      bar.style.background = color;
+      barWrap.appendChild(bar);
+      pill.appendChild(dot);
+      pill.appendChild(el("span", "", t.tier));
+      pill.appendChild(el("b", "", t.hits + " 件"));
+      pill.appendChild(el("span", "muted", fmtMoney(t.spent)));
+      pill.appendChild(barWrap);
+      pill.title = t.tier + "：成交 " + t.hits + " / 失败 " + t.fails +
+        " / 跳过 " + t.skips + " / 花费 " + fmtMoney(t.spent);
+      box.appendChild(pill);
+    });
+  }
+
+  // ---------------------------------------------------------------- 趋势图
+  function drawTrend(data){
+    var svg = $("#trendChart");
+    svg.textContent = "";
+    var pts = data.points || [];
+    var hasAny = pts.some(function(p){ return p.hits || p.fails || p.skips || p.spent; });
+    $("#trendEmpty").hidden = hasAny;
+    svg.style.display = hasAny ? "block" : "none";
+    if (!hasAny) return;
+
+    var W = 1000, H = 300, padL = 46, padR = 56, padT = 18, padB = 34;
+    var innerW = W - padL - padR, innerH = H - padT - padB;
+    var maxCount = 1, maxSpent = 1;
+    pts.forEach(function(p){
+      maxCount = Math.max(maxCount, p.hits + p.fails + p.skips);
+      maxSpent = Math.max(maxSpent, p.spent || 0);
+    });
+
+    for (var g = 0; g <= 4; g++){
+      var y = padT + innerH * g / 4;
+      svg.appendChild(svgEl("line", {x1:padL, y1:y, x2:W-padR, y2:y,
+        stroke:"#232b37", "stroke-width":1}));
+      var lab = svgEl("text", {x:padL-8, y:y+4, fill:"#67748a", "font-size":11,
+        "text-anchor":"end"});
+      lab.textContent = String(Math.round(maxCount * (1 - g/4)));
+      svg.appendChild(lab);
+    }
+
+    var step = innerW / pts.length;
+    var bw = Math.max(4, step * 0.52);
+    pts.forEach(function(p, i){
+      var x = padL + step * i + (step - bw) / 2;
+      var base = padT + innerH;
+      var hHit = innerH * (p.hits / maxCount);
+      var hMiss = innerH * (p.fails / maxCount);
+      var hSkip = innerH * (p.skips / maxCount);
+      var y = base;
+      [[p.hits, "#3ddc97"], [p.fails, "#ff6b6b"], [p.skips, "#f0b34d"]]
+        .forEach(function(pair){
+          var h = innerH * (pair[0] / maxCount);
+          if (h <= 0) return;
+          y -= h;
+          var rect = svgEl("rect", {x:x, y:y, width:bw, height:h, fill:pair[1],
+            rx:2, opacity:0.9});
+          var tip = svgEl("title", {});
+          tip.textContent = p.label + "：成交 " + p.hits + " / 失败 " + p.fails +
+            " / 跳过 " + p.skips + " / 花费 " + fmtMoney(p.spent);
+          rect.appendChild(tip);
+          svg.appendChild(rect);
+        });
+    });
+
+    // 花费折线（右轴）
+    var points = pts.map(function(p, i){
+      var x = padL + step * i + step / 2;
+      var y = padT + innerH * (1 - (p.spent || 0) / maxSpent);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    svg.appendChild(svgEl("polyline", {points:points, fill:"none",
+      stroke:"#5aa9ff", "stroke-width":2, "stroke-linejoin":"round"}));
+
+    var every = Math.ceil(pts.length / 8);
+    pts.forEach(function(p, i){
+      if (i % every) return;
+      var t = svgEl("text", {x:padL + step * i + step/2, y:H - 12,
+        fill:"#67748a", "font-size":10, "text-anchor":"middle"});
+      t.textContent = p.label;
+      svg.appendChild(t);
+    });
+    var maxLab = svgEl("text", {x:W-padR+6, y:padT+10, fill:"#5aa9ff",
+      "font-size":10});
+    maxLab.textContent = fmtMoney(maxSpent);
+    svg.appendChild(maxLab);
+  }
+
+  // ---------------------------------------------------------------- 用户表
+  function renderUsers(users){
+    state.users = users;
+    $("#userCount").textContent = "共 " + users.length + " 台";
+    var tbody = $("#userRows");
+    tbody.textContent = "";
+    $("#userEmpty").hidden = users.length > 0;
+    users.forEach(function(u){
+      var tr = el("tr");
+      tr.title = "点击查看最近 50 条明细";
+      tr.addEventListener("click", function(){ openUser(u.id); });
+
+      var tdMask = el("td");
+      var spanMask = el("span", "mono ell", u.license_mask);
+      spanMask.title = u.license_mask;
+      tdMask.appendChild(spanMask);
+      if (u.license_tier) tdMask.appendChild(el("span", "chip", u.license_tier));
+      tr.appendChild(tdMask);
+
+      var tdMachine = el("td", "c-machine");
+      var m = el("span", "mono ell", u.machine || "—");
+      m.title = u.machine || "";
+      tdMachine.appendChild(m);
+      tr.appendChild(tdMachine);
+
+      var tdTier = el("td");
+      var wrap = el("div", "tiermini ell");
+      var keys = Object.keys(u.tier_hits || {});
+      if (!keys.length) wrap.appendChild(el("span", "muted", "—"));
+      keys.sort(function(a,b){ return u.tier_hits[b] - u.tier_hits[a]; });
+      keys.forEach(function(k){
+        var c = el("span", "chip", k + " " + u.tier_hits[k]);
+        c.style.borderColor = tierColor(k);
+        c.style.color = tierColor(k);
+        wrap.appendChild(c);
+      });
+      wrap.title = keys.map(function(k){ return k + ":" + u.tier_hits[k]; }).join(" / ");
+      tdTier.appendChild(wrap);
+      tr.appendChild(tdTier);
+
+      tr.appendChild(el("td", "num", u.hits));
+      tr.appendChild(el("td", "num", fmtMoney(u.spent)));
+      tr.appendChild(el("td", "c-skew num muted", fmtSkew(u.skew_avg_ms)));
+
+      var tdLast = el("td", "ell");
+      tdLast.textContent = ago(u.last_seen);
+      tdLast.title = fmtTime(u.last_seen, true);
+      tr.appendChild(tdLast);
+
+      tr.appendChild(el("td", "c-ver mono", u.client_version || "—"));
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ---------------------------------------------------------------- 详情
+  function openUser(id){
+    apiJson("/api/admin/user/" + id).then(function(d){
+      state.current = d;
+      $("#dTitle").textContent = d.user.license_mask;
+      $("#dTitle").title = d.user.license_mask;
+      var on = $("#dOnline");
+      on.textContent = d.user.online ? "在线" : "离线";
+      on.style.color = d.user.online ? "var(--hit)" : "var(--muted)";
+      $("#dVersion").textContent = "客户端 " + (d.user.client_version || "—");
+      $("#dHits").textContent = d.user.hits;
+      $("#dSpent").textContent = fmtMoney(d.user.spent);
+      $("#dSkew").textContent = fmtSkew(d.user.skew_avg_ms);
+      $("#drawer").classList.add("open");
+      $("#drawer").setAttribute("aria-hidden", "false");
+      renderDaily(d.daily);
+      renderTimeline(d.events);
+    }).catch(function(e){ toast("加载用户详情失败：" + e.message); });
+  }
+  function closeDrawer(){
+    $("#drawer").classList.remove("open");
+    $("#drawer").setAttribute("aria-hidden", "true");
+    state.current = null;
+  }
+  function renderDaily(daily){
+    var svg = $("#dailyChart");
+    svg.textContent = "";
+    var has = daily && daily.length;
+    $("#dailyEmpty").hidden = !!has;
+    svg.style.display = has ? "block" : "none";
+    if (!has) return;
+    var W = 1000, H = 160, padL = 34, padR = 20, padT = 12, padB = 24;
+    var innerW = W - padL - padR, innerH = H - padT - padB;
+    var maxHits = 1;
+    daily.forEach(function(d){ maxHits = Math.max(maxHits, d.hits); });
+    var step = innerW / Math.max(1, daily.length);
+    var bw = Math.max(3, step * 0.5);
+    svg.appendChild(svgEl("line", {x1:padL, y1:padT+innerH, x2:W-padR,
+      y2:padT+innerH, stroke:"#232b37"}));
+    daily.forEach(function(d, i){
+      var h = innerH * (d.hits / maxHits);
+      var x = padL + step * i + (step - bw)/2;
+      var r = svgEl("rect", {x:x, y:padT+innerH-h, width:bw, height:h,
+        fill:"#3ddc97", rx:2});
+      var tip = svgEl("title", {});
+      tip.textContent = d.day + "：成交 " + d.hits + " / 失败 " + d.fails +
+        " / 跳过 " + d.skips + " / 花费 " + fmtMoney(d.spent);
+      r.appendChild(tip);
+      svg.appendChild(r);
+    });
+  }
+  function renderTimeline(events){
+    var ul = $("#timeline");
+    ul.textContent = "";
+    $("#timelineEmpty").hidden = !!(events && events.length);
+    (events || []).forEach(function(e){
+      var li = el("li", e.result);
+      var line = el("div", "tl-line");
+      function sep(){ line.appendChild(el("span", "tl-sep", "·")); }
+      line.appendChild(el("span", "tl-time", fmtTime(e.occurred_at)));
+      sep();
+      var name = el("span", "ell", e.name || "（未命名）");
+      name.title = e.name || "";
+      name.style.maxWidth = "200px";
+      line.appendChild(name);
+      sep();
+
+      var tier = el("span", "chip", e.tier || "未标注");
+      tier.style.color = tierColor(e.tier);
+      tier.style.borderColor = tierColor(e.tier);
+      line.appendChild(tier);
+      sep();
+
+      if (e.price !== null && e.price !== undefined){
+        line.appendChild(el("span", "num", fmtMoney(e.price)));
+        sep();
+      }
+
+      var res = el("span", "res " + e.result,
+        ({hit:"成功", miss:"失败", skip:"跳过"})[e.result] || e.result);
+      line.appendChild(res);
+
+      if (e.skew_ms !== null && e.skew_ms !== undefined){
+        sep();
+        line.appendChild(el("span", "muted", "卡点误差 " + fmtSkew(e.skew_ms)));
+      }
+
+      li.appendChild(line);
+      if (e.result === "skip"){
+        var reason = el("div", "tl-sub");
+        reason.appendChild(el("span", "reason",
+          "跳过原因：" + (e.skip_reason || "未标注")));
+        li.appendChild(reason);
+      }
+      ul.appendChild(li);
+    });
+  }
+
+  // ---------------------------------------------------------------- 导出
+  function exportCsv(scope, id){
+    var url = "/api/admin/export?scope=" + encodeURIComponent(scope);
+    if (id) url += "&id=" + encodeURIComponent(id);
+    api(url).then(function(r){ return r.blob(); }).then(function(blob){
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = scope + "_" + new Date().toISOString().slice(0,10) + ".csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+      toast("已导出 " + scope + ".csv");
+    }).catch(function(e){ toast("导出失败：" + e.message); });
+  }
+  $("#btnExportOverview").addEventListener("click", function(){
+    exportCsv("overview");
+  });
+  $("#btnExportUsers").addEventListener("click", function(){ exportCsv("users"); });
+  $("#btnExportUser").addEventListener("click", function(){
+    if (!state.current){ toast("先打开一个用户"); return; }
+    exportCsv("user", state.current.user.id);
+  });
+
+  // ---------------------------------------------------------------- 显示完整卡密
+  $("#btnReveal").addEventListener("click", function(){
+    if (!state.current){ toast("先打开一个用户"); return; }
+    $("#confirmInput").value = "";
+    $("#modal").hidden = false;
+    $("#confirmInput").focus();
+  });
+  $("#btnCancelReveal").addEventListener("click", function(){
+    $("#modal").hidden = true;
+  });
+  $("#btnConfirmReveal").addEventListener("click", function(){
+    if ($("#confirmInput").value.trim() !== "确认"){
+      toast("请输入「确认」两个字");
+      return;
+    }
+    $("#modal").hidden = true;
+    var id = state.current.user.id;
+    if (!window.confirm("再次确认：完整卡密会显示在屏幕上，确认继续？")) return;
+    apiJson("/api/admin/reveal?id=" + encodeURIComponent(id),
+            {headers: {"X-Confirm": "yes"}}).then(function(d){
+      $("#dTitle").textContent = d.code;
+      $("#dTitle").title = d.code;
+      toast("已显示完整卡密（服务端已记日志）");
+    }).catch(function(e){ toast("查看失败：" + e.message); });
+  });
+
+  // ---------------------------------------------------------------- 加载
+  function reloadAll(){
+    var f = state.filters;
+    var qs = "/api/admin/users?q=" + encodeURIComponent(f.q) +
+      "&sort=" + f.sort + "&order=" + f.order;
+    if (f.from) qs += "&from=" + f.from;
+    if (f.to) qs += "&to=" + f.to;
+    Promise.all([
+      apiJson("/api/admin/overview"),
+      apiJson("/api/admin/trend?bucket=" + state.bucket),
+      apiJson(qs)
+    ]).then(function(res){
+      renderOverview(res[0]);
+      drawTrend(res[1]);
+      renderUsers(res[2].users || []);
+      $("#updatedAt").textContent = "更新于 " + fmtTime(Date.now()/1000);
+      var chip = $("#onlineChip");
+      chip.textContent = "";
+      var dot = el("span", "dot " + (res[0].online > 0 ? "on" : "off"));
+      chip.appendChild(dot);
+      chip.appendChild(document.createTextNode(" 在线 " + res[0].online));
+    }).catch(function(e){
+      if (e.message !== "unauthorized") toast("刷新失败：" + e.message);
+    });
+  }
+
+  $("#btnRefresh").addEventListener("click", reloadAll);
+  $("#btnCloseDrawer").addEventListener("click", closeDrawer);
+  $("#bucketSeg").addEventListener("click", function(e){
+    var b = e.target.getAttribute("data-bucket");
+    if (!b) return;
+    state.bucket = b;
+    Array.prototype.forEach.call(this.children, function(c){
+      c.classList.toggle("on", c.getAttribute("data-bucket") === b);
+    });
+    apiJson("/api/admin/trend?bucket=" + b).then(drawTrend)
+      .catch(function(e){ toast("趋势加载失败：" + e.message); });
+  });
+  $("#btnApply").addEventListener("click", function(){
+    state.filters.q = $("#q").value.trim();
+    state.filters.from = $("#from").value;
+    state.filters.to = $("#to").value;
+    state.filters.sort = $("#sort").value;
+    state.filters.order = $("#order").value;
+    reloadAll();
+  });
+  $("#btnReset").addEventListener("click", function(){
+    $("#q").value = ""; $("#from").value = ""; $("#to").value = "";
+    $("#sort").value = "hits"; $("#order").value = "desc";
+    state.filters = {q:"", from:"", to:"", sort:"hits", order:"desc"};
+    reloadAll();
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape"){ closeDrawer(); $("#modal").hidden = true; }
+  });
+
+  if (state.token){
+    apiJson("/api/admin/overview").then(function(ov){
+      hideGate();
+      reloadAll();
+    }).catch(function(){ showGate("令牌已失效，请重新输入"); });
+  } else {
+    showGate("");
+  }
+})();
+</script>
+</body>
+</html>
