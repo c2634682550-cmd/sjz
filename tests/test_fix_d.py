@@ -341,14 +341,12 @@ def test_ons_public_gate_aborts_when_nothing_after_filter(monkeypatch):
     said = []
     e = Engine()
     e._say = lambda msg, level="info": said.append((level, msg))
-    e._set = lambda **kw: e.__dict__.update(
-        {"_state_code": kw.get("state_code", e.__dict__.get("_state_code"))})
     nav = _RecordingNav()
     with pytest.raises(Aborted) as ei:
         e._ons_public_gate(_Cfg(regions={"list": _BOX(0.1, 0.1, 0.5, 0.5)},
                                 active_task={"name": "MK4冲锋枪-疾光魅影"}),
                            _Screen(), nav, 6)
-    assert e.__dict__.get("_state_code") == "no_public_stock"
+    assert e._stats.get("state_code") == "no_public_stock"
     assert any("公示期无货：MK4冲锋枪-疾光魅影" in m for _, m in said), said
     assert any("筛前 6 条" in m and "筛后 0 条" in m for _, m in said), said
     assert "不自动退回" in str(ei.value)
