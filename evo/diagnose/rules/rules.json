@@ -1,0 +1,329 @@
+{
+  "version": "1.0",
+  "note": "规则表（声明式）。stage: hard=必现硬信号 / stat=统计信号 / corr=相关性。match 内多个匹配器取交集，强度取最小；then 的权重是加在根因分上的。加规则只需改本文件，不改代码。",
+  "rules": [
+    {
+      "id": "R-IN-01",
+      "phenomenon": "in.click_no_effect",
+      "stage": "stat",
+      "weight": 0.95,
+      "match": [
+        {"kind": "cycles", "where": {"bought": false, "hit_roll": true}, "field": "clicks", "op": ">=", "value": 3, "rate_min": 0.2, "min_count": 1}
+      ],
+      "then": {"c.input.click_message_ignored": 1.0, "c.input.normal_miss": 0.2},
+      "note": "普通漏抢是 hit_roll=false；roll 中了却没买到才是『受理但不处理』。日志里那句 warn 两类都会打，不能单独用"
+    },
+    {
+      "id": "R-IN-02",
+      "phenomenon": "in.foreground_lost",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "抢不到前台", "min_count": 1}],
+      "then": {"c.input.foreground_lost": 1.0, "c.input.click_message_ignored": 0.25},
+      "note": "引擎已把该 abort 归到 window_lost，文本唯一"
+    },
+    {
+      "id": "R-IN-03",
+      "phenomenon": "in.uipi_blocked",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "UIPI|权限比本程序高", "min_count": 1}],
+      "then": {"c.input.uipi_blocked": 1.0, "c.input.click_message_ignored": 0.2},
+      "note": "desktop.log 的两行连续告警"
+    },
+    {
+      "id": "R-IN-04",
+      "phenomenon": "in.injector_down",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "injector unavailable|injector_down|注入器.{0,8}不可用", "min_count": 1}],
+      "then": {"c.input.injector_unavailable": 1.0, "c.input.channel_degraded": 0.2},
+      "note": "RuntimeError 文本唯一"
+    },
+    {
+      "id": "R-IN-05",
+      "phenomenon": "in.target_lost",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "已销毁=True|INPUT_ERROR|目标窗口.{0,8}销毁", "min_count": 1}],
+      "then": {"c.input.target_destroyed": 1.0, "c.input.foreground_lost": 0.2},
+      "note": "台架 I5"
+    },
+    {
+      "id": "R-IN-06",
+      "phenomenon": "in.input_degraded",
+      "stage": "hard",
+      "weight": 0.9,
+      "match": [{"kind": "log", "pattern": "输入通道降级|原因码=NO_TARGET_HWND|degraded=True", "min_count": 1}],
+      "then": {"c.input.channel_degraded": 1.0, "c.input.target_destroyed": 0.15},
+      "note": "每轮固定打印『输入通道：PostMessage(legacy)』不算信号，这里只认『降级/原因码』"
+    },
+    {
+      "id": "R-IN-07",
+      "phenomenon": "in.cursor_not_moved",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "光标未动", "min_count": 1}],
+      "then": {"c.input.cursor_not_moved": 1.0, "c.input.channel_degraded": 0.2},
+      "note": "台架 I1"
+    },
+    {
+      "id": "R-IN-08",
+      "phenomenon": "in.click_no_effect",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "accepted=True.{0,40}functional=unknown|实际down=0", "min_count": 1}],
+      "then": {"c.input.click_message_ignored": 1.0, "c.input.normal_miss": 0.15},
+      "note": "台架 I2/I4：窗口受理但不处理"
+    },
+    {
+      "id": "R-VI-01",
+      "phenomenon": "vi.ocr_timeout",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "OCR 失败|TimeoutError.{0,20}OCR|ocr_timeout", "min_count": 1}],
+      "then": {"c.vision.ocr_timeout": 1.0, "c.vision.ocr_garbage": 0.15},
+      "note": "soak 里 1~2 行/窗口"
+    },
+    {
+      "id": "R-VI-02",
+      "phenomenon": "ti.countdown_stall",
+      "stage": "stat",
+      "weight": 0.9,
+      "match": [{"kind": "log", "pattern": "没再跳|倒计时停了", "min_count": 1}],
+      "then": {"c.vision.ocr_garbage": 0.5, "c.vision.unknown_page": 0.5},
+      "note": "刻意让两个根因同分：现有日志里 OCR 误读与页面切走打的是同一句停跳告警，缺页面锚点/模板分数就分不开，应转 ambiguous"
+    },
+    {
+      "id": "R-VI-03",
+      "phenomenon": "vi.unknown_page",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "认不出|陌生页面|unknown_page|界面不认识", "min_count": 1}],
+      "then": {"c.vision.unknown_page": 1.0, "c.vision.ocr_garbage": 0.2},
+      "note": "不要匹配『界面可能已经切走』——那句在停跳告警里，会污染 OCR 误读的判定"
+    },
+    {
+      "id": "R-VI-04",
+      "phenomenon": "vi.price_parse",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "patterns": ["price-parse", "✗"], "require_all": true, "min_count": 1}],
+      "then": {"c.vision.price_parse": 1.0, "c.vision.ocr_garbage": 0.15},
+      "note": "台架 N11：只有标了 ✗ 的才算解析错"
+    },
+    {
+      "id": "R-VI-05",
+      "phenomenon": "vi.template_low",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "match_score|match score|模板.{0,6}分数", "min_count": 1}],
+      "then": {"c.vision.template_low": 1.0, "c.vision.unknown_page": 0.2},
+      "note": "当前历史日志没有模板分数输出，这条规则等待字段补齐（实跑不会命中）"
+    },
+    {
+      "id": "R-TI-01",
+      "phenomenon": "ti.countdown_drift",
+      "stage": "corr",
+      "weight": 0.25,
+      "match": [{"kind": "cycles", "field": "drift_ms", "op": ">=", "value": 200, "rate_min": 0.1}],
+      "then": {"c.timing.countdown_drift": 1.0, "c.timing.time_source_untrusted": 0.2},
+      "note": "弱假设：drift_ms 尖峰在磁盘/GC 停顿窗口同样出现（实测 655/964ms），单靠它不能归因时钟；只加分不结论"
+    },
+    {
+      "id": "R-TI-02",
+      "phenomenon": "ti.countdown_drift",
+      "stage": "stat",
+      "weight": 0.7,
+      "match": [{"kind": "metric", "field": "drift_p95_ms", "agg": "max", "op": ">=", "value": 250}],
+      "then": {"c.timing.countdown_drift": 1.0, "c.timing.anchor_error": 0.2},
+      "note": "安静窗口实测 p95 最大 108ms，250ms 留了余量"
+    },
+    {
+      "id": "R-TI-03",
+      "phenomenon": "ti.time_source_untrusted",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "所有 NTP 服务器都不通|offset=40000|一致偏|DNS.{0,6}伪造|单源", "min_count": 1}],
+      "then": {"c.timing.time_source_untrusted": 1.0, "c.timing.countdown_drift": 0.25, "c.timing.anchor_error": 0.1},
+      "note": "N5/N6/N7：40000s 偏移被当可信采纳"
+    },
+    {
+      "id": "R-TI-04",
+      "phenomenon": "ti.anchor_error",
+      "stage": "stat",
+      "weight": 0.7,
+      "match": [{"kind": "metric", "field": "drift_p95_ms", "agg": "max", "op": ">=", "value": 150}],
+      "then": {"c.timing.anchor_error": 1.0, "c.resource.cpu_growth": 0.2},
+      "note": "150~250ms 之间更像单轮卡点抖动"
+    },
+    {
+      "id": "R-DA-01",
+      "phenomenon": "da.ledger_residual",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "残行|UnicodeDecodeError|unexpected end of data|没有换行符|complete-line-no-newline|上次崩溃留下", "min_count": 1}],
+      "then": {"c.data.ledger_residual": 1.0, "c.data.ledger_write_fail": 0.2},
+      "note": "P5/P6"
+    },
+    {
+      "id": "R-DA-02",
+      "phenomenon": "da.ledger_residual",
+      "stage": "stat",
+      "weight": 0.8,
+      "match": [{"kind": "ledger", "stat": "bad_rows", "op": ">=", "value": 1}],
+      "then": {"c.data.ledger_residual": 1.0, "c.data.ledger_write_fail": 0.15},
+      "note": "离线直接扫台账坏行"
+    },
+    {
+      "id": "R-DA-03",
+      "phenomenon": "da.ledger_write_fail",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "写台账失败|这一行没有落盘|add返回=None|write_ok=False|PermissionError.{0,60}records|records\\.jsonl.{0,30}Permission denied", "min_count": 1}],
+      "then": {"c.data.ledger_write_fail": 1.0, "c.data.ledger_residual": 0.15},
+      "note": "P3/P4"
+    },
+    {
+      "id": "R-DA-04",
+      "phenomenon": "da.ledger_write_fail",
+      "stage": "corr",
+      "weight": 0.6,
+      "match": [
+        {"kind": "metric", "field": "ledger_bytes", "agg": "delta", "op": "==", "value": 0},
+        {"kind": "metric", "field": "cycles_ok", "agg": "delta", "op": ">=", "value": 1}
+      ],
+      "then": {"c.data.ledger_write_fail": 1.0},
+      "note": "成交在涨但台账字节不涨；当前 soak 窗口里没有同时满足的样本，属待验证规则"
+    },
+    {
+      "id": "R-DA-05",
+      "phenomenon": "da.config_read_fail",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "设置读不出来|config\\.json\\.good 未更新|config.{0,12}读取失败|.broken-", "min_count": 1}],
+      "then": {"c.data.config_read_fail": 1.0, "c.data.config_value_invalid": 0.2},
+      "note": "P14/P3：备份写不进会打印『保留上一份可用备份』"
+    },
+    {
+      "id": "R-DA-06",
+      "phenomenon": "da.config_read_fail",
+      "stage": "hard",
+      "weight": 0.9,
+      "match": [{"kind": "artifact", "pattern": "config.json.broken-*.bad", "min_count": 1}],
+      "then": {"c.data.config_read_fail": 1.0, "c.data.config_value_invalid": 0.2},
+      "note": "soak 目录残留的坏配置快照，是离线可用的硬证据"
+    },
+    {
+      "id": "R-DA-07",
+      "phenomenon": "da.config_value_invalid",
+      "stage": "hard",
+      "weight": 1.1,
+      "match": [{"kind": "log", "pattern": "OverflowError|int too large to convert to float", "min_count": 1}],
+      "then": {"c.data.config_value_invalid": 1.0, "c.data.config_read_fail": 0.2},
+      "note": "N9/N12"
+    },
+    {
+      "id": "R-DA-08",
+      "phenomenon": "da.log_rotate_fail",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "rotate 返回=False|未轮转|上限.{0,8}失效|只读文件删不掉|.2 被删", "min_count": 1}],
+      "then": {"c.data.log_rotate_fail": 1.0, "c.data.ledger_write_fail": 0.15},
+      "note": "S1/S2/S3"
+    },
+    {
+      "id": "R-DA-09",
+      "phenomenon": "da.ledger_cache_stale",
+      "stage": "hard",
+      "weight": 1.0,
+      "match": [{"kind": "log", "pattern": "stats 未变|同尺寸|缓存指纹只认 size|跨进程写入会打回全量扫描|71×", "min_count": 1}],
+      "then": {"c.data.ledger_cache_stale": 1.0, "c.data.ledger_residual": 0.1},
+      "note": "S4/S6/P11：『同尺寸』是 P11 的指纹描述"
+    },
+    {
+      "id": "R-IN-09",
+      "phenomenon": "in.click_no_effect",
+      "stage": "hard",
+      "weight": 0.9,
+      "match": [{"kind": "log", "pattern": "只改类名|判定只认类名|functional=unknown", "min_count": 1}],
+      "then": {"c.input.click_message_ignored": 1.0, "c.input.channel_degraded": 0.2},
+      "note": "I2/I4：受理但游戏侧零响应；『只认类名』说明降级判定依据不可靠，但仍归到消息被忽略"
+    },
+    {
+      "id": "R-DA-11",
+      "phenomenon": "da.config_read_fail",
+      "stage": "hard",
+      "weight": 0.9,
+      "match": [{"kind": "log", "pattern": "save抛出=PermissionError", "min_count": 1}],
+      "then": {"c.data.config_write_denied": 1.0, "c.data.config_read_fail": 0.2},
+      "note": "P3：配置写被 ACL 拒绝"
+    },
+    {
+      "id": "R-DA-10",
+      "phenomenon": "da.quota_false_block",
+      "stage": "corr",
+      "weight": 0.5,
+      "match": [{"kind": "log", "pattern": "余额不足|额度.{0,6}拦截|insufficient", "min_count": 3}],
+      "then": {"c.data.quota_false_block": 1.0, "c.vision.price_parse": 0.15},
+      "note": "需要同一窗口 3 次以上才敢怀疑；单独一次『余额不足』是正常拦截"
+    },
+    {
+      "id": "R-RE-01",
+      "phenomenon": "re.handle_leak",
+      "stage": "stat",
+      "weight": 0.85,
+      "match": [
+        {"kind": "slope", "field": "handles", "unit": "s", "op": ">=", "value": 0.05, "min_span": 120, "min_delta": 6},
+        {"kind": "cycles", "field": "seq", "op": ">=", "value": 0, "rate_min": 0.99}
+      ],
+      "then": {"c.resource.handle_leak": 1.0, "c.resource.memory_growth": 0.15},
+      "note": "baseline 216→298/60min = 0.023/s。要求跨度≥120s 且净增≥6 个，避免 30s 窗口的 1~2 个句柄噪声"
+    },
+    {
+      "id": "R-RE-02",
+      "phenomenon": "re.memory_growth",
+      "stage": "stat",
+      "weight": 0.75,
+      "match": [{"kind": "slope", "field": "rss_mb", "unit": "min", "op": ">=", "value": 0.35, "min_span": 180, "min_delta": 10}],
+      "then": {"c.resource.memory_growth": 1.0, "c.resource.handle_leak": 0.1},
+      "note": "baseline 45→54.85MB/60min = 0.15/min。要求跨度≥180s 且净增≥10MB，30s 窗口的 GC 抖动不算增长"
+    },
+    {
+      "id": "R-RE-03",
+      "phenomenon": "re.cpu_growth",
+      "stage": "stat",
+      "weight": 0.7,
+      "match": [{"kind": "metric", "field": "cpu_pct", "agg": "mean", "op": ">=", "value": 60}],
+      "then": {"c.resource.cpu_growth": 1.0, "c.resource.overload": 0.25},
+      "note": "台架峰值 39.5%，阈值 60"
+    },
+    {
+      "id": "R-RE-04",
+      "phenomenon": "re.overload",
+      "stage": "stat",
+      "weight": 0.65,
+      "match": [{"kind": "metric", "field": "queue_pending", "agg": "max", "op": ">=", "value": 3}],
+      "then": {"c.resource.overload": 1.0, "c.resource.cpu_growth": 0.2},
+      "note": "台架 q_max=1"
+    },
+    {
+      "id": "R-RE-05",
+      "phenomenon": "re.heartbeat_missing",
+      "stage": "stat",
+      "weight": 0.8,
+      "match": [{"kind": "metric", "field": "cycles_stuck", "agg": "max", "op": ">=", "value": 1}],
+      "then": {"c.resource.heartbeat_missing": 1.0, "c.resource.cpu_growth": 0.2},
+      "note": "当前 soak 列全 0，规则待真机卡死样本验证"
+    },
+    {
+      "id": "R-RE-06",
+      "phenomenon": "re.heartbeat_missing",
+      "stage": "hard",
+      "weight": 0.95,
+      "match": [{"kind": "log", "pattern": "watchdog\\.py=False|无心跳|心跳超时|WATCHDOG_STALL", "min_count": 1}],
+      "then": {"c.resource.heartbeat_missing": 1.0},
+      "note": "S9：watchdog 没接线，卡死判定靠内联 60s"
+    }
+  ]
+}

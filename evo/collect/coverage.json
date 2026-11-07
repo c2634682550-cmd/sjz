@@ -1,0 +1,383 @@
+{
+ "split": "real",
+ "events_total": 1,
+ "real": 1,
+ "synthetic": 0,
+ "stages_observations": 0,
+ "fields": {
+  "source": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "records|shots|soak_cycle|soak_ledger|soak_log|live_api",
+   "null_policy": "必填"
+  },
+  "source_line": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "行号（jsonl/log/csv）",
+   "null_policy": "null"
+  },
+  "synthetic": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "true=仿真台架产物，非真实机会",
+   "null_policy": "必填"
+  },
+  "trust": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "verified;claimed;synthetic;inferred;unknown",
+   "null_policy": "必填"
+  },
+  "name": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "商品名（台账原样）",
+   "null_policy": "null"
+  },
+  "tier": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "传说|史诗|稀有|普通|极品|优品|未标注",
+   "null_policy": "null"
+  },
+  "grade": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "legend;epic;rare;other;unknown",
+   "null_policy": "null"
+  },
+  "grade_counts": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "各档累计计数",
+   "null_policy": "null"
+  },
+  "price": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "成交/标价，元",
+   "null_policy": "null"
+  },
+  "quota": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "购买数量",
+   "null_policy": "null"
+  },
+  "mode": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "detail|list|…",
+   "null_policy": "null"
+  },
+  "task_id": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "data/<task_id> 目录名或任务 id",
+   "null_policy": "null"
+  },
+  "result_raw": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "台账原值（hit/miss/no_money/over_budget/aborted）",
+   "null_policy": "null"
+  },
+  "result_norm": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "hit;miss;skip;unknown",
+   "null_policy": "unknown"
+  },
+  "win": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "抽签是否中签（与成交独立）",
+   "null_policy": "null"
+  },
+  "verified": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "是否校验过结算弹窗",
+   "null_policy": "null"
+  },
+  "verified_by": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "结算弹窗|余额下降|未校验|…",
+   "null_policy": "null"
+  },
+  "ts_ms": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "机会锚点时间（台账 ts 优先）",
+   "null_policy": "null"
+  },
+  "attempt_id": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "机会唯一键：列表行 id/hash + 点击时刻",
+   "null_policy": "null"
+  },
+  "first_seen_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "第一次看到该商品的时刻",
+   "null_policy": "null"
+  },
+  "listed_at_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "挂单挂牌时刻（反推=首次看到−剩余秒；精确需引擎写）",
+   "null_policy": "null"
+  },
+  "publicity_s": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "公示时长（=unlock_at−listed_at），秒",
+   "null_policy": "null"
+  },
+  "unlock_at_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "理论解锁零点（倒计时反推）",
+   "null_policy": "null"
+  },
+  "click_at_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "首次开点时刻",
+   "null_policy": "null"
+  },
+  "pool_joined_at_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "进入抢购池时刻（屏幕出现『已加入抢购池』）",
+   "null_policy": "null"
+  },
+  "roll_at_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "抽签结果出现时刻（toast）",
+   "null_policy": "null"
+  },
+  "deal_at_ms": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "结算/成交确认时刻",
+   "null_policy": "null"
+  },
+  "time_src": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "{字段: 来源}（record_epoch|record_t_local|log_text_local|mtime_local|api_epoch|ocr_epoch|absent）",
+   "null_policy": "必填"
+  },
+  "lead_err_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "点击相对理论零点偏差，负=早（台账 offset_ms/skew_ms/drift_ms）",
+   "null_policy": "null"
+  },
+  "lead_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "日志『距归零还有 N ms』",
+   "null_policy": "null"
+  },
+  "forward_remaining_s": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "看到该件时倒计时显示的剩余秒（『X分Y秒』原值）",
+   "null_policy": "null"
+  },
+  "elapsed_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "台账 elapsed（秒→毫秒）或日志『用时 X s』",
+   "null_policy": "null"
+  },
+  "pool_wait_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "进池→抽签结果间隔",
+   "null_policy": "null"
+  },
+  "queue_wait_ms": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "点击→进池间隔",
+   "null_policy": "null"
+  },
+  "join_result": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "joined|rejected_pool|queue_full|no_response|unknown",
+   "null_policy": "null"
+  },
+  "join_raw": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "进池 toast 原文（OCR/日志原样）",
+   "null_policy": "null"
+  },
+  "pool_entered": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "是否确认进入抢购池",
+   "null_policy": "null"
+  },
+  "ticket_no": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "排队号码（屏幕/接口）",
+   "null_policy": "null"
+  },
+  "queue_pos": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "队列位置",
+   "null_policy": "null"
+  },
+  "queue_capacity": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "队列上限（如 1/7 的分母）",
+   "null_policy": "null"
+  },
+  "roll_self": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "『您的随机点数为 N』",
+   "null_policy": "null"
+  },
+  "roll_max": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "『本轮抢购最大点数为 M』",
+   "null_policy": "null"
+  },
+  "won": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "抽签结论（独立于成交校验）",
+   "null_policy": "null"
+  },
+  "toast_source": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "joined|queue_full|roll|ocr|log|api|screenshot",
+   "null_policy": "null"
+  },
+  "click_count": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "本轮总点击数",
+   "null_policy": "null"
+  },
+  "burst_clicks": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "连点阶段点击数",
+   "null_policy": "null"
+  },
+  "confirm_clicks": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "确认阶段点击数",
+   "null_policy": "null"
+  },
+  "refresh_used": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "本轮补刷次数",
+   "null_policy": "null"
+  },
+  "late_skips": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "本轮因来不及而跳过的件数",
+   "null_policy": "null"
+  },
+  "followup_used": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "成交前是否补过刀",
+   "null_policy": "null"
+  },
+  "shot": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "成交截图文件名",
+   "null_policy": "null"
+  },
+  "stop_reason": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "budget|grade|…",
+   "null_policy": "null"
+  },
+  "error": {
+   "filled": 0,
+   "rate": 0.0,
+   "domain": "本轮错误文本",
+   "null_policy": "null"
+  },
+  "stage_reached": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "0..5（0=无证据；1 发现 2 点击 3 进池 4 中签 5 成交）",
+   "null_policy": "必填"
+  },
+  "stage_evidence": {
+   "filled": 1,
+   "rate": 1.0,
+   "domain": "每段的原始证据串",
+   "null_policy": "[]"
+  }
+ },
+ "stage_reached_dist": {
+  "0": 0,
+  "1": 0,
+  "2": 0,
+  "3": 0,
+  "4": 0,
+  "5": 1
+ },
+ "stages": {
+  "发现": {
+   "timestamped": 0,
+   "reached_ge": 1
+  },
+  "点击": {
+   "timestamped": 0,
+   "reached_ge": 1
+  },
+  "进池": {
+   "timestamped": 0,
+   "reached_ge": 1
+  },
+  "中签": {
+   "timestamped": 0,
+   "reached_ge": 1
+  },
+  "成交": {
+   "timestamped": 1,
+   "reached_ge": 1
+  }
+ },
+ "blackbox_stages": [
+  "发现",
+  "点击",
+  "进池",
+  "中签"
+ ],
+ "by_source": {
+  "records": 1
+ },
+ "by_trust": {
+  "claimed": 1
+ },
+ "invalid_rows": 0,
+ "invalid_examples": []
+}

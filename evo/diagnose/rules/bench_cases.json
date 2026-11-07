@@ -1,0 +1,38 @@
+{
+  "note": "回测的期望根因（只给回测脚本用，诊断器运行时看不到本文件）。soak 用注入类型映射；lines 用台架用例名映射。",
+  "soak": {
+    "focus_lost": ["c.input.foreground_lost"],
+    "injector_down": ["c.input.injector_unavailable"],
+    "ocr_timeout": ["c.vision.ocr_timeout"],
+    "click_no_effect": ["c.input.click_message_ignored"],
+    "ocr_garbage": ["c.vision.ocr_garbage"],
+    "unknown_page": ["c.vision.unknown_page"],
+    "clock_jump": ["c.timing.countdown_drift", "c.timing.time_source_untrusted"],
+    "config_corrupt": ["c.data.config_read_fail", "c.data.config_value_invalid"],
+    "disk_write_fail": ["c.data.ledger_write_fail"]
+  },
+  "lines": [
+    {"file": "input_sync2.txt", "case": "I2.message-accepted-but-ignored", "cause": "c.input.click_message_ignored"},
+    {"file": "input_sync2.txt", "case": "I4.unreal-check-classname-only", "cause": "c.input.click_message_ignored"},
+    {"file": "input_sync2.txt", "case": "I5.target-destroyed", "cause": "c.input.target_destroyed"},
+    {"file": "input_sync2.txt", "case": "I6.no-hwnd-degrade", "cause": "c.input.channel_degraded"},
+    {"file": "input_sync2.txt", "case": "I7.uipi-gate", "cause": "c.input.uipi_blocked"},
+    {"file": "persist_sync2.txt", "case": "P3.acl-deny-write", "cause": "c.data.config_write_denied"},
+    {"file": "persist_sync2.txt", "case": "P4.records-readonly", "cause": "c.data.ledger_write_fail"},
+    {"file": "persist_sync2.txt", "case": "P5.half-utf8-tail", "cause": "c.data.ledger_residual"},
+    {"file": "persist_sync2.txt", "case": "P6.complete-line-no-newline", "cause": "c.data.ledger_residual"},
+    {"file": "persist_sync2.txt", "case": "P11.external-edit-same-size", "cause": "c.data.ledger_cache_stale"},
+    {"file": "numeric_sync2.txt", "case": "N2.ntp-zero-timestamp", "cause": "c.timing.time_source_untrusted"},
+    {"file": "numeric_sync2.txt", "case": "N5.ntp-single-source-11h", "cause": "c.timing.time_source_untrusted"},
+    {"file": "numeric_sync2.txt", "case": "N7.ntp-dns-poisoned", "cause": "c.timing.time_source_untrusted"},
+    {"file": "numeric_sync2.txt", "case": "N9.switch-huge-int", "cause": "c.data.config_value_invalid"},
+    {"file": "numeric_sync2.txt", "case": "N12.switch-json-huge", "cause": "c.data.config_value_invalid"},
+    {"file": "numeric_sync2.txt", "case": "N11.price-parse", "cause": "c.vision.price_parse"},
+    {"file": "stability_sync2.txt", "case": "S1.rotate-archive-locked", "cause": "c.data.log_rotate_fail"},
+    {"file": "stability_sync2.txt", "case": "S2.rotate-cap-not-enforced", "cause": "c.data.log_rotate_fail"},
+    {"file": "stability_sync2.txt", "case": "S3.prune-cap-with-readonly", "cause": "c.data.log_rotate_fail"},
+    {"file": "stability_sync2.txt", "case": "S4.stats-cache-same-size", "cause": "c.data.ledger_cache_stale"},
+    {"file": "stability_sync2.txt", "case": "S6.stats-cross-process", "cause": "c.data.ledger_cache_stale"},
+    {"file": "stability_sync2.txt", "case": "S9.watchdog-wiring", "cause": "c.resource.heartbeat_missing"}
+  ]
+}

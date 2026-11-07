@@ -1,0 +1,660 @@
+{
+  "version": "1.1",
+  "note": "现象库：取自 desktop.log / _scene_guard.md / _stability_report.md / _verify_faultinject.md / _soak_data 的真实异常。每个根因只在它的『归属现象』里定义一次（含标签/动作/风险），其它现象用 differential 引用，避免同名根因出现两套动作。actions 只能引用 core/recovery.py 已有动作。",
+  "layers": {
+    "input": "输入层：点击、光标、前台、注入通道",
+    "vision": "视觉层：OCR、模板、页面识别",
+    "timing": "时序层：倒计时、时间源、卡点",
+    "data": "数据层：配置、台账、额度、日志轮转",
+    "resource": "资源层：CPU、内存、句柄、心跳"
+  },
+  "phenomena": [
+    {
+      "id": "in.click_no_effect",
+      "layer": "input",
+      "title": "点击无效果",
+      "observables": [
+        "日志 warn「点了 N 下都没看到结算弹窗，按没抢到记」",
+        "cycles 同窗口 state=abort 且 clicks>=3",
+        "台架 I2/I4：accepted=True 但 down=0、functional=unknown"
+      ],
+      "causes": [
+        {"id": "c.input.click_message_ignored", "label": "消息被窗口受理但游戏逻辑不处理（I2/I4）", "prior": 0.55, "scene": "click_no_effect", "actions": ["alt_template", "reread_crop", "ensure_foreground"], "risk": "低：换模板/换裁剪能把『受理但不处理』转成可观测差异"},
+        {"id": "c.input.normal_miss", "label": "只是普通漏抢（对手更快/库存已空）", "prior": 0.2, "scene": "click_no_effect", "actions": ["wait_retry"], "risk": "中：把正常漏抢误判成故障会触发无谓恢复"}
+      ],
+      "differential": [
+        {"id": "c.input.foreground_lost", "prior": 0.28, "why": "日志通常还带『抢不到前台』，可分开"},
+        {"id": "c.input.uipi_blocked", "prior": 0.14, "why": "看启动日志的完整性级别与 UIPI 告警"},
+        {"id": "c.input.injector_unavailable", "prior": 0.10, "why": "通常会抛 injector unavailable"}
+      ],
+      "discriminators": [
+        {"question": "消息到底发出去没有", "method": "读输入通道 accepted / down 计数（I2：click=True down=0）", "cost": "低", "data": "生产日志未记录 down 计数，需补字段"},
+        {"question": "是不是 UIPI", "method": "看启动日志完整性级别与 UIPI 告警，或做同/低完整性子进程对照点击", "cost": "低", "data": "desktop.log 已有"},
+        {"question": "是不是失焦", "method": "查同窗口有没有『抢不到前台』与前台切换记录", "cost": "低", "data": "soak.log 已有"}
+      ],
+      "confidence": {"hard": 0.90, "stat": 0.72, "corr": 0.55},
+      "miss_risk": "同一句 warn 在普通漏抢时也会打，必须叠加 clicks>=3 与窗口密度；单条出现不足以定性"
+    },
+    {
+      "id": "in.cursor_not_moved",
+      "layer": "input",
+      "title": "光标未动（借光标通道失效）",
+      "observables": [
+        "台架 I1：click=True down=1 up=0 move=1 而 光标未动=True",
+        "effective=message，但目标窗口按真实光标判定点击位置",
+        "降级到 legacy(借光标) 后光标没真的移动"
+      ],
+      "causes": [
+        {"id": "c.input.cursor_not_moved", "label": "光标裁剪/还原失败，借光标通道没把光标放到位", "prior": 0.6, "scene": "self_fault", "actions": ["reset_cursor", "alt_template"], "risk": "低：reset_cursor 后可用 I1 复测"}
+      ],
+      "differential": [
+        {"id": "c.input.channel_degraded", "prior": 0.3, "why": "降级本身是保护行为，未必是故障"},
+        {"id": "c.input.click_message_ignored", "prior": 0.15, "why": "窗口读光标但消息路径不同步"}
+      ],
+      "discriminators": [
+        {"question": "降级原因码是什么", "method": "读『输入通道降级…原因码=NO_TARGET_HWND/MESSAGE_RAW_CURSOR_UNSUPPORTED』", "cost": "低", "data": "日志已有"},
+        {"question": "光标真的动了吗", "method": "点击前后各取一次 GetCursorPos，比较像素位移", "cost": "低", "data": "需补遥测字段"}
+      ],
+      "confidence": {"hard": 0.88, "stat": 0.68, "corr": 0.5},
+      "miss_risk": "『effective=message』是正常路径，单独出现不能算故障"
+    },
+    {
+      "id": "in.uipi_blocked",
+      "layer": "input",
+      "title": "UIPI 拦截（高完整性窗口）",
+      "observables": [
+        "desktop.log：『游戏窗口的权限比本程序高（本程序 0x2000）』",
+        "desktop.log：『UIPI 会把我们发的鼠标键盘消息全部拦掉且不报错』",
+        "台架 I7：InputChannelError code=UIPI_BLOCKED"
+      ],
+      "causes": [
+        {"id": "c.input.uipi_blocked", "label": "本程序与游戏完整性级别不一致，消息被静默丢弃", "prior": 0.85, "scene": "self_fault", "actions": ["reconnect_input", "record", "manual_handoff"], "risk": "高：现有动作库治不了根（没有提权重启），只能止损转人工"}
+      ],
+      "differential": [
+        {"id": "c.input.click_message_ignored", "prior": 0.15, "why": "即便提权，目标仍可能只认真实光标"}
+      ],
+      "discriminators": [
+        {"question": "是本程序低还是游戏高", "method": "对照两侧完整性级别（0x2000/0x3000）", "cost": "低", "data": "日志已打印本程序级别"},
+        {"question": "提权后是否消失", "method": "以管理员启动做一次单点对照，观察 down 计数", "cost": "中", "data": "需一次人工对照"}
+      ],
+      "confidence": {"hard": 0.95, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低；真正的缺口是『诊断对了但动作库无解』，应输出 no_action_available 并转人工"
+    },
+    {
+      "id": "in.injector_down",
+      "layer": "input",
+      "title": "注入器/输入通道不可用",
+      "observables": [
+        "日志 error『RuntimeError: soak: injector unavailable』",
+        "调用栈落在 mouse.click → _click",
+        "abort 连续出现，无成交"
+      ],
+      "causes": [
+        {"id": "c.input.injector_unavailable", "label": "注入器进程/驱动掉线", "prior": 0.7, "scene": "self_fault", "actions": ["reconnect_input", "restart_worker"], "risk": "低：错误文本唯一"}
+      ],
+      "differential": [
+        {"id": "c.input.target_destroyed", "prior": 0.2, "why": "句柄失效会被包装成通道错误，需 IsWindow 对照"},
+        {"id": "c.input.uipi_blocked", "prior": 0.1, "why": "错误码不同（UIPI_BLOCKED vs 通道不可用）"}
+      ],
+      "discriminators": [
+        {"question": "句柄还活着吗", "method": "IsWindow(hwnd) 与进程存在性检查", "cost": "低", "data": "需补一次探测"},
+        {"question": "重连能否恢复", "method": "reconnect_input 后做一次空点击探针", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.93, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低；注意别把 game_down 的连带错误当成本根因"
+    },
+    {
+      "id": "in.target_lost",
+      "layer": "input",
+      "title": "目标窗口销毁/句柄失效",
+      "observables": [
+        "台架 I5：已销毁=True，点击 → InputChannelError code=INPUT_ERROR",
+        "ensure_foreground 连续失败",
+        "cycles 里 abort 原因集中为窗口相关"
+      ],
+      "causes": [
+        {"id": "c.input.target_destroyed", "label": "游戏窗口被关闭/重建，旧 hwnd 失效", "prior": 0.7, "scene": "game_down", "actions": ["rebind_window", "restore_window"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.input.foreground_lost", "prior": 0.2, "why": "窗口还在但抢不到前台"},
+        {"id": "c.input.injector_unavailable", "prior": 0.1, "why": "通道整体不可用，句柄可能没问题"}
+      ],
+      "discriminators": [
+        {"question": "hwnd 是否还有效", "method": "IsWindow + 进程 pid 对照", "cost": "低", "data": "需补探测"},
+        {"question": "窗口标题/尺寸是否变了", "method": "比对绑定时的标题与当前标题", "cost": "低", "data": "需补遥测"}
+      ],
+      "confidence": {"hard": 0.9, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低"
+    },
+    {
+      "id": "in.foreground_lost",
+      "layer": "input",
+      "title": "抢不到前台/前台被抢占",
+      "observables": [
+        "日志 warn『抢不到前台』，随后 abort 归到 window_lost",
+        "ensure_foreground 连续重试仍失败",
+        "窗口句柄有效但不在前台（IsWindow=True、GetForegroundWindow 不是游戏）"
+      ],
+      "causes": [
+        {"id": "c.input.foreground_lost", "label": "目标窗口被其它程序抢占或系统拒绝前台切换", "prior": 0.7, "scene": "window_lost", "actions": ["ensure_foreground", "restore_window", "manual_handoff"], "risk": "中：Windows 前台锁定策略下重试可能永远不成功，需及时止损转人工"}
+      ],
+      "differential": [
+        {"id": "c.input.target_destroyed", "prior": 0.2, "why": "句柄还在就不算销毁，用 IsWindow 一次对照即可分开"},
+        {"id": "c.input.uipi_blocked", "prior": 0.1, "why": "UIPI 会让消息静默丢弃，但不一定伴随前台失败"},
+        {"id": "c.input.channel_degraded", "prior": 0.15, "why": "降级到借光标后前台要求更高，可能只是降级的次生现象"}
+      ],
+      "discriminators": [
+        {"question": "窗口还活着吗", "method": "IsWindow(hwnd) + 进程 pid 存在性", "cost": "低", "data": "需补一次探测"},
+        {"question": "谁在前台", "method": "GetForegroundWindow 的 pid/类名与游戏 pid 对照", "cost": "低", "data": "需补遥测字段"},
+        {"question": "重试有没有用", "method": "ensure_foreground 后再取一次前台窗口并观察 clicks 是否生效", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.9, "stat": 0.72, "corr": 0.55},
+      "miss_risk": "『抢不到前台』也可能是系统前台锁定策略（AllowSetForegroundWindow 未授予）而非他人抢占，单条文本分不开，需前台进程名"
+    },
+    {
+      "id": "in.input_degraded",
+      "layer": "input",
+      "title": "输入通道降级（message → legacy）",
+      "observables": [
+        "日志『输入通道降级：纯消息投递(message) -> PostMessage+借光标(legacy)，原因码=NO_TARGET_HWND』",
+        "『输入通道生效=legacy(借光标)（请求=纯消息投递(message)）』"
+      ],
+      "causes": [
+        {"id": "c.input.channel_degraded", "label": "没有目标句柄，纯消息无处投递，降级保护", "prior": 0.6, "scene": "self_fault", "actions": ["reconnect_input"], "risk": "中：降级是保护，不必然是故障"}
+      ],
+      "differential": [
+        {"id": "c.input.target_destroyed", "prior": 0.3, "why": "窗口丢了才会出 NO_TARGET_HWND"},
+        {"id": "c.input.cursor_not_moved", "prior": 0.1, "why": "降级后借光标失败"}
+      ],
+      "discriminators": [
+        {"question": "句柄为什么没了", "method": "查同窗口内 IsWindow/进程状态", "cost": "低", "data": "需补探测"},
+        {"question": "降级后点击是否生效", "method": "对照 clicks 与成交/abort", "cost": "低", "data": "cycles 已有"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.65, "corr": 0.45},
+      "miss_risk": "『输入通道：PostMessage(legacy)』是每轮正常打印，不能作为信号"
+    },
+    {
+      "id": "vi.ocr_timeout",
+      "layer": "vision",
+      "title": "OCR 读空/超时",
+      "observables": [
+        "日志 warn『OCR 失败：TimeoutError: soak: OCR timeout』",
+        "cycles 该窗口没有价格/倒计时数值",
+        "OCR 服务日志出现超时或连接失败"
+      ],
+      "causes": [
+        {"id": "c.vision.ocr_timeout", "label": "识别服务超时/卡住", "prior": 0.65, "scene": "ocr_fail", "actions": ["restart_ocr", "alt_ocr", "wait_retry"], "risk": "低：错误文本唯一"}
+      ],
+      "differential": [
+        {"id": "c.vision.ocr_garbage", "prior": 0.25, "why": "服务回了但读成空/乱码，异常类型不同"},
+        {"id": "c.resource.cpu_growth", "prior": 0.10, "why": "机器太忙导致识别排队超时，需 CPU/队列指标佐证"}
+      ],
+      "discriminators": [
+        {"question": "是超时还是返回空", "method": "看异常类型：TimeoutError vs 返回 ''/None", "cost": "低", "data": "日志已区分"},
+        {"question": "本机是否过载", "method": "同窗口 cpu_pct / queue_pending 指标", "cost": "低", "data": "metrics 已有"}
+      ],
+      "confidence": {"hard": 0.92, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低；『OCR 失败』高频出现时要看是否同一窗口堆积"
+    },
+    {
+      "id": "vi.ocr_garbage",
+      "layer": "vision",
+      "title": "OCR 读出垃圾/误读",
+      "observables": [
+        "日志 warn『显示值 X 秒已经 Y 秒没再跳』",
+        "倒计时数值在极短时间跳变或长期不动",
+        "价格解析出荒谬值（N11：'15 252'→252）"
+      ],
+      "causes": [
+        {"id": "c.vision.ocr_garbage", "label": "裁剪/尺度漂移，读到了错误区域", "prior": 0.5, "scene": "ocr_fail", "actions": ["reread_crop", "reread_scale", "alt_ocr"], "risk": "中：与『界面不认识』同症状"}
+      ],
+      "differential": [
+        {"id": "c.vision.unknown_page", "prior": 0.4, "why": "页面已切走，读到的根本不是倒计时，需要锚点分数"},
+        {"id": "c.timing.countdown_stall", "prior": 0.1, "why": "界面没变但倒计时本身停了（已结束/被买走）"}
+      ],
+      "discriminators": [
+        {"question": "页面还是不是那一页", "method": "页面锚点模板分数 / 关键控件是否存在", "cost": "中", "data": "当前日志没有输出模板分数 —— 这是最大盲区"},
+        {"question": "重识别能否读到合理值", "method": "reread_crop 后看数值是否恢复跳秒", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.6, "corr": 0.45},
+      "miss_risk": "高：soak 里 unknown_page 与 ocr_garbage 打的是同一句 warn，现有数据分不开，应输出 ambiguous"
+    },
+    {
+      "id": "vi.price_parse",
+      "layer": "vision",
+      "title": "价格格式不通",
+      "observables": [
+        "N11：'15 252'→252（期望 15252）、'1 234 567'→567、'¥12 345\\n678'→12345678",
+        "价格字段为 None 或数量级明显不对",
+        "确认弹窗价格与预算比较异常"
+      ],
+      "causes": [
+        {"id": "c.vision.price_parse", "label": "解析器把空格当分隔符，只取了最后一段", "prior": 0.6, "scene": "ocr_fail", "actions": ["reread_crop", "alt_ocr"], "risk": "低：台架用例可复现"}
+      ],
+      "differential": [
+        {"id": "c.vision.ocr_garbage", "prior": 0.3, "why": "OCR 混入换行/零宽字符导致切分错"},
+        {"id": "c.vision.ocr_timeout", "prior": 0.1, "why": "读不到价格直接返回 None"}
+      ],
+      "discriminators": [
+        {"question": "是解析错还是识别错", "method": "把 OCR 原始串与解析结果一起落日志，逐字符对照", "cost": "低", "data": "当前日志只落结果不落原文 —— 需补字段"},
+        {"question": "换裁剪能否读全", "method": "reread_crop 后看原始串是否还丢段", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.9, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "中：金额误读直接影响买/不买，属高危误判，宁可转人工也不要猜"
+    },
+    {
+      "id": "vi.template_low",
+      "layer": "vision",
+      "title": "模板匹配分数低",
+      "observables": [
+        "_scene_guard.md：锚点页模板分数低于阈值时进 ui_changed",
+        "界面元素位置/尺寸变化，坐标点击落空",
+        "同一模板在多尺度下分数都上不去"
+      ],
+      "causes": [
+        {"id": "c.vision.template_low", "label": "分辨率/缩放/UI 改版导致模板失配", "prior": 0.55, "scene": "ui_changed", "actions": ["alt_template", "reread_scale", "recalibrate"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.vision.unknown_page", "prior": 0.3, "why": "页面本身不对，不是模板问题"},
+        {"id": "c.input.click_message_ignored", "prior": 0.15, "why": "模板对了但点击不生效"}
+      ],
+      "discriminators": [
+        {"question": "是尺度还是改版", "method": "多尺度重匹配：分数回升=尺度问题，仍低=改版", "cost": "中", "data": "当前日志未打印 match score —— 需补字段"},
+        {"question": "换模板能否命中", "method": "alt_template 后看分数与坐标", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.6, "corr": 0.45},
+      "miss_risk": "高：本轮历史日志里根本没有模板分数，规则只能等字段补齐后才可信"
+    },
+    {
+      "id": "vi.unknown_page",
+      "layer": "vision",
+      "title": "界面不认识",
+      "observables": [
+        "soak unknown_page：出现『显示值…没再跳』但页面已切走",
+        "锚点页识别失败，进 unexpected_page 场景",
+        "日志出现『认不出/陌生页面』"
+      ],
+      "causes": [
+        {"id": "c.vision.unknown_page", "label": "弹窗/活动页/断线页覆盖了原页面", "prior": 0.6, "scene": "unexpected_page", "actions": ["close_popup", "esc", "tab_reenter", "nav_home"], "risk": "中"}
+      ],
+      "differential": [
+        {"id": "c.vision.ocr_garbage", "prior": 0.3, "why": "页面正常但 OCR 读错"},
+        {"id": "c.vision.template_low", "prior": 0.1, "why": "UI 改版导致全部模板失配"}
+      ],
+      "discriminators": [
+        {"question": "有没有已知弹窗特征", "method": "查关闭按钮/确认框模板是否命中", "cost": "低", "data": "需补 match score"},
+        {"question": "退回上一级能否恢复", "method": "esc 后重新识别锚点页", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.88, "stat": 0.62, "corr": 0.45},
+      "miss_risk": "高：当前数据与 ocr_garbage 同症状，需锚点分数才能分开"
+    },
+    {
+      "id": "ti.countdown_drift",
+      "layer": "timing",
+      "title": "倒计时反推漂移",
+      "observables": [
+        "cycles.drift_ms 突增（历史最大 1428ms，正常 10~20ms）",
+        "metrics.drift_p95_ms 抬升",
+        "日志『距归零还有 Nms』与台账 offset 不一致"
+      ],
+      "causes": [
+        {"id": "c.timing.countdown_drift", "label": "跳秒节奏采样偏差累积，反推零点漂移", "prior": 0.5, "scene": "clock_drift", "actions": ["resync_clock", "wait_retry"], "risk": "中"}
+      ],
+      "differential": [
+        {"id": "c.timing.time_source_untrusted", "prior": 0.3, "why": "本机时间被改/对时源不可信，需 NTP 日志佐证"},
+        {"id": "c.timing.anchor_error", "prior": 0.2, "why": "单次卡点误差（网络/渲染抖动）"}
+      ],
+      "discriminators": [
+        {"question": "是系统时间还是识别节奏", "method": "对照 NTP offset 与相邻两轮 drift 是否同向", "cost": "低", "data": "N 系列台架有 offset 日志"},
+        {"question": "是否只影响一轮", "method": "看 drift 是单点尖峰还是持续抬升", "cost": "低", "data": "cycles 已有"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.68, "corr": 0.5},
+      "miss_risk": "中：<200ms 的漂移会淹没在正常抖动里，只有大跳变可判"
+    },
+    {
+      "id": "ti.time_source_untrusted",
+      "layer": "timing",
+      "title": "时间同步降级/源不可信",
+      "observables": [
+        "N2/N3/N4：『所有 NTP 服务器都不通或应答不可信』",
+        "N5/N6/N7：同一源一致偏 +40000s（11.1h）仍 ok=True、DNS 全指向伪造源",
+        "offset 绝对值远超正常（正常 <100ms）"
+      ],
+      "causes": [
+        {"id": "c.timing.time_source_untrusted", "label": "对时源被污染/单源投票，采纳了错误 offset", "prior": 0.6, "scene": "clock_drift", "actions": ["resync_clock", "record"], "risk": "低：offset 数值本身就是证据"}
+      ],
+      "differential": [
+        {"id": "c.timing.countdown_drift", "prior": 0.25, "why": "对时正常，是反推算法漂移"},
+        {"id": "c.timing.anchor_error", "prior": 0.15, "why": "单轮卡点抖动"}
+      ],
+      "discriminators": [
+        {"question": "offset 是否超阈值", "method": "直接读 offset：>1s 基本可判时间源问题", "cost": "低", "data": "日志已有"},
+        {"question": "是否多源一致", "method": "看样本数与源分布：单源 4 样本一致偏差最可疑", "cost": "低", "data": "台架已打印样本数"}
+      ],
+      "confidence": {"hard": 0.92, "stat": 0.72, "corr": 0.5},
+      "miss_risk": "低；但『ok=False』只是降级，不等于时间已经错"
+    },
+    {
+      "id": "ti.countdown_stall",
+      "layer": "timing",
+      "title": "倒计时停跳",
+      "observables": [
+        "日志 warn『显示值 X 秒已经 Y 秒没再跳 —— 倒计时停了』",
+        "连续多帧读到同一个秒数",
+        "页面可能已切走或商品被买走"
+      ],
+      "causes": [
+        {"id": "c.timing.countdown_stall", "label": "倒计时真的结束/界面不再变化", "prior": 0.3, "scene": "clock_drift", "actions": ["reread", "wait_retry"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.vision.ocr_garbage", "prior": 0.45, "why": "OCR 卡在旧帧/读同一块区域"},
+        {"id": "c.vision.unknown_page", "prior": 0.4, "why": "页面已切走，倒计时控件不存在"}
+      ],
+      "discriminators": [
+        {"question": "帧有没有变", "method": "同区域帧差：有变化=OCR 卡；没变化=页面停", "cost": "低", "data": "需补 frame_changed"},
+        {"question": "锚点页还在吗", "method": "模板分数/关键控件存在性", "cost": "中", "data": "缺 match score"}
+      ],
+      "confidence": {"hard": 0.8, "stat": 0.62, "corr": 0.45},
+      "miss_risk": "高：与 ocr_garbage/unknown_page 三者同症状，默认应给 ambiguous 而不是硬选"
+    },
+    {
+      "id": "ti.anchor_error",
+      "layer": "timing",
+      "title": "卡点误差突增",
+      "observables": [
+        "台账 elapsed 或 offset_ms 突然变大",
+        "『开点（距归零还有 Nms）』的 N 异常",
+        "drift_ms 单点尖峰后立即回落"
+      ],
+      "causes": [
+        {"id": "c.timing.anchor_error", "label": "单轮调度/渲染抖动，卡点错过", "prior": 0.55, "scene": "clock_drift", "actions": ["wait_retry"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.resource.cpu_growth", "prior": 0.3, "why": "本机负载高，线程被调度延迟"},
+        {"id": "c.timing.countdown_drift", "prior": 0.15, "why": "反推零点本身漂了"}
+      ],
+      "discriminators": [
+        {"question": "同窗口 CPU/队列是否异常", "method": "cpu_pct / queue_pending 对照", "cost": "低", "data": "metrics 已有"},
+        {"question": "是否只发生一次", "method": "看 drift 序列形态：尖峰 vs 持续", "cost": "低", "data": "cycles 已有"}
+      ],
+      "confidence": {"hard": 0.82, "stat": 0.65, "corr": 0.45},
+      "miss_risk": "中：单点误差常是正常抖动"
+    },
+    {
+      "id": "da.config_read_fail",
+      "layer": "data",
+      "title": "配置读写失败",
+      "observables": [
+        "日志『设置读不出来 / 回退默认』",
+        "soak 残留 config.json.broken-*.bad（内容 '{\"broken\": ,,,'）",
+        "P3/P4：PermissionError；『config.json.good 未更新，保留上一份可用备份』"
+      ],
+      "causes": [
+        {"id": "c.data.config_read_fail", "label": "配置文件损坏/被写坏，读取失败", "prior": 0.55, "scene": "config_fault", "actions": ["reload_config", "restore_config"], "risk": "低：有 .bad 残留与备份链"},
+        {"id": "c.data.config_write_denied", "label": "权限/占用导致备份或主文件写不进", "prior": 0.2, "scene": "config_fault", "actions": ["reload_config", "record"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.data.config_value_invalid", "prior": 0.3, "why": "文件能读但值非法（越界/超大数）"}
+      ],
+      "discriminators": [
+        {"question": "是读坏还是写不进", "method": "看异常：JSONDecodeError=读坏；PermissionError=写不进", "cost": "低", "data": "日志已有"},
+        {"question": "能否用上一份好配置", "method": "restore_config 后 reload 并校验关键键", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.92, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低；注意区分『回退默认』（保护）与『读坏』（故障）"
+    },
+    {
+      "id": "da.config_value_invalid",
+      "layer": "data",
+      "title": "配置值越界/超大数",
+      "observables": [
+        "N9：config 手改成 10^400，get 抛 OverflowError: int too large to convert to float",
+        "N12：json.loads 得到超大 int，snapshot 抛 OverflowError",
+        "N8：22 项上下界越界被拒（正常路径）"
+      ],
+      "causes": [
+        {"id": "c.data.config_value_invalid", "label": "配置被手改/迁移写入超大或越界值", "prior": 0.75, "scene": "config_fault", "actions": ["reload_config", "restore_config"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.data.config_read_fail", "prior": 0.15, "why": "文件结构损坏连带值异常"},
+        {"id": "c.data.config_write_denied", "prior": 0.1, "why": "写入只完成一半"}
+      ],
+      "discriminators": [
+        {"question": "哪些键越界", "method": "逐键 get + snapshot，看第一个抛错的键", "cost": "低", "data": "台架已按项打印"},
+        {"question": "能否回滚", "method": "restore_config 后复测 snapshot", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.93, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低"
+    },
+    {
+      "id": "da.ledger_residual",
+      "layer": "data",
+      "title": "台账残行/半行",
+      "observables": [
+        "P5：stats() 抛 UnicodeDecodeError: unexpected end of data（0-1 字节）",
+        "日志『上次崩溃留下 82 字节残行，已截断』",
+        "P6：最后一行完整但没有换行，下一条追加会粘行"
+      ],
+      "causes": [
+        {"id": "c.data.ledger_residual", "label": "上次崩溃在写一半时被杀，留下半行", "prior": 0.7, "scene": "self_fault", "actions": ["record", "restart_round"], "risk": "低：日志文本唯一；但动作库没有『修复台账』动作，需补"}
+      ],
+      "differential": [
+        {"id": "c.data.ledger_write_fail", "prior": 0.2, "why": "写盘被拒后行没落盘，下次读错位"},
+        {"id": "c.data.ledger_cache_stale", "prior": 0.1, "why": "统计缓存按 size 指纹，残行改动没刷新"}
+      ],
+      "discriminators": [
+        {"question": "残行还是粘行", "method": "读文件尾部字节：无换行=粘行；解码错=残行", "cost": "低", "data": "离线可直接查"},
+        {"question": "能不能自愈", "method": "重启后 stats() 是否仍抛错", "cost": "低", "data": "台架已验证截断后可读"}
+      ],
+      "confidence": {"hard": 0.93, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "低"
+    },
+    {
+      "id": "da.ledger_write_fail",
+      "layer": "data",
+      "title": "台账写失败（行没落盘）",
+      "observables": [
+        "P3/P4：PermissionError: Errno 13，add 返回 None，last_error 有值",
+        "日志『[records] 写台账失败（PermissionError…）—— 这一行没有落盘』",
+        "metrics.ledger_bytes 在成交发生时不再增长"
+      ],
+      "causes": [
+        {"id": "c.data.ledger_write_fail", "label": "文件被占用/只读/目录不可写", "prior": 0.65, "scene": "self_fault", "actions": ["record"], "risk": "低：异常文本明确；但动作库只能记录，不能换目录/修权限"}
+      ],
+      "differential": [
+        {"id": "c.data.ledger_residual", "prior": 0.2, "why": "残行导致追加位置错乱"},
+        {"id": "c.data.ledger_cache_stale", "prior": 0.15, "why": "缓存与实际文件不一致"}
+      ],
+      "discriminators": [
+        {"question": "是权限还是残行", "method": "看异常类名：PermissionError vs UnicodeDecodeError/位置错位", "cost": "低", "data": "日志已有"},
+        {"question": "换目录能否写", "method": "切到可写目录做一次试写", "cost": "低", "data": "需人工或配置切换"}
+      ],
+      "confidence": {"hard": 0.92, "stat": 0.7, "corr": 0.55},
+      "miss_risk": "中：写失败不阻断抢购，容易被忽略；必须靠『成交但台账不增长』的相关性兜底，而这个相关性在当前 soak 数据里没有出现"
+    },
+    {
+      "id": "da.ledger_cache_stale",
+      "layer": "data",
+      "title": "台账统计缓存陈旧",
+      "observables": [
+        "S4：同尺寸外部改写后 stats 仍是 50 → 50（指纹只认 size）",
+        "S6：另一进程追加 1 行后 30.71ms（71×），跨进程写入打回全量扫描",
+        "P11：同尺寸+mtime 不变时外部 quota，保存覆盖回 1"
+      ],
+      "causes": [
+        {"id": "c.data.ledger_cache_stale", "label": "缓存指纹只含 size（及 mtime），同尺寸改写检测不到", "prior": 0.7, "scene": "self_fault", "actions": ["restart_round", "record"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.data.ledger_residual", "prior": 0.2, "why": "残行导致指纹与实际不一致"},
+        {"id": "c.data.ledger_write_fail", "prior": 0.1, "why": "外部写入失败被当成缓存命中"}
+      ],
+      "discriminators": [
+        {"question": "真的是同尺寸改写吗", "method": "对比 size/mtime 与实际内容哈希", "cost": "低", "data": "台架已打印指纹"},
+        {"question": "跨进程还是同进程", "method": "看耗时：O(1) 增量 vs 全量扫描 30ms+", "cost": "低", "data": "S5/S6 已量化"}
+      ],
+      "confidence": {"hard": 0.9, "stat": 0.68, "corr": 0.5},
+      "miss_risk": "中：统计值错不代表抢购结果错，属『账不准』而非『买不到』"
+    },
+    {
+      "id": "da.quota_false_block",
+      "layer": "data",
+      "title": "额度拦截误判",
+      "observables": [
+        "出现 insufficient/余额不足 场景，但余额与预算实际充足",
+        "额度计数与台账 hit 数不一致",
+        "本轮被停但订单可下单"
+      ],
+      "causes": [
+        {"id": "c.data.quota_false_block", "label": "额度按缓存/重复计数，误判为超限", "prior": 0.5, "scene": "insufficient", "actions": ["reread", "wait_retry"], "risk": "中"}
+      ],
+      "differential": [
+        {"id": "c.data.ledger_cache_stale", "prior": 0.3, "why": "额度来自陈旧台账统计"},
+        {"id": "c.vision.price_parse", "prior": 0.2, "why": "价格读错导致预算比较误判"}
+      ],
+      "discriminators": [
+        {"question": "额度从哪来", "method": "把 quota 计数与台账 hit 数逐条对账", "cost": "低", "data": "台账已有，缺额度快照"},
+        {"question": "余额够不够", "method": "抓余额字段与商品价格做一次比较", "cost": "低", "data": "需补余额快照"}
+      ],
+      "confidence": {"hard": 0.8, "stat": 0.6, "corr": 0.45},
+      "miss_risk": "高：当前数据没有额度快照，无法验证，只能列为待补"
+    },
+    {
+      "id": "da.log_rotate_fail",
+      "layer": "data",
+      "title": "日志轮转/裁剪失效",
+      "observables": [
+        "S1：rotate 返回 False/False，current 未轮转却已删掉最老归档",
+        "S2：最老归档被占用 → current 仍 9000 字节（上限 8MB 同样失效），期间无日志无告警",
+        "S3：上限 400，只读文件删不掉但仍被计入，实际剩 500 个"
+      ],
+      "causes": [
+        {"id": "c.data.log_rotate_fail", "label": "归档被占用/只读，轮转静默失败", "prior": 0.75, "scene": "self_fault", "actions": ["record", "reduce_load"], "risk": "低：返回值与文件数就是证据"}
+      ],
+      "differential": [
+        {"id": "c.data.ledger_write_fail", "prior": 0.15, "why": "磁盘/权限整体不可写"},
+        {"id": "c.data.ledger_cache_stale", "prior": 0.1, "why": "归档计数缓存错"}
+      ],
+      "discriminators": [
+        {"question": "是占用还是权限", "method": "对归档做一次 rename/delete 探针，看 WinError", "cost": "低", "data": "台架已区分"},
+        {"question": "日志是否在丢", "method": "对比 log_bytes 与磁盘实际文件总字节", "cost": "低", "data": "metrics 已有"}
+      ],
+      "confidence": {"hard": 0.9, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "中：日志丢不影响抢购，但会让后续诊断瞎眼，属『元故障』"
+    },
+    {
+      "id": "re.handle_leak",
+      "layer": "resource",
+      "title": "句柄持续增长",
+      "observables": [
+        "_stability_report：handles 216 → 382 单调上涨",
+        "soak baseline：216 → 298（60 分钟）",
+        "同一进程 GDI/USER 对象同步上涨"
+      ],
+      "causes": [
+        {"id": "c.resource.handle_leak", "label": "每轮截图/窗口句柄没释放", "prior": 0.65, "scene": "self_fault", "actions": ["restart_round", "restart_worker"], "risk": "低：斜率可量化"}
+      ],
+      "differential": [
+        {"id": "c.resource.memory_growth", "prior": 0.25, "why": "句柄与内存同时涨（同一泄漏源）"},
+        {"id": "c.resource.overload", "prior": 0.1, "why": "短时高频截图造成句柄尖峰"}
+      ],
+      "discriminators": [
+        {"question": "是不是单调涨", "method": "线性拟合 handles 序列，看斜率与 R²；掉头回落=尖峰不是泄漏", "cost": "低", "data": "metrics 已有"},
+        {"question": "涨的是哪类句柄", "method": "按 GDI/USER/File 分类计数", "cost": "中", "data": "需补细分指标"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.75, "corr": 0.55},
+      "miss_risk": "中：启动预热也会抬句柄，需要 ≥10 分钟窗口"
+    },
+    {
+      "id": "re.memory_growth",
+      "layer": "resource",
+      "title": "内存持续增长",
+      "observables": [
+        "metrics.rss_mb 单调上涨",
+        "py_traced_mb 同步上涨（Python 对象泄漏）",
+        "O(N) 统计导致越跑越慢"
+      ],
+      "causes": [
+        {"id": "c.resource.memory_growth", "label": "缓存/列表无上限增长", "prior": 0.6, "scene": "self_fault", "actions": ["restart_round", "reduce_load"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.resource.handle_leak", "prior": 0.25, "why": "句柄泄漏连带内存"},
+        {"id": "c.resource.cpu_growth", "prior": 0.15, "why": "全量扫描导致 CPU/内存双高"}
+      ],
+      "discriminators": [
+        {"question": "是 Python 对象还是原生", "method": "对比 py_traced_mb 与 rss_mb 增速", "cost": "低", "data": "metrics 已有"},
+        {"question": "重启后是否归零", "method": "restart_round 后取首采样", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.72, "corr": 0.5},
+      "miss_risk": "中：45→55MB/小时在长跑里可能是正常缓存"
+    },
+    {
+      "id": "re.cpu_growth",
+      "layer": "resource",
+      "title": "CPU 占用抬升",
+      "observables": [
+        "metrics.cpu_pct 均值/峰值抬升",
+        "单轮 elapsed 变长",
+        "识别/截图排队"
+      ],
+      "causes": [
+        {"id": "c.resource.cpu_growth", "label": "识别或截图负载过重", "prior": 0.55, "scene": "lag", "actions": ["reduce_load", "restart_worker"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.resource.overload", "prior": 0.3, "why": "队列堆积（并发过高）"},
+        {"id": "c.vision.ocr_timeout", "prior": 0.15, "why": "OCR 服务自身打满 CPU"}
+      ],
+      "discriminators": [
+        {"question": "是引擎还是识别服务", "method": "分进程 CPU 占比（引擎/OCR/浏览器）", "cost": "中", "data": "需补分进程指标"},
+        {"question": "是否伴随超时", "method": "同窗口看 OCR 失败与 queue_pending", "cost": "低", "data": "metrics 已有"}
+      ],
+      "confidence": {"hard": 0.82, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "中：台架 CPU 峰值 39.5%，阈值设 60% 才不会误报"
+    },
+    {
+      "id": "re.heartbeat_missing",
+      "layer": "resource",
+      "title": "卡死无心跳",
+      "observables": [
+        "S9：scheduler.py 引用 core/watchdog.py=False，实际靠内联 WATCHDOG_STALL_S=60s",
+        "cycles_stuck 增长，queue_running 不为 0 且 cycles 长时间不增",
+        "S8：心跳确认+冷却的行为边界"
+      ],
+      "causes": [
+        {"id": "c.resource.heartbeat_missing", "label": "卡点线程僵死，心跳不再上报", "prior": 0.6, "scene": "self_fault", "actions": ["restart_worker", "restart_round"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.resource.cpu_growth", "prior": 0.25, "why": "线程被高负载饿死"},
+        {"id": "c.input.injector_unavailable", "prior": 0.15, "why": "输入线程阻塞在驱动调用"}
+      ],
+      "discriminators": [
+        {"question": "是僵死还是慢", "method": "看心跳间隔与 cycles 完成数：完全不动=僵死", "cost": "低", "data": "metrics 有 cycles_stuck"},
+        {"question": "卡在哪个调用", "method": "对卡点子进程取栈（py-spy dump）", "cost": "中", "data": "需现网允许采样"}
+      ],
+      "confidence": {"hard": 0.85, "stat": 0.72, "corr": 0.55},
+      "miss_risk": "中：GC/长识别会造成 60s 级静默，需要两段确认（S8 已给出确认+冷却）"
+    },
+    {
+      "id": "re.overload",
+      "layer": "resource",
+      "title": "队列堆积/过载",
+      "observables": [
+        "metrics.queue_pending / queue_running 抬升",
+        "单轮 elapsed 拉长，卡点错过",
+        "日志出现连点/补刷增多"
+      ],
+      "causes": [
+        {"id": "c.resource.overload", "label": "并发与识别排队超过处理能力", "prior": 0.6, "scene": "lag", "actions": ["reduce_load", "wait_retry"], "risk": "低"}
+      ],
+      "differential": [
+        {"id": "c.resource.cpu_growth", "prior": 0.3, "why": "CPU 打满导致处理慢"},
+        {"id": "c.vision.ocr_timeout", "prior": 0.1, "why": "识别超时把队列顶住"}
+      ],
+      "discriminators": [
+        {"question": "队列是在涨还是在抖", "method": "看 queue_pending 的持续段长度", "cost": "低", "data": "metrics 已有"},
+        {"question": "降低负载后是否恢复", "method": "reduce_load 后观察 30s 队列", "cost": "低", "data": "动作已有"}
+      ],
+      "confidence": {"hard": 0.8, "stat": 0.7, "corr": 0.5},
+      "miss_risk": "中：正常抢购瞬间队列=1 属峰值，阈值要 ≥3"
+    }
+  ]
+}

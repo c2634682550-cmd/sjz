@@ -1,0 +1,195 @@
+{
+ "dirs": [
+  {
+   "dir": "_r08_shots",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794005508894,
+   "last_ms": 1794005508911,
+   "span_ms": 17,
+   "delta_ms_min": 17,
+   "delta_ms_median": 17,
+   "timestamped_name": 0,
+   "samples": [
+    "_r08_shots/R08-19_current_500_warning.png",
+    "_r08_shots/R08-19_current_recovered.png"
+   ]
+  },
+  {
+   "dir": "_ui_shots",
+   "frames": 4,
+   "unique_images": 4,
+   "first_ms": 1794007087667,
+   "last_ms": 1794007090684,
+   "span_ms": 3017,
+   "delta_ms_min": 837,
+   "delta_ms_median": 992,
+   "timestamped_name": 0,
+   "samples": [
+    "_ui_shots/01-首页.png",
+    "_ui_shots/02-任务列表（mock三行）.png",
+    "_ui_shots/03-设置.png",
+    "_ui_shots/04-记录.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_083519",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794011720005,
+   "last_ms": 1794011720050,
+   "span_ms": 44,
+   "delta_ms_min": 44,
+   "delta_ms_median": 44,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_083519/S0-8_1.png",
+    "_rm_shots/20261107_083519/S0-10_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_083716",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794011836089,
+   "last_ms": 1794011836134,
+   "span_ms": 45,
+   "delta_ms_min": 45,
+   "delta_ms_median": 45,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_083716/S0-8_1.png",
+    "_rm_shots/20261107_083716/S0-10_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_083859",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794011939321,
+   "last_ms": 1794011939370,
+   "span_ms": 50,
+   "delta_ms_min": 50,
+   "delta_ms_median": 50,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_083859/S0-8_1.png",
+    "_rm_shots/20261107_083859/S0-10_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_084130",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794012090604,
+   "last_ms": 1794012090673,
+   "span_ms": 69,
+   "delta_ms_min": 69,
+   "delta_ms_median": 69,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_084130/S0-8_1.png",
+    "_rm_shots/20261107_084130/S0-10_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_084431",
+   "frames": 12,
+   "unique_images": 12,
+   "first_ms": 1794012271679,
+   "last_ms": 1794012272161,
+   "span_ms": 481,
+   "delta_ms_min": 41,
+   "delta_ms_median": 44,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_084431/S0-8_1.png",
+    "_rm_shots/20261107_084431/S0-10_1.png",
+    "_rm_shots/20261107_084431/S1-1_1.png",
+    "_rm_shots/20261107_084431/S1-2_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_084610",
+   "frames": 12,
+   "unique_images": 12,
+   "first_ms": 1794012370761,
+   "last_ms": 1794012371297,
+   "span_ms": 536,
+   "delta_ms_min": 43,
+   "delta_ms_median": 48,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_084610/S0-8_1.png",
+    "_rm_shots/20261107_084610/S0-10_1.png",
+    "_rm_shots/20261107_084610/S1-1_1.png",
+    "_rm_shots/20261107_084610/S1-2_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_084731",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794012451430,
+   "last_ms": 1794012451516,
+   "span_ms": 86,
+   "delta_ms_min": 86,
+   "delta_ms_median": 86,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_084731/S0-8_1.png",
+    "_rm_shots/20261107_084731/S0-10_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots/20261107_084741",
+   "frames": 2,
+   "unique_images": 2,
+   "first_ms": 1794012461912,
+   "last_ms": 1794012461959,
+   "span_ms": 47,
+   "delta_ms_min": 47,
+   "delta_ms_median": 47,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_084741/S0-8_1.png",
+    "_rm_shots/20261107_084741/S0-10_1.png"
+   ]
+  },
+  {
+   "dir": "_rm_shots",
+   "frames": 36,
+   "unique_images": 36,
+   "first_ms": 1794011720005,
+   "last_ms": 1794012461959,
+   "span_ms": 741954,
+   "delta_ms_min": 41,
+   "delta_ms_median": 48,
+   "timestamped_name": 0,
+   "samples": [
+    "_rm_shots/20261107_083519/S0-8_1.png",
+    "_rm_shots/20261107_083519/S0-10_1.png",
+    "_rm_shots/20261107_083716/S0-8_1.png",
+    "_rm_shots/20261107_083716/S0-10_1.png"
+   ]
+  }
+ ],
+ "template_dirs": {
+  "dirs": 71,
+  "images": 142,
+  "unique_images": 2,
+  "per_dir_counts": {
+   "2": 71
+  }
+ },
+ "ledger": {
+  "rows": 1,
+  "with_shot": 0
+ },
+ "verdict": {
+  "sequential_dirs": 0,
+  "replayable": false,
+  "reason": "无帧序列：裁剪模板每目录固定 2 张且全项目仅 2 张不同图；台架/验证截图每组 2–12 张，文件名是步骤号而非时间戳，mtime 间隔 17–1423425ms 不可作帧率；data/shots 不存在",
+  "alignable_to_ledger": false
+ }
+}

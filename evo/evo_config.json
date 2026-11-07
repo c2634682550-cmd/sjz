@@ -1,0 +1,54 @@
+{
+  "observation": {
+    "ledger_path": "data/records.jsonl",
+    "telemetry_db": "data/telemetry/telemetry.db",
+    "max_name_bytes": 128,
+    "max_batch_rows": 5000,
+    "max_batch_events": 5000
+  },
+  "funnel": {
+    "window_days": 7,
+    "tier_keywords": ["传说", "史诗", "极品", "优品", "稀有", "普通"],
+    "min_stage_n": 10
+  },
+  "attribution": {
+    "top_k": 6,
+    "min_evidence_n": 10,
+    "skew_p95_baseline_ms": 120.0,
+    "queue_p95_baseline_s": 3.0,
+    "skew_abs_limit_ms": 5000
+  },
+  "hypothesis": {
+    "max_per_round": 5,
+    "min_sample_floor": 30,
+    "failure_cooldown_days": 7,
+    "offline_min_rows": 30,
+    "shadow_min_coverage": 0.9,
+    "shadow_max_p95_ms": 350.0,
+    "shadow_max_sessions": 60
+  },
+  "guardrails": {
+    "budget_cap": 0,
+    "quota_cap": 1,
+    "skew_p95_max_ms": 120.0,
+    "allow_foreground": false,
+    "allow_real_purchase": false,
+    "allow_input_downgrade": false
+  },
+  "decision": {
+    "batch_size": 2,
+    "exploration": 1.0
+  },
+  "rollback": {
+    "degrade_rel_threshold": 0.05,
+    "min_obs": 10,
+    "canary_cycles": 2
+  },
+  "daemon": {
+    "cycle_interval_s": 86400,
+    "max_rounds_per_cycle": 1,
+    "lock_timeout_s": 5.0,
+    "replay_buffer_max": 2000,
+    "sample_cap": 2000
+  }
+}
