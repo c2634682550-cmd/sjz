@@ -209,8 +209,9 @@
 | `tests/test_autocalib.py` | **22 passed** |
 | `test_autocalib + test_fix_d + test_engine_list_queue` | **59 passed** |
 | 公示期/导航/开关相关 9 个文件 | **264 passed** |
+| server / regions / 发布链路 12 个文件 | **164 passed, 2 skipped** |
 
-本轮补绿的两处按新语义改写，未删用例、未放宽断言：`_ons_ready` 断言改为「只显示公示期」；并新增两条严格闸门用例（筛后 0 条 → `no_public_stock` + 中止；`public_fallback=true` 才退回「不限」）。
+补绿三处，均按新语义改写、未删用例、未放宽断言：`_ons_ready` 断言改为「只显示公示期」；`test_regions_api` 的假屏幕改成「深底 + 亮按钮条」（原来全黑，PUT buy 会被新的按钮区校验正确拒收），并新增「`buy_check.ok` 必须为真」的断言；另新增两条严格闸门用例（筛后 0 条 → `no_public_stock` + 中止；`public_fallback=true` 才退回「不限」）。
 
 ### 9.6 打包提醒
 
