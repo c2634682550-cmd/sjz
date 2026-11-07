@@ -57,6 +57,14 @@ ocr_service_*.log
 /tools/survey_dump_modules.py
 /tools/extract_utf16_cn.py
 
+# 许可签名私钥与本地账本：绝不入库、绝不随包发布（R10-L09）
+/tools/license_keys/
+# 快照 / 备份 / perf 副本里的同名目录也必须忽略，否则 git add -A 会把私钥带进提交
+**/tools/license_keys/
+/tools/*.db
+*.db-journal
+*.db-wal
+
 # 本机杂物（不属于项目）
 /idapro.hexlic
 /cu.json
@@ -65,3 +73,64 @@ ocr_service_*.log
 /_bmad/
 # 顶层 OCR.yaml 是 PaddleX 默认产线的拷贝；项目用的是 tools/OCR_game.yaml
 /OCR.yaml
+
+# 本地测试/基准产物：会持续堆积，只忽略不删除（证据留在工作树里）
+/_rm_backup/
+/perf/out/
+/_soak_data/
+/perf/bench/out/
+/evo/runs/
+
+# 并行工作树的运行产物（见 _parallel_workspace.md）：指纹时间线与合并日志不入库
+/_tree_timeline.jsonl
+/_merge_log.jsonl
+# 快照目录默认建在仓库的父目录（..\dafors-wt\<name>），这里兜底
+/dafors-wt/
+
+# 安装器 / 单文件打包输出（build.bat、tools/make_release.py 的产物）
+/dist-installer/
+/dist-onefile/
+# 启动器（C#）编译产物：源码在 launcher/*.cs，bin/obj 与 exe 不入库
+/launcher/.tmp/
+/launcher/bin/
+/launcher/obj/
+/launcher/*.exe
+
+# 性能/稳定性实验的工作副本与实测产物：perf 下会整棵复制仓库源码做 A/B，
+# 只保留 harness 脚本（perf/bench/*.py）与补丁，其余大目录不入库
+/perf/base/
+/perf/merged/
+/perf/merged_pre/
+/perf/snapshots/
+/perf/_ref/
+/perf/ocr/base/
+/perf/ocr/work/
+/perf/ocr/out/
+/tools/stability/_results/
+
+# 验收/测量/排查的实测产物目录（截图、帧、语料、探针日志）
+/_measure/
+/_rm_shots/
+/_verify_bb/
+/_timing_lab/
+/_calib_thumbs/
+/_ui_shots/
+/_r08_shots/
+/_dryrun_out/
+/_fe_old_backup/
+/_adv3/
+
+# 进化引擎的运行时账本与检查点：保留 evo/*.py 与 evo_config.json，其余是运行数据
+/evo/fixtures/
+/evo/state/
+/evo/collect/events.jsonl
+
+# 根目录实测证据：pytest XML、基准 JSON、本机调参/配置快照（含本机硬件与绝对路径）
+/_*.json
+/_*.xml
+/bench_*.json
+/tuning_recommendation.json
+/config.json.good
+/config.json.lock
+/tools/bench_countdown.json
+/tools/click_channel_report.json
