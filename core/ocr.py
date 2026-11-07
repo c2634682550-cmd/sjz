@@ -105,12 +105,71 @@ def _client():
     return _backend
 
 
+# ---------------- 详情面板 ROI 路由 ----------------
+#
+# 详情面板是一整块 590×860 的竖版窗口，真正要读的只有四块：名称 / 品阶+成色 /
+# 价格 / 数量。整帧送 det 要覆盖 50 万像素、还要把武器大图与装饰一起跑一遍，
+# 实测 222.8ms（p50）；只拼四块必要区，同一个面板 89.6ms（p50），读出的
+# price / craft / wear 完全一致。
+#
+# 路由条件只认「竖版 + 够大」的几何特征，不改调用点：
+#   · 关掉：config.json 的 ocr.detail_panel_roi 设 false（默认 true）
+#   · 读不出四条（面板换版、或这一帧根本不是详情面板）自动退回整幅读，
+#     宁可慢一点，也不让面板读数整块失灵。
+
+def _panel_roi_on():
+    return bool((_cfg() or {}).get("detail_panel_roi", True))
+
+
+def _panel_like(img):
+    """是不是详情面板那种竖长条。整屏(0.56)、列表(0.46) 都不在此区间。"""
+    h, w = img.shape[:2]
+    if w < 480 or h < 700:
+        return False
+    ratio = h / float(w)
+    return 1.32 <= ratio <= 1.62
+
+
+def _panel_read_ok(words):
+    """拼条读全必需块、且价格能**只**从 price 块读出来，才算成功。
+
+    门槛不按「词数 < 4/5」：一块可能吐出两个词（成色行），词数够不代表块
+    齐。这里按块判：名称 / 成色 / 价格 / 数量缺任一就整幅重读。稀有度是
+    可选补充块（卡片版式与成色同行、无做工面板没有品阶行），理由与实测
+    见 `ocr_chain.PANEL_REQUIRED`。
+    """
+    have = {w.get("field") for w in (words or []) if w.get("field")}
+    if not all(f in have for f in ocr_chain.PANEL_REQUIRED):
+        return False
+    value, _tok = ocr_chain.price_from_words(words)
+    return value is not None
+
+
 # ---------------- 自检 ----------------
 
 def available():
     """OCR 服务能不能用。启动前检查看这一项。"""
     b = _client()
     return bool(b is not None and b.available())
+
+
+def selfcheck_pp(probe_timeout=0.3):
+    """启动自检二级（真推理一次空白小图）。返回 (ok, error)。
+
+    为什么不用 TCP 探活：本机 Paddle 3.x 的 CPU/oneDNN 分支端口在听、每次
+    推理都 500，probe 会把死掉的二级显示成可用。这里只做诊断，不关级。
+    probe_timeout 由调用方给（启动时用 0.3s，且整段自检在后台线程跑）。
+    """
+    b = _client()
+    if b is None:
+        return False, f"客户端不可用：{_last_err or '未配置'}"
+    fn = getattr(b, "selfcheck_pp", None)
+    if not callable(fn):
+        return False, "当前后端没有二级服务"
+    try:
+        return fn(probe_timeout=probe_timeout)
+    except Exception as e:                       # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
 
 
 def backend_name():
@@ -178,21 +237,32 @@ def current_url():
 
 
 def metrics():
-    """给管家和自检看的一组数：地址、调用次数、最近中位耗时。"""
+    """给管家和自检看的一组数：地址、调用次数、最近中位耗时、二级死活。
+
+    `tier2_*` 是后加的：二级（PP-OCRv6）在 CPU 上可能「端口通、每次推理
+    500」，只看 ok/url 会把它显示成启用。tier2_fails 涨而 tier2_attempts
+    同步涨，就是这层在崩、实际全靠字模兜底。
+    """
     b = _client()
     if b is None:
-        return {"ok": False, "url": "", "calls": 0, "fails": 0, "recent_ms": 0.0}
+        return {"ok": False, "url": "", "calls": 0, "fails": 0, "recent_ms": 0.0,
+                "tier2_attempts": 0, "tier2_fails": 0, "tier2_error": ""}
     try:
+        st = getattr(b, "stats", {}) or {}
         return {
             "ok": bool(b.available()),
             "url": getattr(b, "url", "") or "",
-            "calls": b.stats.get("calls", 0),
-            "fails": b.stats.get("fails", 0),
+            "calls": st.get("calls", 0),
+            "fails": st.get("fails", 0),
             "recent_ms": round(b.recent_ms(), 1) if hasattr(b, "recent_ms") else 0.0,
+            "tier2_attempts": st.get("tier2", 0),
+            "tier2_fails": st.get("tier2_fail", 0),
+            "tier2_error": str(getattr(b, "last_error", "") or ""),
         }
     except Exception as e:                       # noqa: BLE001
         return {"ok": False, "url": "", "calls": 0, "fails": 0,
-                "recent_ms": 0.0, "error": f"{type(e).__name__}: {e}"}
+                "recent_ms": 0.0, "tier2_attempts": 0, "tier2_fails": 0,
+                "tier2_error": f"{type(e).__name__}: {e}"}
 
 
 # ---------------- 对外 ----------------
@@ -243,7 +313,16 @@ def read_words(img, timeout=None, raise_on_error=False):
             raise OCRError(f"OCR 客户端不可用：{_last_err or '未配置'}")
         return []
     try:
-        words = b.read_words(img, timeout=timeout) or []
+        words = None
+        if _panel_roi_on() and _panel_like(img):
+            panel = getattr(b, "read_panel", None)
+            if callable(panel):
+                words = panel(img, timeout=timeout) or []
+                if not _panel_read_ok(words):
+                    # 缺块 / 价格读不出来：整幅再读一次，不走拼条
+                    words = None
+        if words is None:
+            words = b.read_words(img, timeout=timeout) or []
     except Exception as e:                       # noqa: BLE001
         _stats["empty"] += 1
         if raise_on_error:
@@ -322,16 +401,16 @@ def best_match(text, candidates, floor=0.55):
 
 
 def last_number(text):
-    """文本里最后一个**合格**价格数字（整数）；不合格返回 None。
+    """右上角余额栏里的三角币数量（整数）；结构不清楚返回 None。
 
-    闸门 2（格式）：千分位必须 3 位一组，不带逗号时 1~9 位，多位不许前导 0。
-    不合格就返回 None，让调用方走「读不到」分支，而不是把半截串
-    （`9,9` / `025` / 金币图标粘出来的 `0`）当成价格点下去。
-
-    取最后一个数字串的理由没变：价格条上印的是一个数，右上角货币栏里
-    三角币在最右边，两处都是「最后一个」。实现见 ocr_chain.price_from_text。
+    这是 `engine._balance` 的唯一入口。余额栏是固定三组货币，不是自由
+    文本：必须读到「带 `+` 的最右一组」才算数，规则见
+    `ocr_chain.balance_from_text` / `money.scan_balance`。以前它复用
+    `price_from_text` 的 `rest[-1]`（取最后一个数字），最右一组读丢时会
+    静默退到中间那组青铜币（实测 `2,537K 2,075 + à` → 2075），所以现在
+    走余额专用解析：读不出就是 None，让上层按「余额未知」处理。
     """
-    value, _tok = ocr_chain.price_from_text(text)
+    value, _tok = ocr_chain.balance_from_text(text)
     return value
 
 

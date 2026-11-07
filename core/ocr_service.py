@@ -35,6 +35,15 @@ import threading
 import time
 
 from . import ocr
+from . import retention
+
+
+def _rotate(path):
+    """服务日志超上限就滚一份 .1（尽力而为，失败不影响启动）。"""
+    try:
+        retention.rotate_log(path, retention.LOG_MAX_BYTES)
+    except OSError:
+        pass
 
 DEFAULTS = {
     "enabled": True,
@@ -47,6 +56,11 @@ DEFAULTS = {
     "kill_adopted": True,      # 重启时把「接管」来的老实例也收掉（否则会越堆越多）
     "device": "gpu:0",
     "alt_port": 0,             # 蓝绿用的备用端口，0 = 沿用 8082/8081 的老规矩
+    # 二级服务（PP-OCRv6）只是「价格二次确认」的加速通道：进程内 RapidOCR
+    # 才是主路径。内置识别能跑时它起不来就该**安静降级**，不该每轮重启刷屏。
+    "optional": True,
+    "retry_s": 600.0,          # 降级后多久允许静默重试一次（失败只累加次数）
+    "flap_s": 600.0,           # 起来不到这么久又挂 → 记一次「反复退出」
 }
 
 
@@ -106,6 +120,12 @@ class Supervisor:
         self._restarts = 0
         self._healthy = False
         self._log_fh = None     # 服务进程的 stdout 句柄，换实例时先关掉旧的
+        # 降级/退避状态：二级服务起不来时只写一条日志，之后安静等待
+        self._degraded = False
+        self._fails = 0
+        self._next_retry_at = 0.0
+        self._next_fail_log_at = 0.0
+        self._quick_dies = 0
 
     # ---------------- 生命周期 ----------------
 
@@ -152,6 +172,12 @@ class Supervisor:
             "restarts": self._restarts,
             "last_error": self._last_error,
             "starting": False,
+            # 降级是「内置识别照常、二级加速缺席」的稳定状态，前端/自检
+            # 靠这两个字段呈现，不需要再起窗口或提示。
+            "degraded": self._degraded,
+            "fails": self._fails,
+            "retry_in_s": max(0, int(self._next_retry_at - time.monotonic()))
+            if self._degraded else 0,
         }
         if not self._lock.acquire(blocking=False):
             snap["starting"] = True
@@ -162,6 +188,8 @@ class Supervisor:
             snap["healthy"] = self._healthy
             snap["last_error"] = self._last_error
             snap["restarts"] = self._restarts
+            snap["degraded"] = self._degraded
+            snap["fails"] = self._fails
             return snap
         finally:
             self._lock.release()
@@ -170,7 +198,8 @@ class Supervisor:
 
     def _loop(self):
         if self.cfg.get("start_on_boot") and not self._adopt_or_spawn():
-            self._log("启动时没能拉起 OCR 服务，稍后重试")
+            if not self._degraded:
+                self._log("启动时没能拉起 OCR 服务，稍后重试")
         while not self._stop.wait(float(self.cfg.get("check_interval_s") or 60)):
             try:
                 self.tick()
@@ -180,13 +209,14 @@ class Supervisor:
     def tick(self):
         """一次检查。返回做了什么（测试用）。"""
         host, port = self._endpoint()
+        if self._degraded:
+            return self._degraded_tick(host, port)
         # 只看 TCP 会把「端口上蹲着别的程序／模型还没加载完」判成健康，
         # 于是我们的服务再也不会被拉起（review V09）。这里跑一次真推理。
         alive = _tcp_ok(host, port) and self._probe(f"http://{host}:{port}")
         self._healthy = alive
         if not alive:
-            self._log(f"OCR 服务没响应（:{port}），重启")
-            return self.restart("服务无响应")
+            return self._service_down(host, port)
 
         reason = self._degrade_reason()
         if not reason:
@@ -200,6 +230,129 @@ class Supervisor:
                 return None
             self._log(f"{reason}：等空闲超时，照做")
         return self.restart(reason)
+
+    def _service_down(self, host, port):
+        """探活失败的处理：可选服务只试一次，失败就进入降级静默状态。"""
+        optional = self._tier2_optional()
+        flap = float(self.cfg.get("flap_s") or 600)
+        up_s = (time.monotonic() - self._started_at) if self._started_at else 0.0
+        if up_s and up_s < flap:
+            # 起来没几秒又挂：多半不是「偶发慢」，而是进程拉不住
+            self._quick_dies += 1
+        else:
+            self._quick_dies = 0
+        if optional and self._quick_dies >= 2:
+            self._enter_degraded(
+                f"服务反复退出（连续 {self._quick_dies} 次都活不到 "
+                f"{int(flap)} 秒），不再自动重启", port)
+            return None
+
+        ok = self.restart("服务无响应", quiet=optional)
+        if ok:
+            self._healthy = True
+            self._fails = 0
+            self._log(f"二级加速已重启（:{self._port}）")
+            return True
+
+        reason = self._plain(self._last_error) or "服务没响应"
+        if optional:
+            # 内置 RapidOCR 在跑：二级服务缺席不影响抢购，安静降级
+            self._enter_degraded(reason, port)
+            return False
+
+        # 内置识别不可用 = 二级服务成了唯一眼睛，重启还要继续，但日志限流：
+        # 首次立刻写，之后每 retry_s 最多写一条并带累计次数，别刷屏。
+        self._fails += 1
+        now = time.monotonic()
+        if now >= self._next_fail_log_at:
+            self._next_fail_log_at = now + float(self.cfg.get("retry_s") or 600)
+            tail = "" if self._fails <= 1 else f"（已累计 {self._fails} 次）"
+            self._log(f"OCR 服务没响应（:{port}），重启失败：{reason}{tail}")
+        return False
+
+    def _tier2_optional(self):
+        """二级服务是不是可选的。
+
+        配置说可选、且内置客户端还没建起来时按可选处理（默认值就是可选）；
+        内置客户端已存在但它自己不可用，说明 RapidOCR 坏了，二级服务就
+        变成唯一识别路径，不能再降级。
+        """
+        if not bool(self.cfg.get("optional", True)):
+            return False
+        try:
+            backend = getattr(ocr, "_backend", None)
+            if backend is None:
+                return True
+            return bool(backend.available())
+        except Exception:                            # noqa: BLE001
+            return True
+
+    @staticmethod
+    def _plain(err):
+        """把异常压成一条可读说明。
+
+        日志会被前端按关键字翻译成「缺文件 / 权限 / 网络」提示，这里的原文
+        带 FileNotFoundError 之类会被误读成「模板图缺失」。所以只留人话，
+        去掉异常类名和错误码。
+        """
+        s = " ".join(str(err or "").split())
+        for tok in ("FileNotFoundError", "OSError", "RuntimeError", "Exception",
+                    "Traceback", "WinError"):
+            s = s.replace(tok, "")
+        return s.strip(" ：:;,，。")
+
+    def _enter_degraded(self, reason, port=None):
+        """进入降级：只写一条说明，之后按 retry_s 低频静默重试。"""
+        self._fails += 1
+        self._healthy = False
+        if self._degraded:
+            return
+        self._degraded = True
+        host, cfg_port = self._endpoint()
+        port = port or cfg_port
+        retry = float(self.cfg.get("retry_s") or 600)
+        self._next_retry_at = time.monotonic() + retry
+        self._next_fail_log_at = self._next_retry_at
+        reason = self._plain(reason).replace("起不来：", "", 1) or "没有响应"
+        self._log(
+            f"二级加速（:{port}）没起来：{reason}；"
+            f"已降级为内置识别（RapidOCR 照常工作，价格二次确认自动跳过），"
+            f"后台每 {int(retry)} 秒最多静默重试一次")
+
+    def _degraded_tick(self, host, port):
+        """降级期间的低频检查：不到重试点不碰进程、不写日志。"""
+        now = time.monotonic()
+        if now < self._next_retry_at:
+            return None
+        if self._busy():
+            # 抢购中不折腾显存，下一次再看
+            self._next_retry_at = now + 60.0
+            return None
+        self._next_retry_at = now + float(self.cfg.get("retry_s") or 600)
+        url = f"http://{host}:{port}"
+        if _tcp_ok(host, port) and self._probe(url):
+            self._recover(host, port)
+            return True
+        if self.restart("降级重试", quiet=True):
+            self._recover(host, self._port or port)
+            return True
+        self._fails += 1          # 只累加次数，不写重复日志
+        return None
+
+    def _recover(self, host, port):
+        """二级服务回来了：切回正常监控，只写一条恢复日志。"""
+        try:
+            ocr.set_url(f"http://{host}:{port}")
+        except Exception:                            # noqa: BLE001
+            pass
+        self._degraded = False
+        self._healthy = True
+        self._fails = 0
+        self._quick_dies = 0
+        self._port = port
+        self._started_at = time.monotonic()
+        self._next_retry_at = 0.0
+        self._log(f"二级加速已恢复（:{port}），价格二次确认重新启用")
 
     def _degrade_reason(self):
         hours = float(self.cfg.get("restart_hours") or 0)
@@ -236,8 +389,13 @@ class Supervisor:
 
     # ---------------- 蓝绿重启 ----------------
 
-    def restart(self, reason="手动"):
-        """起新实例 → 验活 → 切客户端 → 杀老实例。返回是否成功。"""
+    def restart(self, reason="手动", quiet=False):
+        """起新实例 → 验活 → 切客户端 → 杀老实例。返回是否成功。
+
+        quiet=True 时只更新状态、不往日志里写过程（降级/退避路径用），
+        失败原因仍记在 last_error 里，由调用方合成一条说明。
+        """
+        say = (lambda msg: None) if quiet else self._log
         with self._lock:
             host, old_port = self._endpoint()
             # 冷启动（老端口本来就没服务）就直接在配置的端口上起，
@@ -251,26 +409,28 @@ class Supervisor:
                 # 顺手收掉，和「杀接管来的老实例」是同一个理由。
                 other = self._alt_port(new_port)
                 if _tcp_ok(host, other) and self.cfg.get("kill_adopted", True):
-                    self._log(f"备用端口 :{other} 上还留着上次的实例，先收掉")
+                    say(f"备用端口 :{other} 上还留着上次的实例，先收掉")
                     self._kill_port(other)
             else:
                 new_port = self._alt_port(old_port)
             if _tcp_ok(host, new_port):
                 # 备用端口被别的进程占着，别去踩它
                 self._last_error = f"端口 {new_port} 已被占用"
-                self._log(self._last_error)
+                say(self._last_error)
                 return False
-            self._log(f"重启（{reason}）：{old_port} → {new_port}")
+            say(f"重启（{reason}）：{old_port} → {new_port}")
             try:
                 proc = self._spawn(new_port)
             except Exception as e:                   # noqa: BLE001
-                self._last_error = f"起不来：{type(e).__name__}: {e}"
-                self._log(self._last_error)
+                # 不带异常类名：前端会把 FileNotFoundError 翻译成「缺模板图」，
+                # 而这里实际是 OCR 服务环境/进程的问题，误报比不报更糟。
+                self._last_error = f"起不来：{self._plain(e)}"
+                say(self._last_error)
                 return False
 
             if not self._wait_healthy(host, new_port, proc):
                 self._last_error = "新实例没验活成功，保持原实例"
-                self._log(self._last_error)
+                say(self._last_error)
                 self._kill(proc)
                 return False
 
@@ -301,7 +461,7 @@ class Supervisor:
                 # taskkill 掉，于是「起 → 被杀 → 60 秒后再起 → 再被杀」无限
                 # 循环，界面上绝大多数时间都是「OCR 不可用」，偶尔闪一下正常。
                 self._kill_port(old_port)
-            self._log(f"已切到 :{new_port}")
+            say(f"已切到 :{new_port}")
             return True
 
     @staticmethod
@@ -377,7 +537,7 @@ class Supervisor:
                 return True
             self._log(f":{port} 上有人监听但认不出字（不是 OCR 服务？），"
                       f"改用备用端口 :{alt}")
-            return self.restart("端口上的不是 OCR 服务")
+            return self._spawn_or_degrade("端口上的不是 OCR 服务", alt)
         if _tcp_ok(host, alt) and self._probe(f"http://{host}:{alt}"):
             ocr.set_url(f"http://{host}:{alt}")
             self._port = alt
@@ -385,7 +545,19 @@ class Supervisor:
             self._healthy = True
             self._log(f"接管备用端口上的实例 :{alt}")
             return True
-        return self.restart("启动时拉起")
+        return self._spawn_or_degrade("启动时拉起", port)
+
+    def _spawn_or_degrade(self, reason, port):
+        """启动时拉一次。可选服务拉不起来就安静降级，不重试刷屏。"""
+        optional = self._tier2_optional()
+        if self.restart(reason, quiet=optional):
+            if optional:
+                self._log(f"二级 OCR 服务已就绪（:{self._port or port}）")
+            return True
+        if optional:
+            self._enter_degraded(self._plain(self._last_error) or "启动时拉不起来",
+                                 port)
+        return False
 
     # ---------------- 默认实现 ----------------
 
@@ -445,7 +617,13 @@ class Supervisor:
         # 每次重启都开一个句柄且从不关闭：跑一天几十次切端口就是几十个
         # 泄漏的文件句柄，日志文件还一直被锁着（review V10）
         self._close_log()
-        f = open(log_path, "ab")
+        # 挂机几天，这个 append 日志会一直长（每次重启的服务输出都往里堆）。
+        # 超过上限就滚一份 .1 —— 否则磁盘被写满，最后连 config.json 都存不下。
+        _rotate(log_path)
+        try:
+            f = open(log_path, "ab")
+        except OSError:
+            f = None
         self._log_fh = f
         kw = {}
         if sys.platform == "win32":

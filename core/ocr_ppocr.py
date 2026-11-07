@@ -111,6 +111,10 @@ class Backend:
         self._recover_at = 0.0
         self._fails_in_row = 0
         self.last_error = None
+        # 长冷却文案的底稿：只留最底层那次错误。以前每次都把 last_error
+        # 再包一层「（连续 N 次…）」，熔断期内每被挡一次就套一层，
+        # 状态栏变成「…（连续 3 次）（连续 4 次）（连续 5 次）」。
+        self._pause_base = ""
         self.stats = {"calls": 0, "hits": 0, "ms": 0.0, "fails": 0, "lines": 0}
         # 最近 20 次真推理的耗时（毫秒）。只看累计平均发现不了「最近变慢」——
         # 跑了几万次之后，平均被历史数据摊平，退化要很久才浮出来。
@@ -122,16 +126,18 @@ class Backend:
         u = urlparse(self.url if "://" in self.url else "http://" + self.url)
         return (u.hostname or "127.0.0.1"), (u.port or 80)
 
-    def probe(self, force=False):
+    def probe(self, force=False, timeout=None):
         now = time.monotonic()
         if not force and now - self._probe_at < float(self.cfg.get("probe_ttl_s") or 10):
             return self._probe_ok
         self._probe_at = now
         host, port = self._host_port()
+        # 0.4s 太紧：显卡被游戏占满时，本机连一下都可能超 400ms，
+        # 于是「服务明明活着却判成不可用」，整条 OCR 链路白给。
+        # timeout 参数只给启动自检用（异步、预算 0.3s）；正常运行仍用 1.5s。
+        wait = 1.5 if timeout is None else max(0.05, min(1.5, float(timeout)))
         try:
-            # 0.4s 太紧：显卡被游戏占满时，本机连一下都可能超 400ms，
-            # 于是「服务明明活着却判成不可用」，整条 OCR 链路白给。
-            with socket.create_connection((host, port), timeout=1.5):
+            with socket.create_connection((host, port), timeout=wait):
                 self._probe_ok = True
         except OSError:
             self._probe_ok = False
@@ -167,7 +173,16 @@ class Backend:
         self._fail_until = 0.0
         self._fails_in_row = 0
         self.last_error = None
+        self._pause_base = ""
         return True
+
+    def _trip(self, reason):
+        """进入长冷却。文案只留最底层原因，不再把上一次的包装套进去。"""
+        self._fail_until = time.monotonic() + float(
+            self.cfg.get("long_cooldown_s") or 600)
+        base = str(self._pause_base or reason or "连续失败")
+        self.last_error = (f"{base}（连续 {self._fails_in_row} 次失败，"
+                           "本会话长时间停用 PP-OCR）")
 
     def name(self):
         if self.mode in ("off", "none"):
@@ -226,10 +241,7 @@ class Backend:
             self._fails_in_row += 1
             limit = int(self.cfg.get("fail_limit") or 0)
             if limit and self._fails_in_row >= limit:
-                self._fail_until = time.monotonic() + float(
-                    self.cfg.get("long_cooldown_s") or 600)
-                self.last_error = (f"{self.last_error or '连续失败'}（连续 "
-                                   f"{self._fails_in_row} 次，本会话长时间停用 PP-OCR）")
+                self._trip("连续失败")
             raise RuntimeError(f"OCR 服务冷却中：{self.last_error or '连续失败'}")
         import cv2
         ok, buf = cv2.imencode(".png", img)
@@ -252,12 +264,10 @@ class Backend:
                 self.stats["fails"] += 1
                 self._fails_in_row += 1
                 self.last_error = f"{type(e).__name__}: {e}"
+                self._pause_base = self.last_error
                 limit = int(self.cfg.get("fail_limit") or 0)
                 if limit and self._fails_in_row >= limit:
-                    self._fail_until = time.monotonic() + float(
-                        self.cfg.get("long_cooldown_s") or 600)
-                    self.last_error += (f"（连续 {self._fails_in_row} 次失败，"
-                                        "本会话长时间停用 PP-OCR）")
+                    self._trip(self.last_error)
                 else:
                     self._fail_until = time.monotonic() + float(
                         self.cfg.get("cooldown_s") or 30)
@@ -288,6 +298,32 @@ class Backend:
         if not self.recent:
             return 0.0
         return float(statistics.median(self.recent))
+
+    def selfcheck(self, timeout=None, probe_timeout=0.3):
+        """真推理一张 32×128 空白图，返回 (ok, error)。**不动**熔断状态。
+
+        TCP 探活只能证明端口在听。本机 Paddle 3.x 的 CPU/oneDNN 分支每次
+        推理都 500（PIR 属性转换报错），端口照样通 —— 只靠 probe 会把一个
+        每次必崩的二级显示成「PaddleOCR PP-OCRv6 small（HTTP …）」。启动时
+        用这个把「看起来有、实际在崩」晒出来，不必等第一次价格复核失败。
+        失败只写 last_error，不改 _fail_until / _fails_in_row：启动自检不该
+        替用户决定关掉这一级，降级仍由真实调用的计数与熔断负责。
+
+        probe_timeout 默认 0.3s：启动自检是异步的，探活预算压到 300ms，
+        端口被防火墙丢包时也不会把启动卡 1.5s；推理仍用正常超时。
+        """
+        if self.mode in ("off", "none"):
+            return False, "已关闭（ocr.ppocr.mode=off）"
+        if not self.probe(force=True, timeout=probe_timeout):
+            return False, f"二级服务未起（{int(probe_timeout * 1000)}ms 内探活不通）"
+        import numpy as np
+        wait = min(float(timeout or self.timeout), 3.0)
+        try:
+            self._post(np.full((32, 128, 3), 255, dtype=np.uint8), timeout=wait)
+        except Exception as e:                      # noqa: BLE001
+            self.last_error = f"{type(e).__name__}: {e}"
+            return False, self.last_error
+        return True, ""
 
     def stats_line(self):
         s = self.stats
