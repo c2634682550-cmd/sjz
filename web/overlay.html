@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=304,height=137">
+<title>抢购悬浮窗</title>
+<style>
+  /* 令牌与 web/index.html 的 :root 逐项一致（同一份定义直接内联，少一次请求）。
+     面板底色用 --surface 的 RGB（#11151c），只把 alpha 降到 .94 让圆角外透出桌面；
+     这是唯一一处刻意差值，其余颜色不做任何改动。 */
+  :root{
+    color-scheme:dark;
+    --bg:#090b10;
+    --bg-2:#0b0e14;
+    --surface:#11151c;
+    --surface-2:#151a23;
+    --surface-3:#1a202a;
+    --surface-4:#202733;
+    --line:#222936;
+    --line-2:#2c3545;
+    --line-3:#39445a;
+    --text:#e7ecf5;
+    --text-2:#a1abbd;
+    --text-3:#6c7586;
+    --accent:#5a8cf7;
+    --accent-2:#85a9ff;
+    --accent-soft:rgba(90,140,247,.13);
+    --ok:#3ecf8e;
+    --ok-soft:rgba(62,207,142,.11);
+    --warn:#e8b04b;
+    --warn-soft:rgba(232,176,75,.11);
+    --bad:#f0606a;
+    --bad-soft:rgba(240,96,106,.11);
+    --gold:#e6b45c;
+    --r-xs:5px; --r-sm:7px; --r-md:10px; --r-lg:14px;
+    --shadow-1:0 1px 2px rgba(0,0,0,.45);
+    --shadow-2:0 18px 48px rgba(0,0,0,.42);
+    --dur:.16s;
+    --font-ui:"Segoe UI","Microsoft YaHei","PingFang SC",-apple-system,BlinkMacSystemFont,sans-serif;
+    --font-num:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace;
+    --panel-a:rgba(17,21,28,.94);   /* = --surface #11151c，alpha .94（透明圆角用） */
+  }
+  *{box-sizing:border-box}
+  html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}
+  body{
+    font:13px/1.55 var(--font-ui);color:var(--text);
+    padding:5px;user-select:none;-webkit-font-smoothing:antialiased;
+  }
+  button{background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+  /* 面板：主界面 .panel 的同一组值 —— surface / line / r-lg / shadow-1 */
+  .ov{
+    display:flex;flex-direction:column;gap:2px;height:100%;padding:6px 9px;
+    background:var(--panel-a);border:1px solid var(--line);border-radius:var(--r-lg);
+    box-shadow:var(--shadow-1);overflow:hidden;
+  }
+  .bar{display:flex;align-items:center;gap:6px;flex:0 0 auto;cursor:pointer}
+  /* 状态徽标：最显眼的一层，五档色全部取主界面同一组令牌 */
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:var(--r-xs);
+    background:var(--surface-3);border:1px solid var(--line);white-space:nowrap}
+  .badge i{width:6px;height:6px;border-radius:50%;background:var(--text-3);flex:0 0 auto}
+  .badge b{font-size:12.5px;font-weight:650;letter-spacing:.2px;color:var(--text-2)}
+  .badge[data-s="idle"]{background:var(--surface-3);border-color:var(--line)}
+  .badge[data-s="idle"] b{color:var(--text-2)}
+  .badge[data-s="scanning"]{border-color:var(--line-2);background:var(--accent-soft)}
+  .badge[data-s="scanning"] i{background:var(--accent)}
+  .badge[data-s="scanning"] b{color:var(--accent-2)}
+  .badge[data-s="firing"]{border-color:var(--line-2);background:var(--ok-soft)}
+  .badge[data-s="firing"] i{background:var(--ok)}
+  .badge[data-s="firing"] b{color:var(--ok)}
+  .badge[data-s="paused"]{border-color:var(--line-2);background:var(--warn-soft)}
+  .badge[data-s="paused"] i{background:var(--warn)}
+  .badge[data-s="paused"] b{color:var(--warn)}
+  .badge[data-s="error"]{border-color:var(--line-2);background:var(--bad-soft)}
+  .badge[data-s="error"] i{background:var(--bad)}
+  .badge[data-s="error"] b{color:var(--bad)}
+
+  .hk{font:11px var(--font-num);color:var(--text-3);border:1px solid var(--line);
+    border-radius:var(--r-xs);padding:0 5px;white-space:nowrap}
+  .sp{flex:1 1 auto}
+  .ico{width:18px;height:18px;display:flex;align-items:center;justify-content:center;
+    border-radius:var(--r-xs);color:var(--text-2)}
+  .ico:hover{background:var(--surface-3);color:var(--text)}
+  .ico svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+  .stop{color:var(--bad)}
+  .stop:hover{background:var(--bad-soft);color:#ff8d95}
+  .stop:disabled{opacity:.45;cursor:default}
+
+  /* 第二层：目标名 + 价格 */
+  .row{display:flex;align-items:center;gap:6px;min-width:0;flex:0 0 auto}
+  .target .name{flex:1 1 auto;font-size:13px;font-weight:600;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .target .price{font:12px var(--font-num);color:var(--gold);white-space:nowrap}
+
+  /* 第三层：三个计数 */
+  .counts{display:flex;gap:10px;font:11px var(--font-num);color:var(--text-3)}
+  .counts b{font-weight:600;color:var(--text-2);margin-left:3px}
+  .counts .hit b{color:var(--accent-2)}
+  .counts .buy b{color:var(--ok)}
+
+  /* 第四层（最弱）：最近一条事件 */
+  .last{color:var(--text-2);font-size:11px;min-height:15px}
+  .last .txt{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .last .ago{color:var(--text-3);font:10.5px var(--font-num);white-space:nowrap}
+
+  .meta{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--text-3);margin-top:auto}
+  body.expanded .meta{order:9;margin-top:2px}
+  body[data-conn="waiting"] #conn{color:var(--warn)}
+  body[data-conn="offline"] #conn{color:var(--text-3)}
+  body[data-conn="waiting"] .counts,
+  body[data-conn="offline"] .counts{opacity:.55}
+  body[data-conn="waiting"] .counts b,
+  body[data-conn="offline"] .counts b{color:var(--text-3)}
+  body[data-conn="waiting"] .target .name,
+  body[data-conn="offline"] .target .name{color:var(--text-2)}
+  body[data-conn="waiting"] .stop,
+  body[data-conn="offline"] .stop{opacity:.35}
+
+  /* 展开态追加区：只在 .expanded 时显示，窗口高度由宿主 resize */
+  .more{display:none;flex-direction:column;gap:4px;border-top:1px solid var(--line);
+    padding-top:5px;margin-top:1px;min-height:0}
+  body.expanded .more{display:flex}
+  .more .cap{font-size:10.5px;color:var(--text-3)}
+  /* 30 格迷你柱：只改高度，无动画、无 transition */
+  .rate{display:flex;align-items:flex-end;gap:1px;height:22px}
+  .rate span{flex:1 1 0;min-height:1px;height:1px;border-radius:1px 1px 0 0;
+    background:var(--accent);opacity:.6}
+  .rate span[data-z="1"]{background:var(--line-3);opacity:.5}
+  .grid{display:flex;gap:10px;font-size:10.5px;color:var(--text-3);white-space:nowrap}
+  .grid b{font:11px var(--font-num);color:var(--text-2);margin-left:3px;font-weight:600}
+  .events{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px;min-height:0}
+  .events li{display:flex;gap:6px;font-size:11px;color:var(--text-2);min-width:0}
+  .events li .etxt{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .events li .eago{color:var(--text-3);font:10.5px var(--font-num);white-space:nowrap}
+  .events li[data-lv="warn"] .etxt{color:var(--warn)}
+  .events li[data-lv="error"] .etxt{color:var(--bad)}
+  .events li[data-lv="hit"] .etxt{color:var(--ok)}
+</style>
+</head>
+<body>
+  <div class="ov" id="ov">
+    <div class="bar" id="bar" title="单击展开 / 收起详情">
+      <span class="badge" id="badge" data-s="idle"><i></i><b id="stateTxt">待命</b></span>
+      <span class="hk" id="hotkey" title="当前停止热键">—</span>
+      <span class="sp"></span>
+      <button class="ico" id="collapse" type="button" aria-label="展开详情" aria-expanded="false" title="展开 / 收起详情">
+        <svg viewBox="0 0 16 16"><path id="collapseIcon" d="M4 6l4 4 4-4"/></svg>
+      </button>
+      <button class="ico stop" id="stop" type="button" aria-label="停止抢购" title="停止抢购（与热键同一条路径）">
+        <svg viewBox="0 0 16 16"><rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1" fill="currentColor" stroke="none"/></svg>
+      </button>
+    </div>
+    <div class="row target"><span class="name" id="target">未连接宿主</span><span class="price" id="price">—</span></div>
+    <div class="counts">
+      <span>扫<b id="scanned">0</b></span>
+      <span class="hit">中<b id="matched">0</b></span>
+      <span class="buy">抢<b id="fired">0</b></span>
+    </div>
+    <div class="row last"><span class="txt" id="last">等待事件</span><span class="ago" id="ago">—</span></div>
+    <div class="meta"><span id="license">授权 —</span><span class="sp"></span><span id="conn">未连接宿主</span></div>
+
+    <div class="more" id="more" hidden>
+      <div class="cap">近 30 秒扫描速率</div>
+      <div class="rate" id="rate" role="img" aria-label="近 30 秒每秒扫描次数"></div>
+      <div class="grid">
+        <span>进度<b id="taskIdx">—</b></span>
+        <span>平均匹配<b id="matchMs">—</b></span>
+        <span>下次<b id="nextWin">—</b></span>
+      </div>
+      <ol class="events" id="events"></ol>
+    </div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>
