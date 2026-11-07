@@ -32,6 +32,7 @@ import time
 import numpy as np
 
 from . import vision
+from .input import landing_unobservable
 from .nav_col import NavColPanel
 from .nav_coords import (FORBIDDEN, NavError, TAB_CHARM, TAB_COLLECTION,
                          TAB_MANDEL, _scaled)
@@ -48,6 +49,56 @@ from .nav_ons import NavOnsPanel
 # 判据用 OCR 里**扛得住误认**的短词。实测 OCR 把「默认排序」认成「争认摊序」、
 # 「当前市场流量」认成「当前伟场流即5」、「拥有该皮肤」认成「拥有该电玩手s2」——
 # 长词不可靠，短词和数字才可靠。
+# 进入交易行（市场）入口的默认参数。config["nav"] 会整体覆盖这里的值。
+# 真机确认：大厅底部快捷栏中间那个图标对应 F4，点它或按 F4 都能进交易行。
+#   market_icon 是归一化坐标（客户区 0..1），不是像素 —— 4K/2K 都好使。
+NAV_DEFAULTS = {
+    "market_hotkey": "F4",
+    # 真机实测校准（参考截图 1920×1080 红圈质心 (507,1050)）：y 不是 0.915。
+    # 按 0.915 点会落在图标上方 52px 的空白处，点了没反应 —— 已复现。
+    "market_icon": (0.264, 0.972),
+    # 图标路径 **未验证/实验性**：真机点 (506,1049) 一次仍在 hall，路径不通。
+    # 默认关闭，只保留配置项给后续标定；不再作为 F4 的自动降级路径。
+    "market_icon_enabled": False,
+    "market_timeout_s": 2.5,
+    # 入口尝试轮数固定 1：一轮 = F4 一次 + 图标一次，总共最多 1 按 + 1 点。
+    # 以前默认 2 轮会在两个入口都失败后再各重试一遍，对游戏连发 2 按 2 点。
+    "market_rounds": 1,
+}
+
+# 「已经在交易行里」的页面集合：市场主标签页 + 在售 / 详情 / 两个筛选面板。
+# 入口判定必须用这个集合，否则在售页会被当成「没进市场」而重复发 F4。
+MARKET_PAGES = ("market", "onsale", "detail", "filter_onsale",
+                "filter_collection")
+
+# 模态弹窗（浮层）判据。OCR 是整屏拼串，弹窗盖在页面上时弹窗文字和底下的
+# 页面文字混在一起：余额不足弹窗正文里就有「交易」「推荐充值」，会被
+# market / onsale 锚点先命中（实测：弹窗在售页被判成 onsale，入口据此
+# 认为「已在交易行」，实际上点全落在弹窗上）。所以弹窗必须先于所有页面
+# 锚点判定，并且 "popup" 不在 MARKET_PAGES 里。
+#
+# 反向风险：交易行页面本身也会带「确定」「取消」「推荐」「余额」这类词
+# （按钮/页脚/活动横幅）。判据必须窄，否则会把正常页面判成弹窗，入口
+# 永远进不去。所以这里不用「单词命中」，只用两种组合：
+#   ① 唯一性整句：_POPUP_CORE 里的完整短语，页面上不会出现
+#   ② 组合：充值引导语 + 缺额行，两条必须同时在（弹窗正文才有）
+_POPUP_CORE = ("三角币不足", "余额不足")      # 弹窗正文唯一整句
+_POPUP_CALL = ("推荐充值", "前往充值")         # 充值引导语（活动横幅也可能有）
+_POPUP_SHORTFALL = ("缺少", "档位")            # 缺额行，只随余额不足弹窗出现
+
+
+def is_popup(flat):
+    """整屏拼串里是否有模态弹窗特征（已去掉空白）。
+
+    单词一律不作数：只有「唯一整句」或「引导语+缺额行」这种组合才判弹窗，
+    避免把带「确定/取消/推荐/余额」字样的正常页面误判成弹窗。
+    """
+    if any(w in flat for w in _POPUP_CORE):
+        return True
+    return (any(w in flat for w in _POPUP_CALL)
+            and any(w in flat for w in _POPUP_SHORTFALL))
+
+
 _PAGE_ANCHORS = [
     # (页面名, 必需词组, 可选词组)
     # 顺序即优先级：弹层盖在页面上，OCR 会同时读到两者，所以弹层先判。
@@ -101,6 +152,13 @@ _PAGE_ANCHORS = [
     # 放在 on sale / detail 之后：在售页的详情面板里也写着「典藏外观」，
     # 顺序反了会把在售页认成市场页。
     ("market", ("典藏外观",), ()),
+    # 模式选择页：从桌面进游戏看到的第一屏（烽火地带/全面战场/…四张卡）。
+    # 真机 OCR 实测：「烽火地带 选好装备，射击！… 前往游玩 … 烽火地带 全面战场
+    # 黑潮爆破 红鼠窝竞技场」。这一屏没有任何大厅导航词，也进不了市场 ——
+    # 不单独判出来就会落到 unknown，预检直接红，用户必须先手动点一次才能开工。
+    # 「前往游玩」是这一屏独有的按钮文案（大厅/市场/在售页都没有）。
+    ("modeselect", ("前往游玩",), ()),
+    ("modeselect", ("常驻", "精选", "战役"), ()),
     # 大厅。OCR 实测：「开始游戏」「特战干员」「部门」「交易行」「特勤处」
     # 「行前备战」。这些词只在主界面出现。
     ("hall", ("开始游戏",), ()),
@@ -121,13 +179,21 @@ def classify(text):
     if not text:
         return "unknown"
     flat = "".join(str(text).split())
+    # 弹窗优先：整屏拼串里弹窗文字和页面文字是混在一起的，先判页面锚点
+    # 会把「盖着弹窗的在售页」判成 onsale（详见 _POPUP_CORE 注释）。
+    if is_popup(flat):
+        return "popup"
+    # 「推荐充值」/「前往充值」里的「推荐」不是在售页的标签，不能当 onsale
+    # 锚点 —— 市场页挂一条充值活动横幅就会被判成在售页（实测：市场帧
+    # +「推荐充值」→ onsale）。锚点匹配前先把这类引导语剔掉。
+    nav_text = flat.replace("推荐充值", "").replace("前往充值", "")
     for page, need, _opt in _PAGE_ANCHORS:
         # need 可以是词组元组，也可以是预编译正则（页码这类必须匹配数字的判据）
         if hasattr(need, "search"):
-            if need.search(flat):
+            if need.search(nav_text):
                 return page
             continue
-        if all(w in flat for w in need):
+        if all(w in nav_text for w in need):
             return page
     return "unknown"
 
@@ -199,17 +265,78 @@ class NavBase:
     RETRIES = 2
 
     def __init__(self, screen, mouse, keyboard=None, snap=None,
-                 log=None, ocr_read=None):
+                 log=None, ocr_read=None, opts=None):
         self.screen = screen
         self.mouse = mouse
         self.keyboard = keyboard
         self._snap = snap or (lambda: screen.grab())
         self._log = log or (lambda msg, level="info": None)
         self._ocr_read = ocr_read
+        # 导航参数（config["nav"]）：入口热键、快捷栏图标归一化坐标、
+        # 入口校验超时/轮数。不传就用 NAV_DEFAULTS。
+        self.opts = dict(opts or {})
         # 测试注入的 OCR 只认固定文本，不能再叠真 OCR 的读数
         self._ocr_injected = ocr_read is not None
         w, h = screen.size
         self.size = (w, h)
+
+    def _nav_opt(self, key):
+        v = self.opts.get(key)
+        if v is None:
+            return NAV_DEFAULTS[key]
+        return v
+
+    def _activate(self, where="入口"):
+        """注入前激活守卫：前台不是游戏就**切回一次**。
+
+        只挂在入口（enter_market / enter_hall），不要挂到每次点击上 ——
+        每击都抢焦点会把用户正在看的窗口反复顶掉（产品约束：不抢焦点）。
+        判据是 `GetForegroundWindow() == 游戏 hwnd`：合成输入投递到前台
+        窗口，前台错了点就落到别人家（真机踩过：控制台在前台，F4 发给
+        控制台，日志只显示「无响应」）。
+
+        返回 True=已在前台/切回成功，False=切不回，None=没有判定条件
+        （测试替身没有 foreground/ensure_foreground 时不阻塞）。
+        """
+        hwnd = getattr(self.mouse, "_game_hwnd", None)
+        fg = getattr(self.mouse, "foreground", None)
+        if not hwnd or not callable(fg):
+            return None
+        try:
+            if fg() == hwnd:
+                return True
+        except Exception:                    # noqa: BLE001 读不到按「不在前台」处理
+            pass
+        ensure = getattr(self.mouse, "ensure_foreground", None)
+        if not callable(ensure):
+            return None
+        try:
+            ok = bool(ensure(hwnd, tries=1, screen=getattr(self, "screen", None)))
+        except TypeError:
+            # 测试替身的 ensure_foreground 只收 hwnd
+            ok = bool(ensure(hwnd))
+        if ok:
+            self.say(f"已把游戏切回前台（{where}）", "info")
+        else:
+            self.say(f"游戏不在前台，切回失败（{where}）", "warn")
+        return ok
+
+    def _landing_blind(self):
+        """上一击是否「已发出但落地不可观测」（失活自愈判据）。"""
+        fn = getattr(self.mouse, "channel_status", None)
+        if not callable(fn):
+            return False, {}
+        try:
+            return landing_unobservable(fn())
+        except Exception:                    # noqa: BLE001 状态读不到不算失活
+            return False, {}
+
+    def _notify_lost(self, label, last):
+        """失活提示：写状态日志（悬浮窗/日志区都能看到）。"""
+        land = (last or {}).get("landing") or {}
+        self.say("游戏失去了操作状态，请点一下游戏画面"
+                 f"（{label}：注入已发出，落地 {land.get('mode') or 'unknown'}，"
+                 "3 秒内页面无变化）", "warn")
 
     # ---------------- 底层 ----------------
 
@@ -376,9 +503,24 @@ class NavBase:
         hwnd = getattr(self.mouse, "_game_hwnd", None)
         ok = self.mouse.click(x, y, verify=False, expect_foreground=hwnd)
         if ok is False:
-            # 真机返回 0 表示这一击根本没送出去（窗口不在前台/被拦截），
-            # 以前静默继续，上层看到的只是「画面没变化」（review I8）。
-            raise NavError(f"点「{label}」({x},{y}) 失败：鼠标点击没有生效")
+            # I2：message 通道的 False 分两种 ——
+            #   accepted=False           真的没送出去（前台/被拦/窗口没了）→ 报错
+            #   accepted=True processed=None  送出去了但拿不到「已处理」证据
+            #                                → 不记成功，交给下面的画面差判定
+            last = {}
+            try:
+                last = (self.mouse.channel_status() or {}).get("last_click") or {}
+            except Exception:                      # noqa: BLE001
+                last = {}
+            unproven = (last.get("channel") == "message"
+                        and last.get("accepted") is True
+                        and last.get("processed") is None)
+            if not unproven:
+                # 真机返回 0 表示这一击根本没送出去（窗口不在前台/被拦截），
+                # 以前静默继续，上层看到的只是「画面没变化」（review I8）。
+                raise NavError(f"点「{label}」({x},{y}) 失败：鼠标点击没有生效")
+            self.say(f"点「{label}」已投递，但目标未证实处理，交给画面差判定",
+                     "warn")
         if not expect_change:
             time.sleep(0.3)
             return 0.0
@@ -399,11 +541,11 @@ class NavBase:
     # ---------------- 各步骤 ----------------
 
     def open_market(self):
-        """大厅按 F4 打开市场。
+        """大厅按 F4 打开市场（旧接口，只判「画面变化」，不判页面）。
 
-        F4 只能靠 PostMessage 送进去：SendInput 无论虚拟键还是扫描码都被
-        游戏过滤（Raw Input 只认真实硬件事件），实测提权也一样。F4 只开
-        不关——这是用户确认过的行为，别指望它来回切。
+        新代码请用 `enter_market()`：它按页面识别硬校验，并带「点快捷栏
+        图标」的备选路径。这里保留是因为 nav_col 的翻页流程仍按「画面
+        变化」判断一次开市，改语义会打乱那边的节奏。
         """
         if self.keyboard is None:
             raise NavError("没有 Keyboard，按不了 F4")
@@ -421,6 +563,121 @@ class NavBase:
                  + ("★" if best > 0.10 else "（无响应）"),
                  "info" if best > 0.10 else "warn")
         return best > 0.10
+
+    # ---------------- 进入交易行（唯一入口） ----------------
+
+    def _poll_page(self, want, deadline):
+        """轮询到 deadline，返回最后一次识别到的页面名。"""
+        page = "unknown"
+        while True:
+            page, _ = self.where()
+            if page == want or time.perf_counter() >= deadline:
+                return page
+            time.sleep(0.25)
+
+    def enter_market(self, timeout=None, rounds=None):
+        """进入交易行（市场）页。幂等、按页面硬校验、双路径降级。
+
+        真机确认的两条入口（用户实测，两条都能进）：
+          主路径  按 F4        —— 底部快捷栏中间那个图标对应 F4
+          备选    点那个图标   —— 归一化坐标走配置 nav.market_icon
+
+        每次尝试后都必须 `where()` 识别到 market 才算成功；轮内先 F4、再点
+        图标；`market_rounds` 轮都失败就抛 NavError（带每轮失败点和当前
+        页面），绝不「点了就当成功」继续盲点。
+        """
+        timeout = float(self._nav_opt("market_timeout_s") if timeout is None else timeout)
+        rounds = int(self._nav_opt("market_rounds") if rounds is None else rounds)
+
+        page, _ = self.where()
+        if page == "popup":
+            # 弹窗是模态的：这时候按 F4 / 点图标全落在弹窗上（弹窗右边就是
+            # 「充值」）。入口动作一个都不发，直接报错交给上层关弹窗。
+            raise NavError("当前有弹窗盖在页面上，入口动作一个都没发"
+                           "（先关弹窗再进交易行）")
+        if page in MARKET_PAGES:
+            # 已在交易行（含在售 / 详情 / 筛选子页）：入口动作一个都不发。
+            # 以前只认 "market"，在售页会被当成「没进市场」而多按一次 F4。
+            self.say(f"已在交易行（{page}），跳过入口动作", "info")
+            return page
+        if page == "modeselect":
+            page = self.enter_hall()
+            if page in MARKET_PAGES:
+                return page
+
+        # 注入前激活守卫（只在入口做一次）：前台不是游戏就切回来。
+        # 页面识别读的是屏幕，前台错了先读错页、再把键鼠投给别人的窗口。
+        self._activate("交易行入口")
+
+        errs = []
+        healed = False       # 失活自愈整轮只做一次（禁止连续重试）
+
+        def _send_check(send, label):
+            """发一次入口注入并校验页面；落地不可观测时走一次失活自愈。
+
+            判定：注入已发出（accepted=True）、超时内页面没变成 market、
+            且 landing 是 raw_input_blind / down=0 up=0。
+            处置：提示 → 等 3 秒 → 同一条注入重试 1 次 → 仍失败抛 NavError
+            「请手动点击游戏画面后重新开始」，不换注入方式、不再重试。
+            """
+            nonlocal healed
+            t0 = time.perf_counter()
+            send()
+            page = self._poll_page("market", t0 + timeout)
+            ms = int((time.perf_counter() - t0) * 1000)
+            self.say(f"{label} → {page}（{ms}ms）",
+                     "info" if page == "market" else "warn")
+            if page == "market":
+                return page
+            blind, last = self._landing_blind()
+            if not blind or healed:
+                return page
+            healed = True
+            self._notify_lost(label, last)
+            time.sleep(3.0)
+            self.say(f"失活自愈：重试 1 次「{label}」", "warn")
+            t0 = time.perf_counter()
+            send()
+            page = self._poll_page("market", t0 + timeout)
+            ms = int((time.perf_counter() - t0) * 1000)
+            self.say(f"失活自愈 重试「{label}」 → {page}（{ms}ms）",
+                     "info" if page == "market" else "warn")
+            if page == "market":
+                return page
+            raise NavError("请手动点击游戏画面后重新开始")
+
+        for i in range(max(1, rounds)):
+            # ① 主路径：F4（Keyboard → Interception 真实设备）
+            if self.keyboard is not None:
+                key = str(self._nav_opt("market_hotkey") or "F4")
+                page = _send_check(lambda: self.keyboard.tap(key),
+                                   f"入口[{i + 1}] 按 {key}")
+                if page == "market":
+                    return page
+                errs.append(f"第{i + 1}轮 按{key}失败（现在 {page}）")
+            else:
+                errs.append(f"第{i + 1}轮 没有 Keyboard，按不了 F4")
+
+            # ② 备选：点底部快捷栏图标（未验证/实验性，默认关闭）
+            if not bool(self._nav_opt("market_icon_enabled")):
+                errs.append(f"第{i + 1}轮 图标路径已关闭（未验证/实验性）")
+                continue
+            try:
+                nx, ny = (float(self._nav_opt("market_icon")[0]),
+                          float(self._nav_opt("market_icon")[1]))
+            except Exception:
+                nx, ny = NAV_DEFAULTS["market_icon"]
+            x, y = self.pt((nx * 1920.0, ny * 1080.0))
+            x, y = int(x), int(y)
+            page = _send_check(lambda: self.mouse.click(x, y),
+                               f"入口[{i + 1}] 点快捷栏图标({x},{y})")
+            if page == "market":
+                return page
+            errs.append(f"第{i + 1}轮 点图标({x},{y})失败（现在 {page}）")
+
+        raise NavError("进不了交易行（市场）页：" + "；".join(errs)
+                       + f"；当前 {self.where()[0]}")
+
 
     def tab(self, name, settle=1.2):
         """切到顶部标签。name: mandel / collection / charm。
@@ -463,6 +720,35 @@ class NavBase:
             self._ocr_read = _ocr.read_words
         return self._ocr_read(img)
 
+    def enter_hall(self, tries=2):
+        """模式选择页 → 点最左那张卡（烽火地带）的「前往游玩」进大厅。
+
+        只在 classify() == "modeselect" 时调用。用 OCR 词框定位而不是写死
+        坐标：真机实测模式卡是横向排列的，写死坐标会落到相邻控件上（本次
+        实测固定坐标 (778,51) 就落到了隔壁的「特勤处」标签）。点完必须
+        确认页面变成 hall，否则抛 NavError，绝不带着错页面往下走。
+        """
+        from . import ocr as _ocr
+        self._activate("大厅入口")
+        for _ in range(tries):
+            img = self._snap()
+            words = (self._ocr_read or _ocr.read_words)(img) or []
+            cands = [w for w in words if "前往游玩" in str(w.get("text", ""))]
+            if not cands:
+                raise NavError("模式选择页没读到「前往游玩」")
+            # 烽火地带是最左边那张卡；同屏可能有多张卡各带一个按钮
+            w = min(cands, key=lambda it: int(it.get("x", 0)))
+            x = int(int(w.get("x", 0)) + int(w.get("w", 0)) / 2)
+            y = int(int(w.get("y", 0)) + int(w.get("h", 0)) / 2)
+            self.say(f"模式选择页 → 点「前往游玩」({x},{y})")
+            self.mouse.click(x, y)
+            time.sleep(1.5)
+            page, _ = self.where()
+            self.say(f"  点击后页面：{page}")
+            if page == "hall":
+                return page
+        raise NavError("点「前往游玩」后没进到烽火地带大厅")
+
     def recover(self, max_esc=5):
         """从任意页面回到「市场」页，为后续步骤准备干净的起点。
 
@@ -481,6 +767,10 @@ class NavBase:
 
         page, _ = self.where()
         self.say(f"复位前页面：{page}")
+        if page == "modeselect":
+            # 进游戏的第一屏（模式卡）：先点「前往游玩」把人送进烽火地带大厅，
+            # 后面的 F4/ESC 那套逻辑才有意义。
+            page = self.enter_hall()
         if page == "market":
             self.say("已在市场", "info")
             return page
@@ -520,14 +810,21 @@ class NavBase:
             if page == "market":
                 return page
             if page == "hall":
-                # 退过头了，回到大厅；按 F4 重新进市场
-                self.keyboard.tap("F4")
-                time.sleep(2.0)
-                page, _ = self.where()
-                self.say(f"  退到大厅后按 F4：{page}")
-                if page == "market":
-                    return page
-                break
+                # 退过头了，回到大厅 → 走统一入口回市场（F4 / 点图标 + 页面校验）
+                try:
+                    page = self.enter_market()
+                except NavError as e:
+                    self.say(f"  从大厅回市场失败：{e}", "warn")
+                    break
+                return page
+            if page == "modeselect":
+                page = self.enter_hall()
+                try:
+                    page = self.enter_market()
+                except NavError as e:
+                    self.say(f"  从模式选择页回市场失败：{e}", "warn")
+                    break
+                return page
             if page == "unknown":
                 unknown += 1
                 if unknown >= 2:
@@ -543,6 +840,44 @@ class NavBase:
                 unknown = 0
         raise NavError(f"复位失败，当前页面 {page}")
 
+    def ensure_public_filter(self, want="只显示公示期"):
+        """在售页把「公示期」下拉设成只显示；已经在位就跳过（不重复点）。
+
+        全程文字锚点：先 OCR 找含「公示期」的下拉标签，点开后再 OCR 找
+        选项，不按固定坐标。设完回读一次标签确认生效。
+        """
+        img = self.screen.grab()
+        ws = self._ocr_words(img)
+        lab = [w for w in ws if "公示期" in (w.get("text") or "")]
+        if not lab:
+            self.say("公示期筛选：页面上找不到「公示期」下拉，跳过", "warn")
+            return False
+        cur = lab[0]
+        if "只显示" in (cur.get("text") or ""):
+            self.say(f"公示期筛选已在位（{cur['text']}），跳过不点")
+            return True
+        self.say(f"公示期筛选：当前「{cur['text']}」→ 改成「{want}」")
+        self.click_px((int(cur["x"] + cur["w"] // 2),
+                       int(cur["y"] + cur["h"] // 2)),
+                      label="公示期下拉", expect_change=False)
+        time.sleep(1.0)
+        ws2 = self._ocr_words(self.screen.grab())
+        opts = [w for w in ws2 if want in (w.get("text") or "")]
+        if not opts:
+            self.say(f"公示期下拉里没有「{want}」选项", "warn")
+            self.keyboard.tap("ESC")
+            return False
+        o = opts[0]
+        self.click_px((int(o["x"] + o["w"] // 2), int(o["y"] + o["h"] // 2)),
+                      label=want, expect_change=False)
+        time.sleep(1.6)
+        ws3 = self._ocr_words(self.screen.grab())
+        lab3 = [w for w in ws3 if "公示期" in (w.get("text") or "")]
+        now = lab3[0]["text"] if lab3 else ""
+        self.say(f"公示期筛选：{now or '读不到标签'}"
+                 f"（{'生效' if '只显示' in now else '未生效'}）")
+        return "只显示" in now
+
     def go_to_onsale(self, skin_y=None, skin_index=0, from_hall=True):
         """走完「市场 → 典藏外观 → 选皮肤 → 购买 → 在售页」。
 
@@ -557,8 +892,11 @@ class NavBase:
         返回当前页面名。
         """
         if from_hall:
-            self.open_market()
-            time.sleep(1.5)
+            # 统一入口：F4 主路径 + 点快捷栏图标备选，每步按页面校验
+            try:
+                self.enter_market()
+            except NavError as e:
+                self.say(f"入口失败，转 recover：{e}", "warn")
         page, _ = self.where()
         if page != "market":
             page = self.recover()
@@ -567,6 +905,11 @@ class NavBase:
             raise NavError(f"点皮肤卡片没响应（y={skin_y} index={skin_index}）")
         time.sleep(1.0)
         self.buy()
+        # 固定路径：进在售页后先钉住「只显示公示期」，再交回上层扫列表。
+        try:
+            self.ensure_public_filter()
+        except Exception as e:                  # noqa: BLE001
+            self.say(f"公示期筛选失败（继续走原流程）：{e}", "warn")
         page, _ = self.where()
         return page
 

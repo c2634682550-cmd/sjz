@@ -998,9 +998,9 @@ class NavColPanel:
         点开卡片有过渡动画，立刻读读到的是上一张的标题 —— 拿它去比对，
         正确的卡片会被判成「不是它」而被跳过（review I5）。
         """
-        t0 = time.time()
+        t0 = time.monotonic()
         title = ""
-        while time.time() - t0 < timeout:
+        while time.monotonic() - t0 < timeout:
             title = self.skin_title()
             if title and title != before:
                 return title
@@ -1087,8 +1087,8 @@ class NavColPanel:
         `before` 是改筛选之前首屏第一件的文字；传了就比对它变没变，
         没传就只等列表非空。
         """
-        t0 = time.time()
-        while time.time() - t0 < timeout:
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
             items = self.skin_items()
             if items:
                 if before is None or items[0][0] != before:

@@ -354,18 +354,15 @@ class NavOnsPanel:
     def _ons_wheel(self, notches, at=None):
         """在面板上滚动。正数向上、负数向下。
 
-        **必须用真实鼠标事件**（SetCursorPos + mouse_event）。实测
-        `core.input.Mouse.wheel` 的 PostMessage 对游戏无效 —— 滚了没反应，
-        这是和价格输入框同一类坑。
+        **只走 core.input.Mouse.wheel**（驱动注入 WHEEL），不再自己
+        SetCursorPos + mouse_event：后者是系统级合成输入，游戏无视，
+        而且会把用户的鼠标拽到面板上放不回来。
+
+        驱动不可用时 Mouse.wheel 会按 input_fallback 显式抛错（默认 fail），
+        由上层记账 —— 不在这里悄悄借用系统鼠标。
         """
-        u = ctypes.windll.user32
         x, y = _pt(self, at or self.ONS_SCROLL_AT)
-        u.SetCursorPos(int(x), int(y))
-        time.sleep(0.2)
-        for _ in range(abs(int(notches))):
-            delta = self.ONS_SCROLL_NOTCH if notches > 0 else -self.ONS_SCROLL_NOTCH
-            u.mouse_event(0x0800, 0, 0, delta, 0)
-            time.sleep(0.12)
+        self.mouse.wheel(int(x), int(y), int(notches))
         time.sleep(0.8)
         return True
 
@@ -486,6 +483,9 @@ class NavOnsPanel:
 
         实测：PostMessage 的按键对输入框无效（数字进不去），
         必须用 keybd_event 走系统输入队列。
+
+        allowlist: KEYBOARD-ONLY keybd_event —— 只发键盘事件，不发任何鼠标
+        事件、不移动光标，不属于「点击通道」；数字框必须走系统键盘队列。
         """
         flags = 0 if down else 2
         ctypes.windll.user32.keybd_event(vk, 0, flags, 0)

@@ -49,26 +49,47 @@ class PageWatcher:
         self._stop = threading.Event()
         self._thread = None
         self._nav = None
+        # 并发 start() 幂等（审查 R01 #5）：以前 is_alive() 在锁外，6 条线程
+        # 同时点「打开」会起 6 条轮询，各自 OCR、各自算指纹。
+        self._life = threading.Lock()
+        self._err_count = 0
+        self._last_error = ""
 
     # ---------------- 对外 ----------------
 
     def snapshot(self):
         """当前页面名、识别时间，以及是不是「旧」的（控制台挡着游戏时）。"""
         with self._lock:
-            return {"page": self._page, "at": self._at, "stale": self._stale}
+            age = (round(time.time() - self._at, 2) if self._at else None)
+            return {"page": self._page, "at": self._at, "stale": self._stale,
+                    # age_s：页面识别结果有多旧。界面同时显示「页面=详情」和
+                    # 「引擎在开火」时，靠它判断是不是在拿几分钟前的快照说话。
+                    "age_s": age,
+                    "errors": self._err_count,
+                    "error": self._last_error}
 
     def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        with self._life:
+            if self._thread and self._thread.is_alive():
+                return False
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._loop, daemon=True)
+            self._thread.start()
+            return True
 
-    def stop(self):
+    def stop(self, timeout=2.0):
         self._stop.set()
+        t = self._thread
+        if (t and t.is_alive() and t is not threading.current_thread()):
+            try:
+                t.join(timeout=timeout)
+            except RuntimeError:
+                pass
+        # 等轮询线程退出（或超时）之后再关屏，别在它正抓屏/OCR 时跨线程关掉
+        nav, self._nav = self._nav, None
         try:
-            if self._nav is not None:
-                self._nav.screen.close()
+            if nav is not None:
+                nav.screen.close()
         except Exception:
             pass
 
@@ -85,8 +106,18 @@ class PageWatcher:
         from .nav import Navigator
         from .screen import Screen
         screen = Screen(self.monitor)
-        self._nav = Navigator(screen, Mouse(screen), snap=screen.grab)
-        return self._nav
+        # mss 的 Screen 没实现 __del__，构造失败时没人 close 就等于把
+        # 2 个 GDI 对象（window DC + CompatibleBitmap；若已抓过帧还会多
+        # 1 个 DIB）永久漏在进程里。每重试一次就多 2 个，8 小时挂机
+        # 反复起停会攒成「GDI 对象数单调上涨」的典型泄漏，失败路径必须
+        # 显式 close。
+        try:
+            nav = Navigator(screen, Mouse(screen), snap=screen.grab)
+        except Exception:
+            screen.close()
+            raise
+        self._nav = nav
+        return nav
 
     @staticmethod
     def _signature(img):
@@ -158,6 +189,21 @@ class PageWatcher:
         while not self._stop.is_set():
             try:
                 self._refresh_once()
+            except Exception as e:               # noqa: BLE001
+                # 不能完全静默（审查 R01 #5）：以前这里 pass，轮询线程死循环
+                # 地失败、stale 永远是 False，界面看起来一切正常。
+                self._note_error(e)
+            self._stop.wait(self.interval)
+
+    def _note_error(self, e):
+        with self._lock:
+            self._err_count += 1
+            self._last_error = f"{type(e).__name__}: {e}"
+            n = self._err_count
+        if n == 1 or n % 20 == 0:
+            try:
+                import sys
+                sys.stderr.write(
+                    f"[pagewatch] 巡检失败（第 {n} 次）：{self._last_error}\n")
             except Exception:
                 pass
-            self._stop.wait(self.interval)
