@@ -52,7 +52,12 @@ def server():
 
 
 class FakeScreen:
-    """假屏幕：只实现 regions 用到的字段，抓图返回全黑 BGR。"""
+    """假屏幕：够 regions 用的字段 + 一张「深底 + 亮按钮条」的假画面。
+
+    画面不能全黑：PUT buy 时会做「按钮区非空白」校验
+    （`autocalib.check_buy_region`），全黑会被正确拒收。这里画一块
+    比背景亮的横条，模拟真实挂单页的购买按钮。
+    """
 
     def __init__(self, size=(1920, 1080), dpi=96):
         self.size = size
@@ -65,7 +70,9 @@ class FakeScreen:
         self.pick_reason = "测试假屏幕"
 
     def grab(self, box=None):
-        return np.zeros((self.size[1], self.size[0], 3), dtype=np.uint8)
+        img = np.full((self.size[1], self.size[0], 3), 32, dtype=np.uint8)
+        img[300:600, 300:1000] = 200
+        return img
 
     def close(self):
         pass
@@ -162,6 +169,9 @@ def test_put_persists_and_engine_reads_the_new_box(server, cfg_file, fake_screen
     code, data = _put(server, "/api/regions", payload)
     assert code == 200 and data["ok"], data
     assert data["saved"] == ["buy"]
+    # 买框落了盘，就一定要附上「按钮区非空白」的校验结论
+    assert data["buy_check"]["ok"] is True, data["buy_check"]
+    assert "按钮区校验" in data["msg"]
 
     # 1) 响应里带「生效后的实际像素矩形」
     buy = _by_name(data, "buy")
