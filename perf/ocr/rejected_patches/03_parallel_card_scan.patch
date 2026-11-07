@@ -1,0 +1,114 @@
+# 说明：Scanner 用 3 线程认卡、worker 内 ORT 降到 2 线程，并抽出 _read_one；收益：6 卡全变 1170.7→298.6ms（约 3.9×），整机 CPU 省 32%
+--- a/core/market.py
++++ b/core/market.py
+@@ -197,7 +197,7 @@
+     用法：scanner = Scanner(); rows = scanner.scan(frame)
+     """
+ 
+-    def __init__(self, upscale=1, read_text=None, delta=None):
++    def __init__(self, upscale=1, read_text=None, delta=None, parallel=None):
+         self.upscale = upscale
+         self.read_text = read_text
+         self.delta = delta
+@@ -207,6 +207,31 @@
+         self.ocr_calls = 0        # 测试用：数一共认了几张卡
+         self._grid_prev = None    # 整屏 OCR 兜底：上一帧的图与结果
+         self._grid_rows = []
++        # 生产路径并行认卡；注入 read_text 的测试路径保持串行（调用计数要确定）。
++        if parallel is None:
++            parallel = 3 if read_text is None else 1
++        self.parallel = max(1, int(parallel))
++        self._pool = None
++        self._backend = None      # 建池时捕获，避免 worker 里再读全局配置
++
++    def _executor(self):
++        """惰性建线程池，并让每个 worker 先各自建好 ONNX session。"""
++        if self.parallel <= 1:
++            return None
++        if self._pool is None:
++            from concurrent.futures import ThreadPoolExecutor
++            self._pool = ThreadPoolExecutor(max_workers=self.parallel,
++                                            thread_name_prefix="scan-ocr")
++            if self._backend is None:
++                try:
++                    self._backend = ocr._client()
++                except Exception:                       # noqa: BLE001
++                    self._backend = None
++            warm = getattr(self._backend, "warmup", None)
++            if warm is not None:
++                for _ in range(self.parallel):
++                    self._pool.submit(warm)
++        return self._pool
+ 
+     def reset(self):
+         """列表刷新/翻页后调用：上一帧的缓存全作废。"""
+@@ -246,35 +271,53 @@
+         read = self.read_text            # None 时 read_card 走整卡一次
+ 
+         rows = []
++        # 只把「需要重认」的卡派给线程池；缓存命中的卡不占线程。
++        todo = [i for i, rect in enumerate(found)
++                if i in changed or i not in self.cache]
++        got_map = {}
++        pool = self._executor() if len(todo) > 1 else None
++        if pool is None:
++            for i in todo:
++                got_map[i] = self._read_one(img, found[i], read)
++        else:
++            futs = {i: pool.submit(self._read_one, img, found[i], read)
++                    for i in todo}
++            for i, fut in futs.items():
++                got_map[i] = fut.result()
+         for i, rect in enumerate(found):
+             if i not in changed and i in self.cache:
+                 row = dict(self.cache[i])
+-                x0, y0, x1, y1 = rect
+-                row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
+             else:
+-                got = cardmod.read_card(img, rect, upscale=self.upscale, read_text=read)
+-                self.ocr_calls += 1
+-                text = _clean_lines(got["text"])
+-                if not text:
++                row = got_map.get(i)
++                if not row:
+                     self.cache.pop(i, None)
+                     continue
+-                row = parse_row(text)
+-                price = _price_from_block(got["price"], img, rect,
+-                                          read or ocr.read_text)
+-                if price is not None:
+-                    row["price"] = float(price)
+-                wear = bricks.parse_wear_loose(got["grade"]) or row.get("wear")
+-                if wear:
+-                    row["wear"] = wear
+-                x0, y0, x1, y1 = rect
+-                row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
+                 self.cache[i] = row
++            x0, y0, x1, y1 = rect
++            row.update(x0=x0, y0=y0, x1=x1, y1=y1, cy=round((y0 + y1) / 2.0, 1))
+             rows.append(row)
+ 
+         self.prev = img.copy()
+         self.cards = found
+         rows.sort(key=lambda r: (r["y0"], r["x0"]))
+         return rows
++
++    def _read_one(self, img, rect, read):
++        """认一张卡并解析成行（可在线程池里跑）。"""
++        got = cardmod.read_card(img, rect, upscale=self.upscale, read_text=read)
++        self.ocr_calls += 1
++        text = _clean_lines(got["text"])
++        if not text:
++            return None
++        row = parse_row(text)
++        price = _price_from_block(got["price"], img, rect,
++                                  read or ocr.read_text)
++        if price is not None:
++            row["price"] = float(price)
++        wear = bricks.parse_wear_loose(got["grade"]) or row.get("wear")
++        if wear:
++            row["wear"] = wear
++        return row
+ 
+ 
+ def _scan_cards(img, found, upscale=1, read_text=None):

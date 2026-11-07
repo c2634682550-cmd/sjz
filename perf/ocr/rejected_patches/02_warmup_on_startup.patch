@@ -1,0 +1,61 @@
+# 说明：启动时把首个 OCR 冷启动（747ms→22ms）预热掉；收益：首件商品不再含冷启动，稳态单帧不受影响
+--- a/core/ocr_chain.py
++++ b/core/ocr_chain.py
+@@ -111,6 +111,13 @@
+             return True
+         return bool(self.pp.available())
+ 
++    def warmup(self):
++        """把主引擎（Rapid）的冷启动开销挪到启动阶段。"""
++        try:
++            return bool(self.rapid.warmup())
++        except Exception:                            # noqa: BLE001
++            return False
++
+     def name(self):
+         bits = []
+         bits.append("RapidOCR" if self.rapid.available()
+--- a/core/ocr.py
++++ b/core/ocr.py
+@@ -111,6 +111,23 @@
+     """OCR 服务能不能用。启动前检查看这一项。"""
+     b = _client()
+     return bool(b is not None and b.available())
++
++
++def warmup():
++    """预热主引擎（模型加载 + 首帧分配）。失败不抛，只返回 False。
++
++    冷启动实测 747ms、热调用 22ms，这段时间不该算在第一件商品上。
++    """
++    b = _client()
++    if b is None:
++        return False
++    fn = getattr(b, "warmup", None)
++    if fn is None:
++        return False
++    try:
++        return bool(fn())
++    except Exception:                            # noqa: BLE001
++        return False
+ 
+ 
+ def backend_name():
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -602,6 +602,15 @@
+             self._stats.update(kw)
+ 
+     def _run(self, cfg, mode="detail", workflow=None):
++        # OCR 预热放在引擎线程里（不阻塞「开始抢购」）：冷启动 747ms 属于
++        # 首次调用，不预热就会算进第一件商品的识别耗时。
++        try:
++            t0 = time.perf_counter()
++            if ocr.warmup():
++                self._say(f"OCR 预热完成（{(time.perf_counter() - t0) * 1000:.0f}ms）")
++        except Exception as e:                          # noqa: BLE001
++            self._say(f"OCR 预热失败（{type(e).__name__}: {e}），首件商品会含冷启动",
++                      "warn")
+         # **资源构造也必须在 try 里**：Screen/Mouse 一抛异常（mss 初始化、
+         # 显示器序号、interception 驱动装载），线程直接死掉、`_error` 永远
+         # 是 None，调度器把这轮记成「未抢到」，真因只剩一条没人看的 stderr

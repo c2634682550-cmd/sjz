@@ -1,0 +1,104 @@
+--- a/core/interception.py
++++ b/core/interception.py
+@@ -627,6 +627,12 @@
+         self._lock_err = None
+         self._mouse_dev = None
+         self._kbd_dev = None
++        # perf：设备代际。重新枚举/切换设备时 +1，上层据此丢弃缓存的设备
++        # 句柄，避免「设备热插拔后还拿旧编号往空气里发事件」。
++        self.gen = 0
++        # perf：一次提交多条 stroke 的复用缓冲（8 条够一次点击的
++        # move/down/up/还原；不够就临时扩，不截断）。
++        self._batch_buf = (MouseStroke * 8)()
+         # 多线程（引擎线程 + 热键/扫描线程）同时第一次点击时会各建一个
+         # context：后建的那个覆盖 self._ctx，先建的那个内核句柄就永久泄漏，
+         # 而且两个 context 互相抢设备。创建/销毁必须串行化。
+@@ -671,6 +677,7 @@
+             if self._mouse_dev is None or force:
+                 self._open()
+                 self._mouse_dev = select_mouse()
++                self.gen += 1
+             return dict(self._mouse_dev)
+ 
+     def keyboard_device(self, force=False):
+@@ -707,6 +714,39 @@
+                     f"Interception 驱动没有接收事件（send 返回 {n}，设备 "
+                     f"{target}）。常见原因：装完驱动没重启；或驱动被卸载/"
+                     f"被杀软清掉；或该设备号已被拔掉。")
++
++    def send_mouse_batch(self, strokes, device=None):
++        """一次提交多条 mouse stroke（同一次锁、同一个驱动调用）。
++
++        strokes: [(state, x, y, flags), ...]，按顺序进设备 FIFO。
++        为什么重要：单击要 move/down/up/还原 四条事件，逐条 send 就是
++        四次 RLock + 四次 DLL 调用 + 四份结构体；更要命的是每条之间会被
++        其它线程插队，落地时间抖动。合成一次后设备队列里的顺序有保证。
++        """
++        n = len(strokes)
++        if n <= 0:
++            return 0
++        with self._lock:
++            ctx = self._open()
++            lib = _LIB.load()
++            target = device if device is not None else self.mouse_device()["device"]
++            arr = self._batch_buf
++            if len(arr) < n:
++                arr = (MouseStroke * n)()
++                self._batch_buf = arr
++            for i, (state, x, y, flags) in enumerate(strokes):
++                arr[i].state = state
++                arr[i].flags = flags
++                arr[i].rolling = 0
++                arr[i].x = x
++                arr[i].y = y
++                arr[i].information = 0
++            got = lib.interception_send(ctx, target, ctypes.byref(arr), n)
++            if got != n:
++                raise InterceptionError(
++                    f"Interception 驱动没有接收整批事件（send 返回 {got}/"
++                    f"{n}，设备 {target}）。")
++            return got
+ 
+     def send_key(self, scan, up=False, e0=False, device=None):
+         with self._lock:
+@@ -904,9 +944,12 @@
+             return list(self._events)
+ 
+     def wait_buttons(self, vid=None, pid=None, timeout_ms=3.0,
+-                     want_down=1, want_up=1, since=None):
++                     want_down=1, want_up=1, since=None, want_moves=0):
+         """等 down/up 落地。返回 {"ok", "down", "up", "t_down", "t_up",
+-        "elapsed_ms", "hdev"}；超时 ok=False 且带已看到的事件。"""
++        "elapsed_ms", "hdev"}；超时 ok=False 且带已看到的事件。
++
++        want_moves>0 时额外要求看到本设备的 move 事件（回原点 stroke 落地）。
++        """
+         start = since or self._reset_ticks
+         deadline = time.perf_counter() + max(0.0, timeout_ms) / 1000.0
+         with self._cv:
+@@ -918,15 +961,24 @@
+                          if e["kind"] == "down" and self._match(e, vid, pid)]
+                 ups = [e for e in evs
+                        if e["kind"] == "up" and self._match(e, vid, pid)]
+-                if len(downs) >= want_down and len(ups) >= want_up:
++                moves = [e for e in self._events
++                         if e["t"] >= start and e["kind"] == "move"
++                         and self._match(e, vid, pid)]
++                if (len(downs) >= want_down and len(ups) >= want_up
++                        and len(moves) >= want_moves):
+                     return {"ok": True,
+                             "down": len(downs), "up": len(ups),
++                            "moves": len(moves),
+                             "t_down": downs[0]["t"], "t_up": ups[0]["t"],
++                            "t_move": moves[-1]["t"] if moves else None,
+                             "elapsed_ms": _qpc_ms(ups[0]["t"] - start),
++                            "move_elapsed_ms": (_qpc_ms(moves[-1]["t"] - start)
++                                                if moves else None),
+                             "hdev": downs[0]["hdev"],
+                             "device_name": downs[0].get("name", "")}
+                 if time.perf_counter() >= deadline:
+                     return {"ok": False, "down": len(downs), "up": len(ups),
++                            "moves": len(moves),
+                             "t_down": downs[0]["t"] if downs else None,
+                             "t_up": ups[0]["t"] if ups else None,
+                             "elapsed_ms": _qpc_ms(_qpc() - start),

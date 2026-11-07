@@ -1,0 +1,521 @@
+# 说明：二级「端口通但推理 500」改为捕获+计数+记错+继续，并加启动自检与状态显示；收益：不牺牲稳态速度，修掉二级静默死亡/异常上抛（本机 PP-OCRv6 CPU 分支必崩）
+--- a/core/ocr_chain.py
++++ b/core/ocr_chain.py
+@@ -85,6 +85,12 @@
+                       interpolation=cv2.INTER_CUBIC)
+ 
+ 
++def _brief(err, limit=48):
++    """异常压成一行短句：自检/状态栏只有一行，原样塞进去会把别的信息挤掉。"""
++    s = " ".join(str(err or "").split())
++    return s if len(s) <= limit else s[:limit] + "…"
++
++
+ class Backend:
+     """对外与单引擎同形：available / name / read_words / read_text / read_price。"""
+ 
+@@ -95,8 +101,9 @@
+         self.rapid = ocr_rapid.make(cfg.get("rapid") or {})
+         self.pp = ocr_ppocr.make(cfg.get("ppocr") or {})
+         self.tpl = digit_ocr
+-        self.stats = {"calls": 0, "empty": 0, "tier2": 0, "tier3": 0,
+-                      "ms": 0.0, "fails": 0}
++        self.stats = {"calls": 0, "empty": 0, "tier2": 0, "tier2_fail": 0,
++                      "tier3": 0, "ms": 0.0, "fails": 0}
++        self._pp_err = ""
+         self.url = getattr(self.pp, "url", "") or ""
+ 
+     # ---------- 自检 ----------
+@@ -117,31 +124,103 @@
+             return bool(self.rapid.warmup())
+         except Exception:                            # noqa: BLE001
+             return False
++
++    def selfcheck_pp(self):
++        """启动自检：二级到底能不能推理。结论写进 _pp_err，自检/状态立即可见。
++
++        返回 (ok, error)。不做决定、不关级：是否降级由每次调用的计数和熔断
++        负责，这里只负责「让界面先说真话」。
++        """
++        if not self.pp.available():
++            self._pp_err = "二级服务未起"
++            return False, self._pp_err
++        fn = getattr(self.pp, "selfcheck", None)
++        if not callable(fn):
++            return True, ""
++        try:
++            ok, err = fn()
++        except Exception as e:                       # noqa: BLE001
++            ok, err = False, f"{type(e).__name__}: {e}"
++        self._pp_err = "" if ok else (err or "二级推理失败")
++        return ok, self._pp_err
+ 
+     def name(self):
+         bits = []
+         bits.append("RapidOCR" if self.rapid.available()
+                     else "RapidOCR 不可用")
+         if self.pp.available():
+-            bits.append(str(self.pp.cfg.get("model") or "PP-OCRv6"))
++            fails = int(self.stats.get("tier2_fail") or 0)
++            if self._pp_err and fails:
++                # 服务在听、但每次推理都 500（本机 Paddle+oneDNN 就是这样）：
++                # 只说模型名会让自检看起来一切正常，中间这层其实是死的。
++                bits.append(f"二级推理失败 {fails} 次（{_brief(self._pp_err)}）")
++            elif self._pp_err:
++                # 启动自检失败，还没产生真实调用：别写成「失败 0 次」。
++                bits.append(f"二级不可用（{_brief(self._pp_err)}）")
++            else:
++                model = str(self.pp.cfg.get("model") or "PP-OCRv6")
++                bits.append(f"{model}（HTTP {self.url}/ocr）" if self.url else model)
+         else:
+-            bits.append("二级服务未起（价格二次确认自动跳过）")
++            # available() 为假有三种原因，别都写成「未起」：服务确实没起、
++            # 配置关了、或者服务在听但连续 500 被熔断（本机 Paddle+oneDNN）。
++            pe = getattr(self.pp, "last_error", "") or ""
++            mode = str(getattr(self.pp, "mode", "") or "")
++            if mode in ("off", "none"):
++                bits.append("二级已关闭（ocr.ppocr.mode=off）")
++            elif "长时间停用" in pe:
++                bits.append(f"二级已熔断（{_brief(pe)}）")
++            else:
++                bits.append("二级服务未起（价格二次确认自动跳过）")
+         bits.append("字模兜底")
+         return " → ".join(bits)
+ 
+     @property
+     def last_error(self):
+-        """PP-OCR 客户端最后一次错误（熔断/长时间停用的原因就写在这）。"""
+-        return getattr(self.pp, "last_error", "")
++        """PP-OCR 客户端最后一次错误（熔断/长时间停用的原因就写在这）。
++
++        熔断信息优先：它解释「为什么这一级整段不可用」，比最后一次 500 的
++        堆栈首行更值得放给用户看。
++        """
++        pe = getattr(self.pp, "last_error", "") or ""
++        if "长时间停用" in pe:
++            return pe
++        return self._pp_err or pe
+ 
+     def recent_ms(self):
+         return self.rapid.recent_ms() if hasattr(self.rapid, "recent_ms") else 0.0
+ 
+     def stats_line(self):
+         s = self.stats
++        pp = ""
++        fn = getattr(self.pp, "stats_line", None)
++        if callable(fn):
++            try:
++                pp = f" | {fn()}"
++            except Exception:                        # noqa: BLE001
++                pp = ""
+         return (f"chain calls={s['calls']} empty={s['empty']} "
+-                f"tier2={s['tier2']} tier3={s['tier3']} | "
+-                f"{self.rapid.stats_line()}")
++                f"tier2={s['tier2']} tier2_fail={s.get('tier2_fail', 0)} "
++                f"tier3={s['tier3']} | "
++                f"{self.rapid.stats_line()}{pp}")
++
++    def _pp_words(self, img, timeout=None):
++        """二级服务的唯一入口：失败只计数 + 记错误，返回 None 表示「继续降级」。
++
++        探活只看 TCP 端口通不通，分辨不出「服务在听、每次推理都 500」——
++        本机 Paddle 3.x + oneDNN 的 CPU 分支就是这样。以前普通文本路径把
++        `pp.read_words` 直接写在 try 外，异常一路冒到 ocr.read_words 的边界
++        被吞成空串：结果是「二级死了」和「图上真的没字」在日志里长得一样。
++        """
++        self.stats["tier2"] += 1
++        try:
++            words = self.pp.read_words(img, timeout=timeout) or []
++        except Exception as e:                       # noqa: BLE001
++            self.stats["tier2_fail"] = self.stats.get("tier2_fail", 0) + 1
++            self.stats["fails"] += 1
++            self._pp_err = f"{type(e).__name__}: {e}"
++            return None
++        self._pp_err = ""
++        return words
+ 
+     # ---------- 普通文本 ----------
+ 
+@@ -151,6 +230,9 @@
+         为什么空结果也降级：中文品阶/成色没有做过准确率基准，Rapid 在中文
+         小字上漏读的风险高于数字。服务在跑时补问一次（60ms 级），服务没起
+         就直接返回空，不为了「可能没有字」去等一次 5 秒超时。
++
++        二级失败时**保留一级结果**（Rapid 报错才继续往上抛）：二级是复核，
++        不是唯一来源，它死了不该把一级读到的字一起丢掉。
+         """
+         if img is None or getattr(img, "size", 0) == 0:
+             return []
+@@ -161,12 +243,16 @@
+                 words = self.rapid.read_words(img, timeout=timeout)
+             except Exception:                   # noqa: BLE001
+                 self.stats["fails"] += 1
+-                if self.pp.available():
+-                    words = self.pp.read_words(img, timeout=timeout) or []
+-                else:
++                if not self.pp.available():
+                     raise
++                got = self._pp_words(img, timeout=timeout)
++                if got is None:
++                    raise                       # 一级一级都瞎了，交给上层报 OCRError
++                words = got
+             if not words and self.pp.available():
+-                words = self.pp.read_words(img, timeout=timeout) or []
++                got = self._pp_words(img, timeout=timeout)
++                if got is not None:
++                    words = got
+             return words
+         finally:
+             self.stats["ms"] += (time.perf_counter() - t0) * 1000.0
+@@ -214,18 +300,14 @@
+ 
+         # 二级：Rapid 分数不足 / 格式没过 → 换一条管线，固定 3× 放大
+         if self.pp.available():
+-            self.stats["tier2"] += 1
+-            try:
+-                big = upscale(img, 3)
+-                words2 = self.pp.read_words(big, timeout=timeout)
++            words2 = self._pp_words(upscale(img, 3), timeout=timeout)
++            if words2:
+                 txt2 = _join(words2)
+                 if ban and any(b in txt2 for b in ban):
+                     return None
+                 value2, _tok2, _s2 = _accept(words2)
+-            except Exception:                   # noqa: BLE001
+-                value2 = None
+-            if value2 is not None:
+-                return value2
++                if value2 is not None:
++                    return value2
+ 
+         # 三级：自建字模（纯数字、4ms），margin 闸门不过就拒识
+         self.stats["tier3"] += 1
+--- a/core/ocr.py
++++ b/core/ocr.py
+@@ -128,6 +128,24 @@
+         return bool(fn())
+     except Exception:                            # noqa: BLE001
+         return False
++
++
++def selfcheck_pp():
++    """启动自检二级（真推理一次空白小图）。返回 (ok, error)。
++
++    为什么不用 TCP 探活：本机 Paddle 3.x 的 CPU/oneDNN 分支端口在听、每次
++    推理都 500，probe 会把死掉的二级显示成可用。这里只做诊断，不关级。
++    """
++    b = _client()
++    if b is None:
++        return False, f"客户端不可用：{_last_err or '未配置'}"
++    fn = getattr(b, "selfcheck_pp", None)
++    if not callable(fn):
++        return False, "当前后端没有二级服务"
++    try:
++        return fn()
++    except Exception as e:                       # noqa: BLE001
++        return False, f"{type(e).__name__}: {e}"
+ 
+ 
+ def backend_name():
+@@ -195,21 +213,32 @@
+ 
+ 
+ def metrics():
+-    """给管家和自检看的一组数：地址、调用次数、最近中位耗时。"""
+-    b = _client()
+-    if b is None:
+-        return {"ok": False, "url": "", "calls": 0, "fails": 0, "recent_ms": 0.0}
+-    try:
++    """给管家和自检看的一组数：地址、调用次数、最近中位耗时、二级死活。
++
++    `tier2_*` 是后加的：二级（PP-OCRv6）在 CPU 上可能「端口通、每次推理
++    500」，只看 ok/url 会把它显示成启用。tier2_fails 涨而 tier2_attempts
++    同步涨，就是这层在崩、实际全靠字模兜底。
++    """
++    b = _client()
++    if b is None:
++        return {"ok": False, "url": "", "calls": 0, "fails": 0, "recent_ms": 0.0,
++                "tier2_attempts": 0, "tier2_fails": 0, "tier2_error": ""}
++    try:
++        st = getattr(b, "stats", {}) or {}
+         return {
+             "ok": bool(b.available()),
+             "url": getattr(b, "url", "") or "",
+-            "calls": b.stats.get("calls", 0),
+-            "fails": b.stats.get("fails", 0),
++            "calls": st.get("calls", 0),
++            "fails": st.get("fails", 0),
+             "recent_ms": round(b.recent_ms(), 1) if hasattr(b, "recent_ms") else 0.0,
++            "tier2_attempts": st.get("tier2", 0),
++            "tier2_fails": st.get("tier2_fail", 0),
++            "tier2_error": str(getattr(b, "last_error", "") or ""),
+         }
+     except Exception as e:                       # noqa: BLE001
+         return {"ok": False, "url": "", "calls": 0, "fails": 0,
+-                "recent_ms": 0.0, "error": f"{type(e).__name__}: {e}"}
++                "recent_ms": 0.0, "tier2_attempts": 0, "tier2_fails": 0,
++                "tier2_error": f"{type(e).__name__}: {e}"}
+ 
+ 
+ # ---------------- 对外 ----------------
+--- a/core/ocr_ppocr.py
++++ b/core/ocr_ppocr.py
+@@ -111,6 +111,10 @@
+         self._recover_at = 0.0
+         self._fails_in_row = 0
+         self.last_error = None
++        # 长冷却文案的底稿：只留最底层那次错误。以前每次都把 last_error
++        # 再包一层「（连续 N 次…）」，熔断期内每被挡一次就套一层，
++        # 状态栏变成「…（连续 3 次）（连续 4 次）（连续 5 次）」。
++        self._pause_base = ""
+         self.stats = {"calls": 0, "hits": 0, "ms": 0.0, "fails": 0, "lines": 0}
+         # 最近 20 次真推理的耗时（毫秒）。只看累计平均发现不了「最近变慢」——
+         # 跑了几万次之后，平均被历史数据摊平，退化要很久才浮出来。
+@@ -167,7 +171,16 @@
+         self._fail_until = 0.0
+         self._fails_in_row = 0
+         self.last_error = None
++        self._pause_base = ""
+         return True
++
++    def _trip(self, reason):
++        """进入长冷却。文案只留最底层原因，不再把上一次的包装套进去。"""
++        self._fail_until = time.monotonic() + float(
++            self.cfg.get("long_cooldown_s") or 600)
++        base = str(self._pause_base or reason or "连续失败")
++        self.last_error = (f"{base}（连续 {self._fails_in_row} 次失败，"
++                           "本会话长时间停用 PP-OCR）")
+ 
+     def name(self):
+         if self.mode in ("off", "none"):
+@@ -226,10 +239,7 @@
+             self._fails_in_row += 1
+             limit = int(self.cfg.get("fail_limit") or 0)
+             if limit and self._fails_in_row >= limit:
+-                self._fail_until = time.monotonic() + float(
+-                    self.cfg.get("long_cooldown_s") or 600)
+-                self.last_error = (f"{self.last_error or '连续失败'}（连续 "
+-                                   f"{self._fails_in_row} 次，本会话长时间停用 PP-OCR）")
++                self._trip("连续失败")
+             raise RuntimeError(f"OCR 服务冷却中：{self.last_error or '连续失败'}")
+         import cv2
+         ok, buf = cv2.imencode(".png", img)
+@@ -252,12 +262,10 @@
+                 self.stats["fails"] += 1
+                 self._fails_in_row += 1
+                 self.last_error = f"{type(e).__name__}: {e}"
++                self._pause_base = self.last_error
+                 limit = int(self.cfg.get("fail_limit") or 0)
+                 if limit and self._fails_in_row >= limit:
+-                    self._fail_until = time.monotonic() + float(
+-                        self.cfg.get("long_cooldown_s") or 600)
+-                    self.last_error += (f"（连续 {self._fails_in_row} 次失败，"
+-                                        "本会话长时间停用 PP-OCR）")
++                    self._trip(self.last_error)
+                 else:
+                     self._fail_until = time.monotonic() + float(
+                         self.cfg.get("cooldown_s") or 30)
+@@ -288,6 +296,27 @@
+         if not self.recent:
+             return 0.0
+         return float(statistics.median(self.recent))
++
++    def selfcheck(self, timeout=None):
++        """真推理一张 32×128 空白图，返回 (ok, error)。**不动**熔断状态。
++
++        TCP 探活只能证明端口在听。本机 Paddle 3.x 的 CPU/oneDNN 分支每次
++        推理都 500（PIR 属性转换报错），端口照样通 —— 只靠 probe 会把一个
++        每次必崩的二级显示成「PaddleOCR PP-OCRv6 small（HTTP …）」。启动时
++        用这个把「看起来有、实际在崩」晒出来，不必等第一次价格复核失败。
++        失败只写 last_error，不改 _fail_until / _fails_in_row：启动自检不该
++        替用户决定关掉这一级，降级仍由真实调用的计数与熔断负责。
++        """
++        if self.mode in ("off", "none"):
++            return False, "已关闭（ocr.ppocr.mode=off）"
++        import numpy as np
++        wait = min(float(timeout or self.timeout), 3.0)
++        try:
++            self._post(np.full((32, 128, 3), 255, dtype=np.uint8), timeout=wait)
++        except Exception as e:                      # noqa: BLE001
++            self.last_error = f"{type(e).__name__}: {e}"
++            return False, self.last_error
++        return True, ""
+ 
+     def stats_line(self):
+         s = self.stats
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -611,6 +611,20 @@
+         except Exception as e:                          # noqa: BLE001
+             self._say(f"OCR 预热失败（{type(e).__name__}: {e}），首件商品会含冷启动",
+                       "warn")
++        # 二级（PP-OCRv6）是「看起来有、实际可能每次 500」的一层：TCP 探活
++        # 分辨不出来。启动时真推理一次，把结论写进状态，别让价格复核悄悄
++        # 摔到字模兜底还没人知道（本机 CPU 上的 Paddle+oneDNN 就是这样）。
++        try:
++            ok, err = ocr.selfcheck_pp()
++            if ok:
++                pass
++            elif "已关闭" in err or "未起" in err:
++                self._say(f"OCR 二级复核未启用（{err}），价格二次确认走字模兜底")
++            else:
++                self._say(f"OCR 二级复核不可用：{err} —— 价格二次确认将直接"
++                          "走字模兜底，本次统计里的 tier2_fail 会随之增加", "warn")
++        except Exception:                               # noqa: BLE001
++            pass
+         # **资源构造也必须在 try 里**：Screen/Mouse 一抛异常（mss 初始化、
+         # 显示器序号、interception 驱动装载），线程直接死掉、`_error` 永远
+         # 是 None，调度器把这轮记成「未抢到」，真因只剩一条没人看的 stderr
+--- a/tests/test_ocr_price.py
++++ b/tests/test_ocr_price.py
+@@ -137,24 +137,40 @@
+ 
+ 
+ class _PP:
+-    def __init__(self, words=None, boom=False):
+-        self.words, self.boom, self.cfg = words or [], boom, {"model": "PP-OCRv6 tiny"}
++    def __init__(self, words=None, boom=False, crash=False):
++        self.words, self.boom, self.crash = words or [], boom, crash
++        self.cfg = {"model": "PP-OCRv6 tiny"}
++        self.last_error = ""
+ 
+     def available(self):
++        # crash=True 模拟「端口在听、每次推理 500」：探活成功，调用必炸。
+         return not self.boom
+ 
+     def read_words(self, img, timeout=None):
++        if self.crash:
++            raise RuntimeError("500 ConvertPirAttribute2RuntimeAttribute not support")
+         if self.boom:
+             raise RuntimeError("服务不在")
+         return self.words
+ 
+-
+-def _chain(rapid_words=None, pp_words=None, tpl=None, rap_boom=False, pp_boom=False):
++    def stats_line(self):
++        return "pp stub"
++
++    def selfcheck(self, timeout=None):
++        if self.crash:
++            return False, "RuntimeError: 500 ConvertPirAttribute2RuntimeAttribute"
++        return True, ""
++
++
++def _chain(rapid_words=None, pp_words=None, tpl=None, rap_boom=False,
++           pp_boom=False, pp_crash=False):
+     b = ocr_chain.Backend.__new__(ocr_chain.Backend)
+     b.rapid = _Rapid(rapid_words, rap_boom)
+-    b.pp = _PP(pp_words, pp_boom)
++    b.pp = _PP(pp_words, pp_boom, pp_crash)
+     b.tpl = tpl or type("T", (), {"read_detail": staticmethod(lambda img: (None, "", 0.0))})()
+-    b.stats = {"calls": 0, "empty": 0, "tier2": 0, "tier3": 0, "ms": 0.0, "fails": 0}
++    b.stats = {"calls": 0, "empty": 0, "tier2": 0, "tier2_fail": 0,
++               "tier3": 0, "ms": 0.0, "fails": 0}
++    b._pp_err = ""
+     b.url = ""
+     return b
+ 
+@@ -181,6 +197,80 @@
+     assert b.read_price(np.zeros((32, 120, 3), np.uint8)) == 250000
+     b2 = _chain([], [], pp_boom=True)
+     assert b2.read_price(np.zeros((32, 120, 3), np.uint8)) is None
++
++
++def test_tier2_listening_but_500_degrades_counts_and_keeps_error():
++    """二级端口在听、每次推理都 500（本机 Paddle+oneDNN 的实际形态）。
++
++    价格链必须：计数 + 记错误 + 继续落三级；不许把异常冒到上层，也不许
++    把它当成「这一块没字」。
++    """
++    tpl_hit = type("T", (), {"read_detail": staticmethod(
++        lambda img: (250000, "250,000", 0.72))})()
++    b = _chain([{"text": "150,000", "score": 0.42, "x": 0, "y": 0, "w": 80, "h": 20}],
++               tpl=tpl_hit, pp_crash=True)
++    assert b.read_price(np.zeros((32, 120, 3), np.uint8)) == 250000
++    assert b.stats["tier2"] == 1 and b.stats["tier2_fail"] == 1
++    assert "PirAttribute" in b.last_error
++    assert "二级推理失败" in b.name()
++
++
++def test_tier2_500_on_text_path_does_not_raise_or_lose_tier1():
++    """普通文本路径同样只降级不抛异常；一级读到的字不许被二级的死拖累。"""
++    b = _chain([], pp_crash=True)
++    img = np.zeros((40, 160, 3), np.uint8)
++    assert b.read_words(img) == []                 # 空结果，不是异常
++    assert b.stats["tier2"] == 1 and b.stats["tier2_fail"] == 1
++
++    words = [{"text": "稀有度极品", "score": 0.9, "x": 0, "y": 0, "w": 60, "h": 20}]
++    b2 = _chain(words, pp_crash=True)
++    assert b2.read_words(img) == words             # 一级有字就不该再去碰二级
++    assert b2.stats["tier2"] == 0
++
++
++def test_tier1_and_tier2_both_dead_still_raises_for_strict_callers():
++    """一级崩 + 二级 500：再次往上抛，交给 ocr.read_text(raise_on_error=True)
++    转成 OCRError —— 不能让「两层都瞎」被当成「没字」。"""
++    b = _chain(rap_boom=True, pp_crash=True)
++    try:
++        b.read_words(np.zeros((40, 160, 3), np.uint8))
++    except RuntimeError as e:
++        assert "rapid" in str(e)
++    else:
++        raise AssertionError("两层都不可用时必须抛")
++    assert b.stats["tier2_fail"] == 1
++
++
++def test_selfcheck_pp_reports_configured_but_crashing_tier2():
++    """启动自检要能区分「关掉」「没起」「在听但在崩」。"""
++    b = _chain([{"text": "1", "score": 1.0, "x": 0, "y": 0, "w": 1, "h": 1}])
++    ok, err = b.selfcheck_pp()
++    assert ok is True and err == ""                # stub 没有 selfcheck → 视为可用
++
++    b2 = _chain([], pp_crash=True)
++    ok2, err2 = b2.selfcheck_pp()
++    assert ok2 is False and err2
++    assert "二级不可用" in b2.name()         # 自检阶段还没真实调用，不写「失败 0 次」
++
++
++def test_name_shows_breaker_and_off_instead_of_missing_service():
++    """available() 为假有三种原因：没起 / 合闭 / 熔断。状态栏不许一律写「未起」。
++
++    本机 Paddle+oneDNN 的情形是第三种：端口在听、每次推理 500，连续三次后
++    熔断。写成「服务未起」会让人去查进程，查了也查不出问题。
++    """
++    b = _chain([])
++    b.pp.available = lambda: False
++    b.pp.last_error = ("HTTPError: HTTP Error 500: Internal Server Error"
++                       "（连续 3 次失败，本会话长时间停用 PP-OCR）")
++    n = b.name()
++    assert "二级已熔断" in n and "未起" not in n
++
++    b2 = _chain([])
++    b2.pp.available = lambda: False
++    b2.pp.mode = "off"
++    b2.pp.last_error = ""
++    assert "二级已关闭" in b2.name()
+ 
+ 
+ # ---------------------------------------------------------------- 6. 缺模型
+--- a/tests/test_ocr_backend.py
++++ b/tests/test_ocr_backend.py
+@@ -261,6 +261,20 @@
+     assert "长时间停用" in (b.last_error or "")
+ 
+ 
++def test_breaker_message_does_not_nest_on_repeated_blocks(fake, use_backend):
++    """熔断期内每次被挡都会再走一遍 _trip：文案只留最底层原因，不许套娃。"""
++    fake.status = 500
++    use_backend(url=fake.url, timeout_s=1, cooldown_s=0.01,
++                fail_limit=3, long_cooldown_s=600)
++    for _ in range(6):
++        ocr.read_text(_img(120, 32))
++        time.sleep(0.02)
++    b = ocr._client()
++    msg = b.last_error or ""
++    assert "长时间停用" in msg
++    assert msg.count("长时间停用") == 1
++
++
+ def test_backend_name_reports_measurement_after_calls(fake, use_backend):
+     """自检要带实测耗时 —— 一眼看出是不是慢到不该用。"""
+     use_backend(url=fake.url, timeout_s=3)

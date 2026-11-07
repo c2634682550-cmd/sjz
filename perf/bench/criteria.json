@@ -1,0 +1,95 @@
+{
+  "version": "2026-11-07.1",
+  "frozen": true,
+  "note": "判据写死：允许补充指标/下界/证据来源，不允许放宽任何阈值或去掉红线。",
+  "sampling": {
+    "machine": "同机、同分辨率、同 DPI",
+    "materials": "tests/fixtures 固定素材 + templates 固定模板",
+    "config": "忽略工作目录 config.json，用 DEFAULTS + bench_config.json.config_overrides 钉死",
+    "cold_warm": "前 warmup 个样本单列为冷态，不进热态统计",
+    "outlier": "MAD 剔除：|x-median| > max(6*1.4826*MAD, 20%*median, 0.05ms)",
+    "report": "p50 / p95 / max / mean / n，不单报平均",
+    "min_samples": {
+      "ocr_per_case": 30,
+      "item_cards": 30,
+      "flow_items": 30,
+      "click_run_s": 30
+    },
+    "trace": "每个结果带 meta：命令、快照、git rev、套件指纹、配置指纹、种子"
+  },
+  "red_lines": [
+    {
+      "id": "accuracy.price_exact_rate",
+      "dir": "max",
+      "floor": 1.0,
+      "tolerance": 0.0,
+      "source": "bench",
+      "rule": "价格逐位全等率：低于基线或低于 1.0 即回滚"
+    },
+    {
+      "id": "accuracy.grade_hit_rate",
+      "dir": "max",
+      "floor": 0.86,
+      "tolerance": 0.0,
+      "source": "bench",
+      "rule": "品阶/成色命中率：低于基线或低于 0.86 即回滚"
+    },
+    {
+      "id": "redlines.point_p95_ms",
+      "dir": "min",
+      "source": "external",
+      "provider": "速度线 A（卡点）",
+      "tolerance": 0.0,
+      "rule": "卡点误差 P95：高于基线即有退化，不论收益多大"
+    },
+    {
+      "id": "redlines.misbuy_guard",
+      "dir": "bool",
+      "must": true,
+      "source": "external",
+      "provider": "tests/test_precision.py + test_engine_insufficient.py + test_numeric_hardening.py"
+    },
+    {
+      "id": "redlines.input_identity",
+      "dir": "enum",
+      "allow": ["interception", "message", "legacy"],
+      "no_downgrade_from": "interception",
+      "source": "external",
+      "provider": "perf/bench/redlines.py"
+    }
+  ],
+  "convergence": {
+    "improve_pct": 3.0,
+    "rounds": 2,
+    "rule": "连续两轮所有纳入指标 p50 改善均 < 3%（且无指标退化 > 3%）视为收敛，停止优化"
+  },
+  "objectives": {
+    "primary": "flow.item_total_ms.p95",
+    "conflicts": [
+      {
+        "pair": ["accuracy.price_exact_rate", "ocr.tier1_ms.p50"],
+        "resolution": "准确率是硬约束；一级读不准时允许自动降三级，只优化一级命中的路径，不改判据"
+      },
+      {
+        "pair": ["flow.item_total_ms.p50", "redlines.point_p95_ms"],
+        "resolution": "提前量/固定等待可压，但卡点 P95 不得退化；冲突时保卡点"
+      },
+      {
+        "pair": ["ocr.items_per_s", "ocr.item_recog_ms.p95"],
+        "resolution": "吞吐靠帧间缓存与跳帧；单件 p95 恶化超过 3% 视为以稳换快，回滚"
+      },
+      {
+        "pair": ["click.period_ms.p50", "click.hold_ms.p50"],
+        "resolution": "间隔可压到 0，按住时长是命中率前提；hold 不得低于基线"
+      }
+    ],
+    "pareto_order": "先满足全部红线，再在可行域内按 (flow.item_total_ms.p95, ocr.items_per_s, click.hold_ms.p50) 取非支配解"
+  },
+  "lower_bounds": {
+    "ocr.tier1_floor_ms": "16×16 空图仍要走一次 det 前向：tier1 的下界就是一次完整前向，不随 ROI 变小下降",
+    "ocr.tier2_total_ms": "同一帧二级 = 3× 放大 + 一次服务往返（本机回环 + 推理），下界是回环 RTT",
+    "click.sleep_quantum_ms": "Windows 默认定时器粒度 0.5~1ms，sleep 落点即调度下界",
+    "click.send_roundtrip_ms": "Interception send 异步受理 ~0.02ms；落地受 Raw Input/USB 轮询 125Hz(8ms) 限制",
+    "flow.item_total_ms": "抓屏 1 次 + 列表前向 n 次 + 详情前向 1 次 + 2 次按住 + 连点帧，各项下界之和"
+  }
+}

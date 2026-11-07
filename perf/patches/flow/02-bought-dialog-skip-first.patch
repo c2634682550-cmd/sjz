@@ -1,0 +1,17 @@
+diff --git a/core/engine.py b/core/engine.py
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -2513,8 +2513,11 @@
+         整块不渲染，余额永远读空（实测）；「拥有」在两个弹窗里位置不一样，
+         死区域会漏读。所以只认弹窗本身的文字。
+         """
+-        for region, marks in ((REWARD_N, ("获得", "拥有")),
+-                              (SKIP_N, ("跳过",))):
++        # PERF:flow 先读「跳过」再读奖励文案。两处是「或」关系，判定集合不变；
++        # 常见的「弹窗还在」路径从 抓屏+OCR 540x260（约 340ms）降到 100x55
++        # （约 32ms）。负例（弹窗不在）成本不变，仍然是两处都读。
++        for region, marks in ((SKIP_N, ("跳过",)),
++                              (REWARD_N, ("获得", "拥有"))):
+             try:
+                 crop = screen.grab(screen.norm_to_px(region))
+                 if crop is None or not getattr(crop, "size", 0):

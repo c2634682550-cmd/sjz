@@ -1,0 +1,22 @@
+diff --git a/core/engine.py b/core/engine.py
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -2959,6 +2959,18 @@
+                 raise Aborted("用户停止")
+             if i:
+                 time.sleep(gap)
++            # PERF:flow 廉价预筛：全屏识别一次 450~850ms，而「三角币不足」那一行
++            # 只要 25ms。提示行读不到就跳过这一拍的全屏识别，最后一拍无论如何
++            # 做一次全屏识别兜底（不放弃任何一次可能的命中）。
++            # 语义不变：模态弹窗不会自己消失，晚一拍（0.35s）发现它照样能拦下。
++            # 预筛本身出任何错都当「可能有弹窗」处理（fail-open，退回全屏识别）。
++            if i < tries - 1:
++                try:
++                    hint = self._insufficient_showing(screen)
++                except Exception:            # noqa: BLE001
++                    hint = True
++                if not hint:
++                    continue
+             result = popup.scan(screen.grab())
+             if not result["found"]:
+                 continue

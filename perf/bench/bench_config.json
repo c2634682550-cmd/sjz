@@ -1,0 +1,19 @@
+{
+  "config_overrides": {},
+  "reps": {
+    "ocr_price": 30,
+    "ocr_item": 30,
+    "flow": 30
+  },
+  "click": {
+    "hold_ms": 100,
+    "interval_ms": 5,
+    "run_s": 30
+  },
+  "flow": {
+    "fire_frames": 2
+  },
+  "nop": {
+    "count": 200
+  }
+}

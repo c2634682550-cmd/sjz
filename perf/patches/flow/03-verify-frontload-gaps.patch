@@ -1,0 +1,26 @@
+diff --git a/core/engine.py b/core/engine.py
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -2435,7 +2435,12 @@
+             self._say("成交校验已关闭，按「点了就算」记（记录里标 verified=false）",
+                       "warn")
+         else:
+-            for _ in range(6):
++            # PERF:flow 观察窗仍是 1.5s，但节拍前紧后松：结算弹窗通常几十毫秒
++            # 就出来，以前每拍先睡 0.25s 再看，最坏白等 250ms 才第一次看见它。
++            # 现在第一拍立刻看，后面几拍 0.1/0.1/0.2/0.35/0.75 秒 —— 6 次判定、
++            # 总时长不变，只是把「等」挪到确定还没有弹窗之后。
++            gaps = (0.0, 0.1, 0.1, 0.2, 0.35, 0.75)
++            for i in range(6):
+                 if self._stop.is_set():
+                     break
+                 if self._bought_dialog(screen):
+@@ -2450,7 +2455,7 @@
+                     self._say(f"没读到结算弹窗，但余额 {before_balance} → {got}，"
+                               "按成交记", "info")
+                     break
+-                time.sleep(0.25)
++                time.sleep(gaps[i])
+         # 成交判定方式要落到记录里：以前只写 verified=开关状态，
+         # 「弹窗确认」和「余额下降」两种可信度完全不同的成交混在一起（D2）。
+         self._verified_by = by if bought else ""

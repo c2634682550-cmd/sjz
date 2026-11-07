@@ -1,0 +1,111 @@
+diff --git a/core/engine.py b/core/engine.py
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -29,8 +29,8 @@
+ import cv2
+ import numpy as np
+ 
+-from . import (click_burst, countdown, idle_roam, market, ocr, popup, records,
+-               repeat, retention, recovery, scene_guard as sg, skip_late,
++from . import (cards, click_burst, countdown, idle_roam, market, ocr, popup,
++               records, repeat, retention, recovery, scene_guard as sg, skip_late,
+                stop_grade, switches, timesync, watchdog)
+ from .config import Config, DATA_DIR
+ from .input import (Keyboard, Mouse, MouseStolen, WindowNotForeground,
+@@ -85,6 +85,10 @@
+ 
+ # 运行中重读配置的间隔（秒）。用户改价格/做工/限量，最多这么久后生效。
+ LIVE_RELOAD_S = 2.0
++
++# 展示页「继续」按钮周围的窄带（归一化）。整屏 OCR 要 1.4~2.5s，这条窄带
++# 只要 ~60ms —— 判据（「继续」两个字）不变，只是不再为了一句话认一整屏。
++CONT_STRIP = {"x": 0.40, "y": 0.890, "w": 0.20, "h": 0.100}
+ 
+ # 边界调用连续失败多久才放弃这一轮。截图/OCR 是外部依赖（驱动、显存、本机
+ # 服务），偶发失败很常见；0.1 秒的抖动不该把一件正在倒计时的货甩掉。但
+@@ -2613,6 +2617,26 @@
+         self._say("等弹窗解锁超时，照着点一次试试", "warn")
+         return False
+ 
++    def _skip_shown(self, screen):
++        """奖励弹窗底部那个「跳过」还在不在（100x55，约 32ms）。"""
++        try:
++            crop = screen.grab(screen.norm_to_px(SKIP_N))
++            if crop is None or not getattr(crop, "size", 0):
++                return False
++            return "跳过" in (ocr.read_text(upscale(crop, 2)) or "")
++        except Exception:                        # noqa: BLE001
++            return False
++
++    def _list_back(self, screen, list_px):
++        """回到在售列表了没有 —— 认卡片线（真机列表帧 20/20 稳定认出 ≥2 张）。"""
++        try:
++            frame = screen.grab(list_px)
++            if frame is None or not getattr(frame, "size", 0):
++                return False
++            return len(cards.locate_cards(frame)) >= 2
++        except Exception:                        # noqa: BLE001
++            return False
++
+     def _close_reward(self, screen, mouse):
+         """成交后收掉奖励流程：「跳过」→ 全屏展示页「继续」→ 回在售列表。
+ 
+@@ -2621,6 +2645,15 @@
+         列表。不收掉这层，下一轮抢购的筛选检查会挂在展示页上白跑。
+ 
+         屏幕上没有奖励痕迹就一下都不点 —— 没成交也来收尾就是乱点。
++
++        PERF:flow 这一段以前是整条流程里最贵的一步：
++            sleep(2.0) → 整屏 OCR（1.4~2.5s）→ 点继续 → sleep(2.5) → 整屏 OCR
++        合计约 5.3s，其中 4.5s 是固定睡眠。改成三个条件等待：
++            1) 盯「跳过」按钮消失（32ms/拍）—— 代替 sleep(2.0)；
++            2) 只读「继续」按钮周围那条窄带（约 60ms）—— 代替整屏 OCR；
++            3) 盯列表卡片线出现（约 20ms/拍）—— 代替 sleep(2.5)；
++        语义没变：判据还是那两处文字/按钮，2.0s 与 2.5s 仍是上界；
++        窄带读不到时退回原来的整屏 OCR 兜底（版式不同也不会漏点）。
+         """
+         if not self._bought_dialog(screen):
+             return
+@@ -2628,15 +2661,35 @@
+             self._say("游戏窗口抢不到前台，奖励弹窗收不掉", "warn")
+             return
+         self._click(mouse, *self._center(screen, SKIP_N))
+-        time.sleep(2.0)
+-        words = ocr.read_words(screen.grab())
++        gone = False
++        t0 = time.perf_counter()
++        while time.perf_counter() - t0 < 2.0:
++            if self._stop.is_set():
++                return
++            if not self._skip_shown(screen):
++                gone = True
++                break
++            time.sleep(0.04)
++        list_px = screen.norm_to_px(LIST_N)
++        words = ocr.read_words(
++            upscale(screen.grab(screen.norm_to_px(CONT_STRIP)), 2))
+         joined = "".join(w["text"] for w in words)
+-        if "获得" in joined or "继续" in joined:
++        if "继续" not in joined and "获得" not in joined:
++            # 兜底：窄带没读到（版式不同 / 字被整行跳过），退回整屏认一次。
++            joined = "".join(w["text"] for w in ocr.read_words(screen.grab()))
++        back = False
++        if "继续" in joined or "获得" in joined:
+             self._click(mouse, *CONT_CLICK)
+-            time.sleep(2.5)
+-            words = ocr.read_words(screen.grab())
+-            joined = "".join(w["text"] for w in words)
+-        back = "只显示公示期" in joined
++            t1 = time.perf_counter()
++            while time.perf_counter() - t1 < 2.5:
++                if self._stop.is_set():
++                    return
++                if self._list_back(screen, list_px):
++                    back = True
++                    break
++                time.sleep(0.04)
++        else:
++            back = self._list_back(screen, list_px)
+         self._say("奖励流程已收掉，" + ("已回在售列表" if back else "未确认回到列表"),
+                   "info" if back else "warn")
+ 

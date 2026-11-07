@@ -1,0 +1,530 @@
+{
+  "meta": {
+    "snapshot": "C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\snapshots\\base_0930",
+    "git_head": "5eef554",
+    "python": "3.11.9",
+    "python_exe": "C:\\Users\\26346\\Desktop\\project\\dafors\\.venv\\Scripts\\python.exe",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "cpu_count": 16,
+    "screen": [
+      1920,
+      1080
+    ],
+    "dpi": 96,
+    "config_sha256": "a9025cd1fad622ae932bbb09ae9b136304efe9d545c8d3b337f8a4f8ebb65d97",
+    "bench_sha256": "796e04cfbe871761",
+    "core_digest": "49ee5b2c1d9ae37f",
+    "git_dirty": 1,
+    "generated_at": "2026-11-07 09:43:42",
+    "command": "python.exe C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\bench\\run.py --snapshot C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\snapshots\\base_0930 --groups ocr,click,flow --with-redlines --freeze-baseline --out C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\bench\\out --tag base_v2",
+    "argv": [
+      "--snapshot",
+      "C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\snapshots\\base_0930",
+      "--groups",
+      "ocr,click,flow",
+      "--with-redlines",
+      "--freeze-baseline",
+      "--out",
+      "C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\bench\\out",
+      "--tag",
+      "base_v2"
+    ],
+    "seed": 20261107,
+    "groups": "ocr,click,flow",
+    "pinned_config_file": "C:\\Users\\26346\\AppData\\Local\\Temp\\dafors_bench_cfg_6uizh9h0.json",
+    "cpu_load_start": 33.2,
+    "cpu_load_end": 25.0,
+    "core_digest_end": "49ee5b2c1d9ae37f"
+  },
+  "groups": {
+    "ocr": {
+      "tier1_ms": {
+        "n": 627,
+        "n_raw": 630,
+        "warmup": 3,
+        "cold_p50": 43.810999995912425,
+        "p50": 56.02990000625141,
+        "p95": 94.68116000207368,
+        "p99": 111.98450599942592,
+        "max": 166.72790000302484,
+        "mean": 56.98863939391234,
+        "min": 13.208399999712128,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>141.2"
+      },
+      "tier1_floor_ms": {
+        "n": 25,
+        "n_raw": 30,
+        "warmup": 3,
+        "cold_p50": 5.328999999619555,
+        "p50": 5.448199997772463,
+        "p95": 13.463880002382204,
+        "p99": 18.66417600162093,
+        "max": 20.15160000155447,
+        "mean": 6.965892000298481,
+        "min": 3.639499998826068,
+        "dropped": 2,
+        "unit": "ms",
+        "drop_rule": "|x-median|>15.77"
+      },
+      "tier2_upscale_ms": {
+        "n": 607,
+        "n_raw": 630,
+        "warmup": 3,
+        "cold_p50": 0.04859999899053946,
+        "p50": 0.12070000229869038,
+        "p95": 0.1632499988772906,
+        "p99": 0.2209400020365137,
+        "max": 0.27860000409418717,
+        "mean": 0.11279110386946563,
+        "min": 0.040099999750964344,
+        "dropped": 20,
+        "unit": "ms",
+        "drop_rule": "|x-median|>0.1619"
+      },
+      "tier3_ms": {
+        "n": 626,
+        "n_raw": 630,
+        "warmup": 3,
+        "cold_p50": 21.20400000421796,
+        "p50": 9.2409500030044,
+        "p95": 28.022975004205364,
+        "p99": 36.30150000026333,
+        "max": 47.06599999917671,
+        "mean": 11.755246485551126,
+        "min": 1.050899998517707,
+        "dropped": 1,
+        "unit": "ms",
+        "drop_rule": "|x-median|>40.78"
+      },
+      "chain_price_ms": {
+        "n": 627,
+        "n_raw": 630,
+        "warmup": 3,
+        "cold_p50": 95.5686999950558,
+        "p50": 50.348299999313895,
+        "p95": 87.47059999805055,
+        "p99": 106.8923460011138,
+        "max": 129.93959999585059,
+        "mean": 51.382767464005205,
+        "min": 12.39720000012312,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>126.1"
+      },
+      "grade_read_ms": {
+        "n": 838,
+        "n_raw": 870,
+        "warmup": 3,
+        "cold_p50": 70.0790999981109,
+        "p50": 22.784049997426337,
+        "p95": 80.07843499799489,
+        "p99": 102.61595099924307,
+        "max": 110.6898999933037,
+        "mean": 30.828003341036595,
+        "min": 10.318299995560665,
+        "dropped": 29,
+        "unit": "ms",
+        "drop_rule": "|x-median|>87.04"
+      },
+      "item_recog_ms": {
+        "n": 177,
+        "n_raw": 180,
+        "warmup": 3,
+        "cold_p50": 338.82160000212025,
+        "p50": 155.39069999795174,
+        "p95": 304.05892000126175,
+        "p99": 367.77069599571405,
+        "max": 394.6155000012368,
+        "mean": 155.37825480229608,
+        "min": 52.53830000583548,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>560.4"
+      },
+      "item_cpu_ms": {
+        "n": 0,
+        "n_raw": 0,
+        "warmup": 0,
+        "cold_p50": null,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null,
+        "mean": null,
+        "min": null,
+        "dropped": 0,
+        "unit": "ms"
+      },
+      "list_cold_scan_ms": {
+        "n": 4,
+        "n_raw": 5,
+        "warmup": 1,
+        "cold_p50": 409.95870000188006,
+        "p50": 424.4738499983214,
+        "p95": 445.0979550019838,
+        "p99": 445.4433510021772,
+        "max": 445.5297000022256,
+        "mean": 419.32292499950563,
+        "min": 382.8142999991542,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>174.5"
+      },
+      "list_cached_scan_ms": {
+        "n": 4,
+        "n_raw": 5,
+        "warmup": 1,
+        "cold_p50": 13.901199999963865,
+        "p50": 14.445099997828947,
+        "p95": 16.805939996265806,
+        "p99": 17.051747996010818,
+        "max": 17.11319999594707,
+        "mean": 14.84817499658675,
+        "min": 13.389299994742032,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>7.452"
+      },
+      "list_scan_cpu_ms": {
+        "n": 0,
+        "n_raw": 0,
+        "warmup": 0,
+        "cold_p50": null,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null,
+        "mean": null,
+        "min": null,
+        "dropped": 0,
+        "unit": "ms"
+      }
+    },
+    "click": {
+      "hold_ms": {
+        "n": 279,
+        "n_raw": 284,
+        "warmup": 5,
+        "cold_p50": 100.19390000525163,
+        "p50": 100.28269999747863,
+        "p95": 100.52027999481652,
+        "p99": 100.56421599991154,
+        "max": 100.59690000343835,
+        "mean": 100.2852720430448,
+        "min": 100.02939999685623,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>20.06"
+      },
+      "sleep_quantum_ms": {
+        "n": 35,
+        "n_raw": 50,
+        "warmup": 3,
+        "cold_p50": 1.0457000025780872,
+        "p50": 1.033800006553065,
+        "p95": 1.06012000105693,
+        "p99": 1.078088003123412,
+        "max": 1.0872000057133846,
+        "mean": 1.036519999615848,
+        "min": 1.0230999978375621,
+        "dropped": 12,
+        "unit": "ms",
+        "drop_rule": "|x-median|>0.2075"
+      },
+      "gap_ms": {
+        "n": 278,
+        "n_raw": 283,
+        "warmup": 5,
+        "cold_p50": 5.1520000051823445,
+        "p50": 5.15935000294121,
+        "p95": 5.248160001428914,
+        "p99": 5.317427002810291,
+        "max": 5.336299996997695,
+        "mean": 5.1695589927934265,
+        "min": 5.060899995442014,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>1.032"
+      },
+      "period_ms": {
+        "n": 278,
+        "n_raw": 283,
+        "warmup": 5,
+        "cold_p50": 105.35649999656016,
+        "p50": 105.45195000304375,
+        "p95": 105.69614000160072,
+        "p99": 105.73730399926717,
+        "max": 105.81570000067586,
+        "mean": 105.45458201438954,
+        "min": 105.16239999560639,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>21.09"
+      },
+      "hold_overhead_us": {
+        "n": 279,
+        "n_raw": 284,
+        "warmup": 5,
+        "cold_p50": 193.90000525163487,
+        "p50": 282.6999974786304,
+        "p95": 520.2799948165193,
+        "p99": 564.2159999115386,
+        "max": 596.9000034383498,
+        "mean": 285.2720430447957,
+        "min": 29.399996856227517,
+        "dropped": 0,
+        "unit": "us",
+        "drop_rule": "|x-median|>1007"
+      },
+      "first_lead_us": {
+        "n": 1,
+        "n_raw": 1,
+        "warmup": 0,
+        "cold_p50": null,
+        "p50": 5.100002454128116,
+        "p95": null,
+        "max": null,
+        "mean": null,
+        "min": null,
+        "dropped": 0,
+        "unit": "us"
+      }
+    },
+    "flow": {
+      "capture_list_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 12.633999998797663,
+        "p50": 11.430250000557862,
+        "p95": 12.769889998526196,
+        "p99": 12.944114997590077,
+        "max": 12.950999996974133,
+        "mean": 11.497053571084896,
+        "min": 10.513299996091519,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>4.35"
+      },
+      "scan_list_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 208.34470000409056,
+        "p50": 14.267449998442316,
+        "p95": 16.427850000400213,
+        "p99": 17.048044997864054,
+        "max": 17.211799997312482,
+        "mean": 14.266985713870131,
+        "min": 11.899299999640789,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>4.983"
+      },
+      "pick_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 0.039699996705166996,
+        "p50": 0.03414999810047448,
+        "p95": 0.04879000152868683,
+        "p99": 0.05260300233203452,
+        "max": 0.052900002629030496,
+        "mean": 0.03489642767817713,
+        "min": 0.025000001187436283,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>0.05"
+      },
+      "enter_click_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 100.31139999773586,
+        "p50": 100.27580000314629,
+        "p95": 100.52158500257065,
+        "p99": 100.53376899995783,
+        "max": 100.53789999801666,
+        "mean": 100.30335000088338,
+        "min": 100.04470000421861,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>20.06"
+      },
+      "detail_ocr_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 258.86234999779845,
+        "p50": 215.3479000007792,
+        "p95": 223.16652500121563,
+        "p99": 224.0553830043791,
+        "max": 224.37320000608452,
+        "mean": 215.37617143024232,
+        "min": 205.35640000161948,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>43.07"
+      },
+      "fire_frame_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 6.001950001518708,
+        "p50": 7.0193499959714245,
+        "p95": 7.798524999452638,
+        "p99": 8.123960002340027,
+        "max": 8.235200002673082,
+        "mean": 6.913849999234246,
+        "min": 4.005499999038875,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>3.935"
+      },
+      "confirm_click_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 110.57664999680128,
+        "p50": 110.55950000445591,
+        "p95": 110.77813000119932,
+        "p99": 110.81858199904673,
+        "max": 110.83299999882001,
+        "mean": 110.57886785809907,
+        "min": 110.33339999994496,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>22.11"
+      },
+      "item_total_ms": {
+        "n": 28,
+        "n_raw": 30,
+        "warmup": 2,
+        "cold_p50": 696.8263000017032,
+        "p50": 459.045799998421,
+        "p95": 467.95918500065454,
+        "p99": 468.342025995953,
+        "max": 468.4759999945527,
+        "mean": 459.0460249993547,
+        "min": 449.2337999981828,
+        "dropped": 0,
+        "unit": "ms",
+        "drop_rule": "|x-median|>91.81"
+      },
+      "item_cpu_ms": {
+        "n": 0,
+        "n_raw": 0,
+        "warmup": 0,
+        "cold_p50": null,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null,
+        "mean": null,
+        "min": null,
+        "dropped": 0,
+        "unit": "ms"
+      }
+    }
+  },
+  "extra": {
+    "ocr": {
+      "items_per_s": 14.14,
+      "cpu_ms_per_item": null,
+      "cpu_ms_per_screen": null,
+      "cards_per_screen": 6,
+      "rows_per_cold_scan": 6,
+      "card_scan_samples": 180,
+      "tier2_available": false,
+      "tier2_probe_ms": null,
+      "cold_start": {
+        "construct_ms": 0.01,
+        "first_infer_ms": 709.17
+      }
+    },
+    "click": {
+      "clicks": 284,
+      "stopped_by": "window",
+      "elapsed_ms": 29949.0,
+      "clicks_per_s": 9.483,
+      "jitter_ms": 0.244,
+      "drift_ms_per_1000_clicks": 0.024,
+      "plan": {
+        "mode": "burst",
+        "hold_ms": 100.0,
+        "interval_ms": 5.0,
+        "window": "all"
+      },
+      "driver": {
+        "ready": true,
+        "why": "",
+        "mouse": null
+      }
+    },
+    "flow": {
+      "fixed_wait_ratio": 0.4572,
+      "fixed_wait_ms": 210.0,
+      "ocr_calls_per_item": 1.0,
+      "grabs_per_item": 3,
+      "clicks_per_item": 2.0,
+      "fire_frames_p50": 2.0,
+      "confirm_template": "confirm.png",
+      "monitor": [
+        1920,
+        1080
+      ]
+    }
+  },
+  "accuracy": {
+    "price_exact_rate": {
+      "value": 1.0,
+      "n": 630
+    },
+    "tier1_price_exact_rate": {
+      "value": 1.0,
+      "n": 630
+    },
+    "tier3_price_exact_rate": {
+      "value": 0.5714,
+      "n": 630
+    },
+    "grade_hit_rate": {
+      "value": 0.8621,
+      "n": 870
+    }
+  },
+  "notes": {
+    "ocr.tier2": "PP-OCR 服务未起（二级只在 Rapid 失败时才走，基线里计 0 次）",
+    "ocr.口径": "三级分别单独计时；chain_price_ms 是生产入口（一级失败自动降二级/三级）；item_recog_ms 为一张卡三字段的生产路径；items_per_s 用冷扫描行数/冷扫描 p50，不把缓存命中算成吞吐。",
+    "ocr.素材": "price_roi 21 例 × 30 轮；grade_roi 29 例 × 30 轮；列表卡 6 张 × 30 轮",
+    "click.物理层": "落地延迟与光标占用需要「真发 down/up + Raw Input 旁观窗口」，按本次约束不发；引用 _branchA_input_bench.md 的实测区间，需要新数值时用 --allow-inject 单跑。 本地未开 --allow-inject。",
+    "click.节奏": "burst hold=100ms interval=5ms 跑 30s；间隔/抖动来自 beat 时间戳，漂移=周期对点击序号的最小二乘斜率×1000。",
+    "flow.口径": "单件=列表扫一遍→挑一行→点进详情→读详情→连点到弹窗→确认；截图是真实 mss 抓屏，识别/挑选/模板匹配是生产函数 + 固定素材，点击是真实 sleep 占用（假 sink）。",
+    "flow.缓存": "列表扫描器跨件复用，scan_list_ms 反映稳态（帧间缓存命中）；冷态在 cold_p50 列。",
+    "flow.弹窗": "确认模板 confirm.png；第 2 帧起视为弹窗出现，阈值 0.85。"
+  },
+  "redlines": {
+    "generated_at": "2026-11-07 09:46:45",
+    "snapshot": "C:\\Users\\26346\\Desktop\\project\\dafors\\perf\\snapshots\\base_0930",
+    "input_identity": "interception",
+    "input_driver_ready": true,
+    "input_detail": "",
+    "point_p95_ms": null,
+    "misbuy_guard": true,
+    "input_identity_guard": true,
+    "tests": {
+      "misbuy": {
+        "ok": true,
+        "exit": 0,
+        "detail": "94 passed, 1 skipped in 67.36s (0:01:07)"
+      },
+      "input": {
+        "ok": true,
+        "exit": 0,
+        "detail": "20 passed in 1.74s"
+      }
+    }
+  }
+}

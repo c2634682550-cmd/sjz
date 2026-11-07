@@ -1,0 +1,52 @@
+diff --git a/core/market.py b/core/market.py
+--- a/core/market.py
++++ b/core/market.py
+@@ -207,6 +207,9 @@
+         self.ocr_calls = 0        # 测试用：数一共认了几张卡
+         self._grid_prev = None    # 整屏 OCR 兜底：上一帧的图与结果
+         self._grid_rows = []
++        # PERF:flow 整帧完全相同时的结果复用（见 scan 开头）
++        self._memo_img = None
++        self._memo_rows = []
+ 
+     def reset(self):
+         """列表刷新/翻页后调用：上一帧的缓存全作废。"""
+@@ -215,10 +218,20 @@
+         self.cache.clear()
+         self._grid_prev = None
+         self._grid_rows = []
++        self._memo_img = None
++        self._memo_rows = []
+ 
+     def scan(self, img):
+         if img is None or getattr(img, "size", 0) == 0:
+             return []
++        # PERF:flow 整帧逐字节相同 → 直接回上一帧结果（约 1.5ms），省掉
++        # locate_cards + changed_cards（约 15ms）。判据是「完全相同」而不是
++        # 阈值：阈值会漏掉单个数字变化，而那正是抢购要抓的东西。
++        # 抓屏本身没变、列表也没变（列表只在倒计时跳秒时变）时命中率很高。
++        if (self._memo_img is not None
++                and getattr(img, "shape", None) == self._memo_img.shape
++                and cv2.norm(img, self._memo_img, cv2.NORM_L1) == 0.0):
++            return [dict(r) for r in self._memo_rows]
+         found = cardmod.locate_cards(img)
+         if not found:
+             # 找不到卡片线，退回整屏 OCR（2×，1× 会漏小字）。
+@@ -236,6 +249,8 @@
+             rows = scan(img, **kw)
+             self._grid_prev = sig
+             self._grid_rows = [dict(r) for r in rows]
++            self._memo_img = img.copy()
++            self._memo_rows = [dict(r) for r in rows]
+             return rows
+ 
+         kw = {} if self.delta is None else {"delta": self.delta}
+@@ -274,6 +289,8 @@
+         self.prev = img.copy()
+         self.cards = found
+         rows.sort(key=lambda r: (r["y0"], r["x0"]))
++        self._memo_img = img.copy()
++        self._memo_rows = [dict(r) for r in rows]
+         return rows
+ 
+ 

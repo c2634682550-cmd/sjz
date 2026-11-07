@@ -1,0 +1,243 @@
+--- a/core/input.py
++++ b/core/input.py
+@@ -437,6 +437,22 @@
+         self._perf_trace = False
+         self._stage = []
+         self._click_t0 = None
++        # ---- perf 专项：点击热路径的常驻缓存（逐项可关，供 A/B） ----
++        self._opt_click = {"batch": True, "cache": True, "plan_skip": True,
++                           "restore_drv": True, "drop_move": True,
++                           "restore_early": True, "restore_wait_move": True,
++                           "btn_noabs": False}
++        self._ident = None
++        self._ident_gen = -1
++        self._abs_cache = None
++        self._watch = None
++        # 还原是「最后一条 stroke 一定回原点」的异步动作：点击返回时光标
++        # 可能还在目标点。连点时下一击会把这瞬态读成「原点」，于是把原点
++        # 记成目标点、逐击漂移。这里记住上一击的原点与目标点：读到目标点
++        # 就沿用缓存的原点，读到原点就清 pending。
++        self._home = None
++        self._home_target = None
++        self._home_pending = False
+         if self._mode in ("legacy", "message"):
+             # UIPI 主动判定：不匹配就当场失败，别等点不动了才发现
+             self._gate_integrity()
+@@ -847,45 +863,114 @@
+                 marks.append((name, time.perf_counter()))
+ 
+         mark("driver_enter")
++        cache = self._opt_click.get("cache")
+         try:
+-            ident = drv.mouse_device()
++            if cache:
++                # 设备句柄常驻：mouse_device() 每次都是 dict 拷贝 + 锁，
++                # 而且枚举结果只会在热插拔/驱动重载时变。用代际 gen 失效。
++                if self._ident is None or self._ident_gen != drv.gen:
++                    self._ident = drv.mouse_device()
++                    self._ident_gen = drv.gen
++                ident = self._ident
++            else:
++                ident = drv.mouse_device()
+         except RealDeviceUnavailable as e:
++            self._ident = None
+             raise InputChannelError(
+                 f"Interception 真实设备不可用：{e}", e.reason_code,
+                 channel="interception", detail=str(e)) from e
+ 
+         mark("ident")
+-        dx, dy = self._abs(x, y)
++        if cache and self._abs_cache is not None \
++                and self._abs_cache[0] == x and self._abs_cache[1] == y:
++            # 同一目标点连点时，绝对坐标换算结果完全一样，没必要每击重算。
++            dx, dy = self._abs_cache[2], self._abs_cache[3]
++        else:
++            dx, dy = self._abs(x, y)
++            if cache:
++                self._abs_cache = (x, y, dx, dy)
+         mark("abs")
+         flags = MOUSE_MOVE_ABSOLUTE | MOUSE_VIRTUAL_DESKTOP
+         sx, sy = self._origin_left + x, self._origin_top + y
+         origin = _cursor_pos()
++        if self._home_pending:
++            if origin == self._home:
++                self._home_pending = False
++            elif origin == self._home_target:
++                # 上一击的回原点 stroke 还没落地：读到的是瞬态，不是用户把
++                # 鼠标挪到了目标点。沿用缓存原点，别把「家」搬走。
++                origin = self._home
++            else:
++                self._home_pending = False     # 用户真的动了鼠标
+         mark("origin")
+         # ---- feature:mouse.human BEGIN ----
+         # 必须在 origin 取好之后再走轨迹：走完再还原，才不会把光标留在按钮上
+-        self._emit_plan(path)
+-        mark("plan")
++        if self._opt_click.get("plan_skip") and not path:
++            # 无路径可走：跳过 _emit_plan 的函数调用（热路径上省一次调用）。
++            # _emit_plan(None) 本来就直接 return，行为等价。
++            mark("plan")
++        elif path:
++            self._emit_plan(path)      # 有路径就必须真的走过去，拟人特性不能丢
++            mark("plan")
++        else:
++            mark("plan")
+         # ---- feature:mouse.human END ----
+-        watch = delivery_watch() if verify else None
+-        if watch is not None:
+-            watch.reset()
++        if verify:
++            if cache and self._watch is not None:
++                watch = self._watch
++            else:
++                watch = delivery_watch()
++                if cache:
++                    self._watch = watch
++            if watch is not None:
++                watch.reset()
++        else:
++            watch = None
+         mark("watch")
+         t0 = time.perf_counter()
++        opt = self._opt_click
++        # 批处理只对「不按住」的快路径成立：hold 必须真的在 down/up 之间停住，
++        # 那段的语义是时间间隔本身，没法合并。
++        use_batch = bool(opt.get("batch")) and not hold
++        # 回原点走驱动 stroke：和 down/up 同一批提交，FIFO 保证最后生效的是
++        # 原点。比 SetCursorPos 更确定（不会被子设备延迟的位置更新覆盖）。
++        use_drv_restore = bool(use_batch and opt.get("restore_drv")
++                               and origin is not None)
++        # 等回原点 stroke 的 Raw Input move 事件落地，而不是盲等固定时长。
++        wait_move = bool(use_drv_restore and opt.get("restore_wait_move"))
+         pressed = False
+         try:
+-            drv.send_mouse(0, x=dx, y=dy, flags=flags, device=ident["device"])
+-            mark("send_move")
+-            drv.send_mouse(MOUSE_LEFT_DOWN, x=dx, y=dy, flags=flags,
+-                           device=ident["device"])
+-            mark("send_down")
+-            pressed = True
+-            # 连点参数要求「按住 hold_ms」真的发生：这里就是 down→up 之间。
+-            if hold:
+-                time.sleep(float(hold))
+-            drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags,
+-                           device=ident["device"])
+-            mark("send_up")
+-            pressed = False
++            if use_batch:
++                noabs = bool(opt.get("btn_noabs"))
++                _dn = ((MOUSE_LEFT_DOWN, 0, 0, 0) if noabs
++                       else (MOUSE_LEFT_DOWN, dx, dy, flags))
++                _up = ((MOUSE_LEFT_UP, 0, 0, 0) if noabs
++                       else (MOUSE_LEFT_UP, dx, dy, flags))
++                strokes = [] if opt.get("drop_move") else [(0, dx, dy, flags)]
++                strokes.append(_dn)
++                strokes.append(_up)
++                if use_drv_restore:
++                    ox, oy = self._abs(origin[0] - self._origin_left,
++                                       origin[1] - self._origin_top)
++                    strokes.append((0, ox, oy, flags))
++                pressed = True
++                drv.send_mouse_batch(strokes, device=ident["device"])
++                mark("send_batch")
++                pressed = False
++            else:
++                drv.send_mouse(0, x=dx, y=dy, flags=flags, device=ident["device"])
++                mark("send_move")
++                drv.send_mouse(MOUSE_LEFT_DOWN, x=dx, y=dy, flags=flags,
++                               device=ident["device"])
++                mark("send_down")
++                pressed = True
++                # 连点参数要求「按住 hold_ms」真的发生：这里就是 down→up 之间。
++                if hold:
++                    time.sleep(float(hold))
++                drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags,
++                               device=ident["device"])
++                mark("send_up")
++                pressed = False
+         except InterceptionError as e:
+             if pressed:
+                 try:
+@@ -902,16 +987,18 @@
+             if watch is not None:
+                 landing = dict(watch.wait_buttons(
+                     vid=ident.get("vid"), pid=ident.get("pid"),
+-                    timeout_ms=3.0))
++                    timeout_ms=3.0, want_moves=(1 if wait_move else 0)))
+                 mark("land")
+                 landing["mode"] = "raw_input"
+-                if landing.get("ok"):
++                if landing.get("ok") and not use_drv_restore:
+                     # 驱动按设备 FIFO 投递：down/up 到了说明移动早已落地。
+                     # 仍回读一次，防「事件到了但光标被 ClipCursor 卡住」。
++                    # 回原点 stroke 也在同一批里时跳过：它会把光标拉回原点，
++                    # 这里的「到达目标点」检查只会白转 2ms。
+                     now = time.perf_counter()
+                     while (sx, sy) != (_cursor_pos() or (sx, sy)) \
+                             and time.perf_counter() - now < 0.002:
+-                        time.sleep(0)
++                        pass
+                 mark("cursor_ok")
+             else:
+                 # 没有观测窗口（极少数环境创建失败）：退化成「等光标到位 +
+@@ -920,7 +1007,7 @@
+                 deadline = time.perf_counter() + 0.003
+                 while _cursor_pos() != (sx, sy) \
+                         and time.perf_counter() < deadline:
+-                    time.sleep(0)
++                    pass
+                 time.sleep(0.0006)
+         except Exception as e:                           # noqa: BLE001
+             landing["error"] = f"{type(e).__name__}: {e}"
+@@ -928,12 +1015,36 @@
+         # 还原光标：这一步必须在 down/up 落地之后，否则会被注入覆盖
+         restored = None
+         if origin is not None:
+-            _user32.SetCursorPos(origin[0], origin[1])
+-            mark("restore")
+-            end = time.perf_counter() + 0.002
+-            while _cursor_pos() != origin and time.perf_counter() < end:
+-                time.sleep(0)
+-            restored = _cursor_pos() == origin
++            if use_drv_restore:
++                # 回原点 stroke 已在同一批里提交，FIFO 保证它是最后一个生效。
++                # 只回读一次做确认；没读到就挂 _home_pending，交给下一击首段
++                # 校验（连点漂移就是靠这个缓存修掉的）。
++                if opt.get("restore_early"):
++                    # 回原点 stroke 已按 FIFO 排队，但**桌面位置更新比 Raw Input
++                    # 事件再晚约 0.3–0.6ms 才应用**（p95 ~1.2ms，实测无法压掉：
++                    # 位置更新走的是另一条队列，没有任何事件可供等待）。
++                    # 所以这里只观测一次：命中即确认；没命中记 None（已排队、
++                    # 尚未确认），由下一击首段的 _home_pending 复核 —— 既不当
++                    # 失败、也不假装成功。
++                    restored = (_cursor_pos() == origin) or None
++                    mark("restore_drv")
++                else:
++                    end = time.perf_counter() + 0.002
++                    while _cursor_pos() != origin \
++                            and time.perf_counter() < end:
++                        pass
++                    restored = _cursor_pos() == origin
++                    mark("restore_drv")
++                self._home = origin
++                self._home_target = (sx, sy)
++                self._home_pending = not restored
++            else:
++                _user32.SetCursorPos(origin[0], origin[1])
++                mark("restore")
++                end = time.perf_counter() + 0.002
++                while _cursor_pos() != origin and time.perf_counter() < end:
++                    pass
++                restored = _cursor_pos() == origin
+             mark("restore_ok")
+ 
+         occupancy_ms = (time.perf_counter() - t0) * 1000.0
+@@ -955,6 +1066,8 @@
+             "landing": landing,
+             "occupancy_ms": round(occupancy_ms, 3),
+             "restored": restored,
++            "origin": origin,
++            "restore_queued": bool(self._home_pending),
+             "at": time.time(),
+         }
+         mark("record")

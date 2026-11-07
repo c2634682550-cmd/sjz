@@ -1,0 +1,400 @@
+diff --git a/core/engine.py b/core/engine.py
+--- a/core/engine.py
++++ b/core/engine.py
+@@ -1495,6 +1495,113 @@
+         m = re.search(r"\d{6,}", ocr.read_text(big))
+         return m.group(0) if m else ""
+ 
++    # 判据读（轮询用）的单次硬上限。实测抓帧+3×放大+一级推理 p50 47.46 /
++    # p95 55.06 / max 56.29ms（守门复验，当前树），80ms 是 p95 的 1.45 倍。
++    SERIAL_READ_CAP_S = 0.080
++
++    @classmethod
++    def _read_serial_fast(cls, screen, budget=None):
++        """判据专用：读一次详情面板编号，**不探活二级、带硬上限**。
++
++        与 `_read_serial` 只差两处，都是给「几十毫秒一次的轮询」用的：
++
++          1. OCR 只走一级（`ocr.read_words_fast`）。正常路径在一级空结果时
++             会调 `pp.available()`，那是一次最长 1.5s 的 TCP 探活；轮询里
++             走它，550ms 的上界会被拖到 1.7s（守门实测 20 次里 2 次）。
++          2. budget（默认 80ms）内没读完就按「没读成」返回 None。超预算的
++             读不再继续等 —— 等待上界宁可退化，也不许被一次长读突破。
++
++        返回三种值：
++          - 6 位以上数字串：这一帧读到了编号；
++          - ""（空串）：读完了，但这一帧没有编号（空帧/加载中）；
++          - None：**这次没读成**（抓帧/推理超预算、OCR 报错、后端不支持快读）。
++        判据必须区别对待后两种：空白是换页证据，读失败只是没信息。
++        """
++        cap = cls.SERIAL_READ_CAP_S if budget is None else budget
++        t0 = time.perf_counter()
++        crop = screen.grab(screen.norm_to_px(SERIAL_N))
++        if getattr(crop, "size", 0) == 0:
++            return ""
++        if time.perf_counter() - t0 > cap:          # 抓帧这一步就超预算
++            return None
++        big = upscale(crop, 3)
++        # 台架/测试里 ocr 是桩对象，没有 read_text_fast 就退回 read_text
++        read = getattr(ocr, "read_text_fast", None) or ocr.read_text
++        try:
++            text = read(big)
++        except Exception:                           # noqa: BLE001
++            return None
++        if text is None:                            # OCR 调用失败
++            return None
++        if time.perf_counter() - t0 > cap:          # 读超了：这次不算数
++            return None
++        m = re.search(r"\d{6,}", text)
++        return m.group(0) if m else ""
++
++    def _wait_detail_ready(self, screen, cap, want=""):
++        """等详情面板**换页完成**（不是「能读到 6 位数字」）。
++
++        判据是换页证据，按顺序成立才算就绪：
++          1. 先看到「非目标态」：空帧（读完了但没有 6 位数字）；
++          2. 再看 6 位数字；给了 `want` 时必须与 `want` 逐位相同。
++
++        读失败（超预算/OCR 报错）不算「非目标态」，只当没信息 —— 否则
++        「空白 → 旧内容」会被当成换页，正好复现守门抓到的编号不一致。
++
++        没有 want 时退一步：首帧读到的 6 位数字记为「可能是上一件的」，
++        后面必须读到**不同的**数字才算换页；首帧为空的话，下一个 6 位数字
++        就算证据。
++
++        为什么不能用「读到 6 位数字」当判据：右侧详情面板会保留上一件的
++        内容直到新内容到达，旧面板的编号同样是 6 位数字。守门实测换页窗口
++        50/100/200/300ms：旧判据 10/10 次拿到的是上一件的编号，100ms 以上
++        连读钟都是旧值。换页证据在窗口里一律返回 False，窗口过去才命中，
++        所以「命中即走」的收益只在真正换完页之后兑现。
++
++        判据读走 `_read_serial_fast`：只碰一级 OCR（不触发 1.5s 探活），
++        单次有 `SERIAL_READ_CAP_S` 硬上限。整个循环的绝对上界仍是 `cap`
++        （老代码固定睡的那 0.55s）；余量不足一次判据读时，把剩余时间睡完
++        就按未命中返回 —— 调用方走老路径读钟，行为可退化，上界不延长。
++
++        无记忆：每次调用都从「首帧」重新建立证据。连开十件，每件都是新的
++        判定（旧值只活在这次调用的局部变量里）。
++        """
++        deadline = time.perf_counter() + cap
++        first = None            # 首帧读到的 6 位数字（当作「可能上一件」）
++        saw_other = False       # 是否已经看到过非目标态（空帧/读不出）
++        while True:
++            remain = deadline - time.perf_counter()
++            # 余量不够一次判据读：读了只会把上界拖长，睡完剩余时间就退化。
++            if remain <= self.SERIAL_READ_CAP_S:
++                if remain > 0:
++                    time.sleep(remain)
++                return False
++            if self._stop.is_set():
++                raise Aborted("用户停止")
++            s = self._read_serial_fast(screen)
++            if s is None:
++                # 这次没读成（超预算/OCR 报错）：既不算「看到空帧」，也不算
++                # 「读到编号」。把它当空帧，会让「空 → 旧内容」被误判成换页。
++                pass
++            elif s:
++                if want:
++                    if s == want:                   # 逐位相同 = 最强证据
++                        return True
++                elif first is None:
++                    if saw_other:                   # 空帧 → 6 位数字
++                        return True
++                    first = s                       # 首帧：先当「旧内容」
++                elif s != first:                    # 换了一行 = 换页了
++                    return True
++            else:
++                saw_other = True
++            remain = deadline - time.perf_counter()
++            if remain <= 0:
++                return False
++            # 判据读本身约 50ms（实测 p50 47.46/p95 55.06），这 8ms 只是
++            # 别把 CPU 打满的让位，不是「等下一次渲染」的节拍。
++            time.sleep(min(0.008, remain))
++
+     def _watch_countdown(self, cfg, screen, already_unlocked=False,
+                          mouse=None, buy_click=None):
+         """循环读倒计时，归零即返回；界面切走或停更则中止。
+@@ -2088,8 +2195,12 @@
+             # 这道闸，同一件明明来不及也会硬进场 —— 两条路径一个跳一个不跳，
+             # 真机上就是「有时候跳有时候不跳」。
+             if clock_px is not None and late_s > 0:
+-                # 先让详情面板渲染出来，读到的才是它的钟，不是列表残留。
+-                time.sleep(min(0.55, detail_timeout))
++                # 先让详情面板**换页完成**，读到的才是它的钟，不是上一件的。
++                # PERF:flow 老代码固定睡 0.55s（约 530ms 纯白等）。现在盯
++                # 换页证据：面板保留旧内容时编号不变，换完才变；读到「变了」
++                # 或「空帧后的 6 位数字」立刻去读钟。最坏仍是
++                # min(0.55, detail_timeout)，读不到证据就退化成老的固定等待。
++                self._wait_detail_ready(screen, min(0.55, detail_timeout))
+                 words = self._ocr_clock(screen, clock_px)
+                 reading = " ".join(w["text"] for w in words)
+                 verdict = skip_late.judge_words(late_s, words)
+diff --git a/core/ocr.py b/core/ocr.py
+--- a/core/ocr.py
++++ b/core/ocr.py
+@@ -111,6 +111,51 @@
+     """OCR 服务能不能用。启动前检查看这一项。"""
+     b = _client()
+     return bool(b is not None and b.available())
++
++
++def _words_fast(img, timeout=None):
++    """一级读词的**不吞异常**版；后端不是多级链时返回 None（无从快读）。"""
++    b = _client()
++    rapid = getattr(b, "rapid", None)
++    if rapid is None:
++        return None
++    if not rapid.available():               # 进程内，只查模型建没建起来
++        return []
++    return rapid.read_words(img, timeout=timeout) or []
++
++
++def read_words_fast(img, timeout=None):
++    """只要一级（进程内 RapidOCR）的词列表，**绝不碰二级探活**。
++
++    专供「几十毫秒读一次的轮询判据」（引擎里等详情面板换页）。正常路径
++    `read_words` 在一级返回空时会调 `pp.available()` —— 那是一次最长
++    1.5s 的 TCP 探活（`probe_ttl_s` 每 10 秒到期一次）。轮询里走它，550ms
++    的等待上界会被拖到 1.7s（守门实测 20 次里 2 次打到 1728/1796ms）。
++
++    这里一级为空、报错、或后端根本不是多级链，一律返回空列表：不降级、
++    不探活、不改 `last_error`、也不记 stats —— 轮询不是业务调用，记进
++    「调用/空结果」会污染自检和自动调参看的那份健康度。
++    """
++    try:
++        return _words_fast(img, timeout) or []
++    except Exception:                       # noqa: BLE001 - 判据读失败按「没读到」
++        return []
++
++
++def read_text_fast(img, timeout=None):
++    """`read_words_fast` 的整串形式，但**读失败返回 None**、图上没字返回 ""。
++
++    判据必须能区分这两件事：「这一帧是空的」算换页证据（先空后有字），
++    「这次压根没读成」只能当作没信息。把失败当空白，会让「空白 → 旧内容」
++    被误判成换页 —— 正好复现守门抓到的编号不一致。
++    """
++    try:
++        words = _words_fast(img, timeout)
++    except Exception:                       # noqa: BLE001
++        return None
++    if words is None:                       # 后端不是多级链：不支持快读
++        return None
++    return "\n".join(w["text"] for w in words)
+ 
+ 
+ def selfcheck_pp(probe_timeout=0.3):
+diff --git a/tests/test_perf_detail_wait.py b/tests/test_perf_detail_wait.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_perf_detail_wait.py
+@@ -0,0 +1,208 @@
++"""进详情条件等待（`_wait_detail_ready`）的换页证据、上界与可重复性。
++
++只测这五件事（不碰画面、不碰真 OCR）：
++
++1. 换页证据：必须有「先非目标态、再 6 位数字」或「读到的数字变了」才就绪；
++   首帧就是 6 位数字、之后一直不变 → 不是证据，等满 cap 返回 False
++   （宁可变慢，也不能把上一件的编号当成这一件的）。
++2. 上界：未命中耗时不超过 cap（老代码固定睡的那 0.55s），不延长。
++3. 可重复：连开十件每件都重新判定；上一件的命中不许变成下一件的「已就绪」。
++4. 停止：`_stop` 已置位时立刻抛 `Aborted`，不等不睡。
++5. 判据读不走二级探活：`core.ocr.read_words_fast` 不许调 `pp.available()`。
++"""
++
++import threading
++import time
++
++from core import ocr
++from core.engine import Aborted, Engine
++
++OLD = "001738261"          # 上一件留在面板上的编号
++NEW = "001739887"          # 本次点开那一件的编号
++
++
++class _Stub(object):
++    """只提供 `_wait_detail_ready` 真正用到的那三样：判据、停止位、读上限。"""
++
++    SERIAL_READ_CAP_S = 0.080          # 与 Engine 同值；需要时用例可改
++
++    def __init__(self, answers, read_cost=0.0):
++        self._stop = threading.Event()
++        self.answers = answers         # 常量 / 可调用(reads) -> str
++        self.reads = 0
++        self.read_cost = read_cost
++
++    def _read_serial_fast(self, screen):
++        self.reads += 1
++        if self.read_cost:
++            time.sleep(self.read_cost)
++        a = self.answers
++        return a(self.reads) if callable(a) else a
++
++
++def wait(stub, cap, want=""):
++    # 直接把方法当普通函数用：self 由这颗桩顶着，不需要实例化整个 Engine。
++    return Engine._wait_detail_ready(stub, None, cap, want)
++
++
++def test_same_serial_forever_is_not_ready():
++    # 旧判据（「读到 6 位数字就算就绪」）在这个场面上会 10/10 拿旧编号。
++    s = _Stub(OLD)
++    t0 = time.perf_counter()
++    assert wait(s, 0.20) is False, "面板内容一直没变，不能认为换完页了"
++    dt = time.perf_counter() - t0
++    assert 0.18 <= dt <= 0.30, "未命中要等满上界，实际 %.3fs" % dt
++    assert s.reads >= 2, "窗口内要继续判定，不是读一次就放弃"
++
++
++def test_old_then_new_is_ready():
++    s = _Stub(lambda n: OLD if n == 1 else NEW)
++    t0 = time.perf_counter()
++    assert wait(s, 0.55) is True
++    assert s.reads == 2, "换页证据出现在第二拍，命中即走"
++    assert time.perf_counter() - t0 < 0.10
++
++
++def test_blank_then_serial_is_ready():
++    s = _Stub(lambda n: "" if n == 1 else NEW)
++    assert wait(s, 0.55) is True
++    assert s.reads == 2
++
++
++def test_blank_then_old_serial_is_not_ready():
++    # 空帧之后又回到上一件的编号：仍然不是证据（不能把「闪了一下」当换页）
++    s = _Stub(lambda n: "" if n == 2 else OLD)
++    assert wait(s, 0.20) is False
++
++
++def test_read_failure_is_not_blank_evidence():
++    # None = 这次没读成（超预算/OCR 报错），不是「看到空帧」；
++    # 把它当空帧，就会把随后的旧内容误判成换页（守门抓到的 10/10 不一致）。
++    s = _Stub(lambda n: None if n == 1 else OLD)
++    assert wait(s, 0.20) is False
++
++
++def test_read_failure_then_digits_still_needs_change():
++    # 首帧没读成 → 后帧读到的数字仍按「可能是上一件」处理，必须再等到变化。
++    # 宁可退化成老的固定等待，也不能在没看清首帧时把旧内容当就绪。
++    s = _Stub(lambda n: None if n == 1 else NEW)
++    assert wait(s, 0.15) is False
++
++
++def test_ten_opens_each_rechecks():
++    # 连开十件：每件都是「旧 → 新」，每件都必须重新建立证据（reads 从 1 起）
++    for _ in range(10):
++        s = _Stub(lambda n: OLD if n == 1 else NEW)
++        t0 = time.perf_counter()
++        assert wait(s, 0.55) is True
++        assert s.reads == 2, "第 %d 件没有重新判定" % _
++        assert time.perf_counter() - t0 < 0.10
++
++
++def test_hit_does_not_leak_into_next_item():
++    # 上一件命中过；下一件的面板内容恰好一直不变 —— 不许沿用「已就绪」
++    s1 = _Stub(lambda n: OLD if n == 1 else NEW)
++    assert wait(s1, 0.55) is True
++    s2 = _Stub(NEW)                          # 首帧就是上一件读到的值
++    assert wait(s2, 0.15) is False, "命中不能有记忆"
++
++
++def test_want_equality_wins_immediately():
++    s = _Stub(NEW)
++    assert wait(s, 0.55, want=NEW) is True
++    assert s.reads == 1
++
++
++def test_want_mismatch_never_ready():
++    s = _Stub(OLD)
++    assert wait(s, 0.15, want=NEW) is False
++
++
++def test_miss_does_not_exceed_cap():
++    s = _Stub("", read_cost=0.050)           # 每次判据读 50ms（贴近实测）
++    t0 = time.perf_counter()
++    assert wait(s, 0.55) is False
++    dt = time.perf_counter() - t0
++    assert dt <= 0.60, "未命中不能把 550ms 上界拖长，实际 %.3fs" % dt
++    assert s.reads >= 5, "550ms 里应该读到了好几拍"
++
++
++def test_short_cap_still_bounded():
++    s = _Stub("", read_cost=0.030)
++    t0 = time.perf_counter()
++    assert wait(s, 0.20) is False
++    assert time.perf_counter() - t0 <= 0.25
++
++
++def test_stop_aborts_immediately():
++    s = _Stub(OLD)
++    s._stop.set()
++    t0 = time.perf_counter()
++    try:
++        wait(s, 0.55)
++    except Aborted:
++        pass
++    else:
++        raise AssertionError("停止位已置位时必须抛 Aborted")
++    assert time.perf_counter() - t0 < 0.05
++
++
++def test_read_words_fast_never_probes_pp(monkeypatch):
++    """轮询判据只许碰一级：二级探活一次最长 1.5s，绝不能进这个循环。"""
++
++    class _Rapid(object):
++        def __init__(self):
++            self.calls = 0
++
++        def available(self):
++            return True
++
++        def read_words(self, img, timeout=None):
++            self.calls += 1
++            return []
++
++    class _PP(object):
++        def available(self):
++            raise AssertionError("判据读不许探活二级服务")
++
++    rapid = _Rapid()
++
++    class _Backend(object):
++        def __init__(self):
++            self.rapid = rapid
++            self.pp = _PP()
++
++    monkeypatch.setattr(ocr, "_backend", _Backend())
++    assert ocr.read_words_fast(object()) == []
++    assert rapid.calls == 1
++    assert ocr.read_text_fast(object()) == ""
++    assert rapid.calls == 2
++
++
++def test_read_text_fast_reports_failure_as_none(monkeypatch):
++    """读失败必须是 None（没信息），不能伪装成 ""（空白帧）。"""
++
++    class _Rapid(object):
++        def available(self):
++            return True
++
++        def read_words(self, img, timeout=None):
++            raise RuntimeError("推理炸了")
++
++    class _Backend(object):
++        def __init__(self):
++            self.rapid = _Rapid()
++
++    monkeypatch.setattr(ocr, "_backend", _Backend())
++    assert ocr.read_text_fast(object()) is None
++    assert ocr.read_words_fast(object()) == []      # 不吞异常的入口另有约定
++
++
++def test_read_text_fast_without_chain_is_none(monkeypatch):
++    """后端不是多级链（没有 rapid 一级）→ None：整条判据退化成老路径。"""
++
++    class _Backend(object):
++        rapid = None
++
++    monkeypatch.setattr(ocr, "_backend", _Backend())
++    assert ocr.read_text_fast(object()) is None

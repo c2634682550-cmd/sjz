@@ -1,0 +1,120 @@
+# 说明：ORT 线程 16→4/1，session 改线程局部并加 warmup()；收益：单帧 OCR p50 22.98→12.91ms，单件 231.8→150ms
+--- a/core/ocr_rapid.py
++++ b/core/ocr_rapid.py
+@@ -52,6 +52,11 @@
+     "Det.thresh": 0.3,
+     "Det.box_thresh": 0.5,
+     "Det.unclip_ratio": 1.6,
++    # 小图 OCR 是同步开销主导，线程越多同步越贵。8 核实测扫描吞吐：
++    # 16 线程 1935ms / 8 线程 643ms / 4 线程 398ms / 2 线程 601ms / 1 线程 993ms。
++    # 4 线程是拐点；可用 ocr.rapid.threads 覆盖。
++    "EngineConfig.onnxruntime.intra_op_num_threads": 4,
++    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+ }
+ 
+ 
+@@ -76,39 +81,73 @@
+         self.stats = {"calls": 0, "hits": 0, "ms": 0.0, "fails": 0, "lines": 0}
+         self.recent = deque(maxlen=20)
+         self.last_error = None
+-        self._lock = threading.Lock()
+-        self._eng = None
++        # 每个线程一个 RapidOCR 实例：ONNXRuntime 的 session 可以共享，但
++        # RapidOCR 的预处理缓冲不是线程安全的。扫描器并行认卡时靠这个隔离。
++        self._local = threading.local()
++        self._build_lock = threading.Lock()
++        self._eng = None            # 主线程实例（warmup/自检用）
+         self._broken = False
+ 
+     # ---------- 构建 / 自检 ----------
+ 
+     def _engine(self):
+-        if self._eng is not None:
+-            return self._eng
++        eng = getattr(self._local, "eng", None)
++        if eng is not None:
++            return eng
+         if self._broken:
+             return None
+-        with self._lock:
+-            if self._eng is not None:
+-                return self._eng
+-            if self._broken:
+-                return None
++        with self._build_lock:
+             try:
+                 from rapidocr import RapidOCR
+                 params = dict(_PARAMS)
++                threads = self.cfg.get("threads")
++                if threads is not None:
++                    try:
++                        n = int(threads)
++                    except (TypeError, ValueError):
++                        n = 0
++                    if n > 0:
++                        params["EngineConfig.onnxruntime.intra_op_num_threads"] = n
++                # 扫描线程池里的 worker 用少线程：3 个 worker × 2 线程时
++                # 扫描墙钟最低且 CPU 最低（6 线程正好铺满 6 个物理核），
++                # 主线程的详情页识别仍用 4 线程，单次延迟不发胖。
++                if threading.current_thread().name.startswith("scan-ocr"):
++                    try:
++                        wn = int(self.cfg.get("worker_threads", 2))
++                    except (TypeError, ValueError):
++                        wn = 2
++                    params["EngineConfig.onnxruntime.intra_op_num_threads"] = wn
+                 det, rec = _model_paths()
+                 if det:
+                     params["Det.model_path"] = det
+                 if rec:
+                     params["Rec.model_path"] = rec
+-                self._eng = RapidOCR(params=params)
++                eng = RapidOCR(params=params)
+             except Exception as e:            # noqa: BLE001
+                 self._broken = True
+                 self.last_error = f"{type(e).__name__}: {e}"
+                 return None
+-        return self._eng
++        self._local.eng = eng
++        if self._eng is None:
++            self._eng = eng
++        return eng
+ 
+     def available(self):
+         return self.enabled and self._engine() is not None
++
++    def warmup(self):
++        """建 session + 跑一张空图。
++
++        实测冷启动 747ms、热调用 22ms：模型加载和首帧显存/内存分配都落在
++        第一次调用上。启动时先烧掉这一次，第一件商品就不用替它买单。
++        """
++        eng = self._engine()
++        if eng is None:
++            return False
++        import numpy as np
++        blank = np.full((48, 160, 3), 255, dtype=np.uint8)
++        eng(blank)
++        return True
+ 
+     def name(self):
+         det, rec = _model_paths()
+@@ -127,13 +166,12 @@
+         if eng is None:
+             raise RuntimeError(f"RapidOCR 不可用：{self.last_error or '模型未加载'}")
+         t0 = time.perf_counter()
+-        with self._lock:
+-            try:
+-                res = eng(img)
+-            except Exception as e:            # noqa: BLE001
+-                self.stats["fails"] += 1
+-                self.last_error = f"{type(e).__name__}: {e}"
+-                raise
++        try:
++            res = eng(img)
++        except Exception as e:            # noqa: BLE001
++            self.stats["fails"] += 1
++            self.last_error = f"{type(e).__name__}: {e}"
++            raise
+         ms = (time.perf_counter() - t0) * 1000.0
+         out = _words(res)
+         self.recent.append(ms)

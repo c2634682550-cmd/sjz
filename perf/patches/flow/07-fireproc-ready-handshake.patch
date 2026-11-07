@@ -1,0 +1,261 @@
+diff --git a/core/fire_proc.py b/core/fire_proc.py
+--- a/core/fire_proc.py
++++ b/core/fire_proc.py
+@@ -10,6 +10,8 @@
+ 送到就行。
+ 
+ 失败语义：
++- 启动握手：worker 起来后主动发 `READY`，父进程带超时等；超时或首行不是
++  `READY` → 立刻 `dead`，不静默继续；
+ - 写管道失败 → `FireProcess.dead`，`fire()` 返回 False，调用方必须降级；
+ - 等结果带超时 → 不会死等；
+ - `close()` 幂等，退出时必收进程。
+@@ -24,6 +26,9 @@
+ 
+ _HERE = os.path.dirname(os.path.abspath(__file__))
+ WORKER = os.path.join(os.path.dirname(_HERE), "tools", "fire_worker.py")
++# 启动握手协议：worker 解释器起来、stdin 循环可用之前先发这一行。
++# 与 tools/fire_worker.py 里的字面量必须一致（那边刻意不 import 任何项目模块）。
++READY = "READY"
+ 
+ 
+ class FireProcess:
+@@ -33,6 +38,8 @@
+         self.restarts = 0
+         self._exe = exe
+         self._worker = worker
++        self._start_timeout = start_timeout
++        self._ready = threading.Event()
+         self._q = queue.Queue()
+         self._lock = threading.Lock()
+         self._closed = False
+@@ -40,10 +47,19 @@
+         self._spawn()
+ 
+     def _spawn(self):
+-        """起一个 worker 并等握手。失败只置 dead，不抛。"""
++        """起一个 worker 并等它发 READY。失败只置 dead，不抛。
++
++        以前是「睡 50ms 再 poll 一下」：解释器冷启动常常要 100ms 以上，
++        poll 只看到进程活着就当作已就绪 —— 实际上 stdin 循环可能还没起来，
++        第一发 target 就写进了一个没人读的管道。现在改成显式握手：worker
++        主动发 READY，父进程带超时等；超时或首行不是 READY 就当场标死，
++        调用方立刻降级，而不是静默继续假装可用。
++        """
+         self.dead = False
+         self.error = ""
+         self._q = queue.Queue()
++        self._ready = threading.Event()
++        self._ready_ok = False
+         try:
+             self.p = subprocess.Popen(
+                 [self._exe or sys.executable, self._worker or WORKER],
+@@ -56,15 +72,32 @@
+             return
+         self._reader = threading.Thread(target=self._pump, daemon=True)
+         self._reader.start()
+-        # 启动握手：worker 不输出东西，靠「先等一小段再看进程是否还活着」
+-        # 探活。等太久会拖慢启动，0.05s 足够覆盖解释器起不来/路径错的场景。
+-        time.sleep(0.05)
+-        try:
+-            if self.p.poll() is not None:
+-                self.dead = True
+-                self.error = "卡点进程启动后立刻退出（路径错或解释器异常）"
+-        except Exception:                   # noqa: BLE001
+-            pass
++        if not self._ready.wait(self._start_timeout):
++            self.dead = True
++            self.error = (f"卡点进程 {self._start_timeout:.1f}s 内没有发 READY"
++                          "（解释器起不来或脚本卡住）")
++            self._terminate()
++            self.p = None
++            return
++        if not self._ready_ok:
++            # 醒来的原因不是「收到 READY」，而是 stdout 关了（进程已退出）
++            # 或首行协议错。两种都必须当场标死，不静默继续。
++            self.dead = True
++            if not self.error:
++                self.error = "卡点进程在发 READY 前就退出（路径错或解释器异常）"
++            self._terminate()
++            self.p = None
++            return
++        if not self.dead:
++            try:
++                if self.p.poll() is not None:
++                    self.dead = True
++                    self.error = "卡点进程发完 READY 就退出（路径错或解释器异常）"
++            except Exception:               # noqa: BLE001
++                pass
++        if self.dead:
++            self._terminate()
++            self.p = None
+ 
+     def restart(self, attempts=2):
+         """卡点进程挂了就地重开。返回是否起了个能用的。
+@@ -116,17 +149,32 @@
+                 pass
+ 
+     def _pump(self):
++        """读 worker 的 stdout：第一行必须是 READY，之后每行是一个触发时刻。"""
+         try:
+             for line in self.p.stdout:
+                 line = line.strip()
+-                if line:
+-                    try:
+-                        self._q.put(float(line))
+-                    except ValueError:
+-                        self._q.put(None)
++                if not line:
++                    continue
++                if not self._ready.is_set():
++                    if line == READY:
++                        self._ready_ok = True
++                        self._ready.set()
++                        continue
++                    # 首行不是 READY —— 握手协议被破坏，这份 stdout 里后面的
++                    # 数字不可信。标死让调用方降级，不把脏数据当结果用。
++                    self.error = (f"卡点进程握手失败：首行是 {line[:20]!r}，"
++                                  "不是 READY")
++                    self.dead = True
++                    return
++                try:
++                    self._q.put(float(line))
++                except ValueError:
++                    self._q.put(None)
+         except Exception:                   # noqa: BLE001
+             pass
+         finally:
++            # 进程退出/管道断：把等握手的一方立刻叫醒，让它看到 dead 并降级
++            self._ready.set()
+             self._q.put(None)
+ 
+     def fire(self, target):
+diff --git a/tools/fire_worker.py b/tools/fire_worker.py
+--- a/tools/fire_worker.py
++++ b/tools/fire_worker.py
+@@ -4,14 +4,21 @@
+ 输出实际触发时刻。**不 import 任何项目模块**，不开线程池，不做日志
+ 格式化 —— 目的就是让这个进程的 GIL 上没有任何别的活，避免主进程满载
+ 时的调度抖动传染过来。
++
++启动先发一行 `READY`：父进程靠它显式握手，而不是睡一小段再猜进程活着。
+ """
+ 
+ import sys
+ import time
+ 
++READY = "READY"          # 与 core/fire_proc.py 里的字面量一致
++
+ 
+ def main():
+     out = sys.stdout
++    # 握手：解释器起来了、马上要进 stdin 循环 —— 此刻发，父进程收到就发第一发。
++    out.write(READY + "\n")
++    out.flush()
+     for line in sys.stdin:
+         line = line.strip()
+         if not line:
+diff --git a/tests/test_fire_proc.py b/tests/test_fire_proc.py
+--- a/tests/test_fire_proc.py
++++ b/tests/test_fire_proc.py
+@@ -1,10 +1,11 @@
+ """卡点进程客户端（`core/fire_proc.py`）的失败语义。
+ 
+-重点验证四件事故：
+-1. worker 路径错 → 立刻标记 dead，`fire` 返回 False，不抛异常；
+-2. worker 不返回 → `wait` 超时返回 None 并标记 dead，**不死等**；
+-3. `close` 幂等，重复调用不炸；
+-4. 正常往返一次能拿到实际触发时刻。
++重点验证五件事故：
++1. 启动握手：worker 主动发 READY，父进程等到就返回，`dead` 为假；
++2. worker 路径错 → 立刻标记 dead（靠 stdout 关闭叫醒，不是睡满超时）；
++3. worker 不发 READY → 超时后标记 dead，`wait` 不死等；
++4. 首行不是 READY → 立刻标记 dead，错误里点明握手失败，不把脏数据当结果；
++5. `close` 幂等，正常往返一次能拿到实际触发时刻。
+ """
+ 
+ import os
+@@ -20,6 +21,7 @@
+     fp = FireProcess()
+     try:
+         assert not fp.dead, fp.error
++        assert fp.error == "", fp.error
+         assert fp.fire(time.perf_counter() + 0.010) is True
+         fired = fp.wait(1.0)
+         assert fired is not None
+@@ -28,22 +30,14 @@
+         fp.close()
+ 
+ 
+-def _wait_until(pred, timeout=3.0, step=0.01):
+-    """条件等待：等异步状态出现，而不是假定它已经出现。"""
+-    end = time.monotonic() + timeout
+-    while time.monotonic() < end:
+-        if pred():
+-            return True
+-        time.sleep(step)
+-    return pred()
+-
+-
+ def test_bad_worker_path_marks_dead():
++    t0 = time.perf_counter()
+     fp = FireProcess(worker="Z:/definitely/not/here.py")
+     try:
+-        # 子进程退出是异步的：等它真的被标记 dead，再断言 fire 的返回
+-        assert _wait_until(lambda: fp.dead), \
+-            f"worker 路径错没标 dead，error={fp.error!r}"
++        # 子进程退出会关掉 stdout，_pump 的 finally 把握手等待叫醒 ——
++        # 所以不用等满 start_timeout，这就是「快速报错」。
++        assert fp.dead, f"worker 路径错没标 dead，error={fp.error!r}"
++        assert time.perf_counter() - t0 < 3.0, "路径错应当快速报错"
+         assert fp.fire(time.perf_counter() + 0.01) is False
+     finally:
+         fp.close()
+@@ -52,13 +46,27 @@
+ def test_silent_worker_times_out_without_hanging(tmp_path):
+     w = tmp_path / "silent.py"
+     w.write_text("import time\ntime.sleep(10)\n", encoding="utf-8")
+-    fp = FireProcess(worker=str(w))
++    t0 = time.perf_counter()
++    fp = FireProcess(worker=str(w), start_timeout=0.5)
+     try:
+-        fp.fire(time.perf_counter() + 0.01)
+-        t0 = time.perf_counter()
++        assert fp.dead, "不发 READY 的 worker 必须标 dead，不能静默继续"
++        assert time.perf_counter() - t0 < 2.0, "握手超时不该拖长"
++        assert fp.fire(time.perf_counter() + 0.01) is False
+         assert fp.wait(0.2) is None, "静默 worker 不该返回结果"
+-        assert time.perf_counter() - t0 < 2.0, "wait 出现了死等"
+         assert fp.dead, "超时后必须标记 dead"
++    finally:
++        fp.close()
++
++
++def test_protocol_violation_marks_dead(tmp_path):
++    w = tmp_path / "babbler.py"
++    w.write_text("print('hello', flush=True)\nimport time\ntime.sleep(1)\n",
++                 encoding="utf-8")
++    fp = FireProcess(worker=str(w), start_timeout=1.0)
++    try:
++        assert fp.dead, "首行不是 READY 必须标 dead"
++        assert "READY" in fp.error, fp.error
++        assert fp.fire(time.perf_counter() + 0.01) is False
+     finally:
+         fp.close()
+ 
+diff --git a/tests/test_fire_process.py b/tests/test_fire_process.py
+--- a/tests/test_fire_process.py
++++ b/tests/test_fire_process.py
+@@ -30,6 +30,12 @@
+             [exe or sys.executable, WORKER],
+             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+             text=True, bufsize=1)
++        # 新增的启动握手：worker 进 stdin 循环前先发一行 READY。这里必须等到它
++        # 再发第一发，否则首个 target 可能写进还没起来的 stdin 循环；没等到
++        # READY 说明进程没就绪，直接失败（不静默继续）。
++        self.ready = self.p.stdout.readline().strip() == "READY"
++        if not self.ready:
++            raise RuntimeError("卡点进程启动握手失败：没有先发 READY")
+ 
+     def fire_at(self, target):
+         self.p.stdin.write(f"{target:.9f}\n")
