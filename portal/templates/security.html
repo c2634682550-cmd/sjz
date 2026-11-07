@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}安全设置 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+<section class="card">
+  <h1>双重验证（TOTP）</h1>
+  <p class="sub">当前账号：<b>{{ admin.username }}</b> ·
+    {% if admin.totp_enabled %}<span class="pill ok">已启用</span>{% else %}<span class="pill">未启用</span>{% endif %}
+  </p>
+
+  {% if admin.totp_enabled %}
+  <p>登录时需要“口令 + 6 位动态验证码”。关闭需要输入当前验证码。</p>
+  <form method="post" action="{{ url_for('admin.security_page') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="disable">
+    <div class="row">
+      <div class="field"><label for="code1">当前动态验证码</label>
+        <input id="code1" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+    </div>
+    <button class="btn danger">关闭双重验证</button>
+  </form>
+  {% elif pending %}
+  <p>用验证器（Google Authenticator / 1Password 等）添加以下密钥，再输入一次 6 位验证码确认。</p>
+  <div class="code-big">{{ pending }}</div>
+  <p class="hint">otpauth:// 链接：<br>{{ otpauth }}</p>
+  <form method="post" action="{{ url_for('admin.security_page') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="enable">
+    <div class="row">
+      <div class="field"><label for="code2">验证器里的 6 位数字</label>
+        <input id="code2" name="code" inputmode="numeric" autocomplete="one-time-code" required></div>
+    </div>
+    <button class="btn">启用双重验证</button>
+  </form>
+  {% else %}
+  <p>启用后，即使口令泄露，攻击者也需要第二因子。</p>
+  <form method="post" action="{{ url_for('admin.security_page') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="start">
+    <button class="btn">生成 TOTP 密钥</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}版本 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+{% if not signer.ready %}
+<div class="msg err">签名器未就绪：{{ signer.error }}。上传已停用，下载链路仍可用。</div>
+{% endif %}
+
+<section class="card">
+  <h1>上传版本包</h1>
+  <p class="sub">仅接受 .zip；服务端会重新计算 SHA256、限制大小、拒绝路径穿越/符号链接/异常压缩比。文件保存在 web 根之外。</p>
+  <form method="post" action="{{ url_for('admin.version_upload') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <div class="field">
+        <label for="version">版本号</label>
+        <input id="version" name="version" placeholder="v1.2.3" required>
+      </div>
+      <div class="field">
+        <label for="package">zip 文件</label>
+        <input id="package" name="package" type="file" accept=".zip,application/zip" required>
+      </div>
+    </div>
+    <div class="field">
+      <label for="notes">更新说明</label>
+      <textarea id="notes" name="notes" class="notes" placeholder="本次更新内容"></textarea>
+    </div>
+    <div class="field">
+      <label class="hint"><input type="checkbox" name="force_update" value="1"> 标记为强制更新</label>
+    </div>
+    <button class="btn" {{ 'disabled' if not signer.ready else '' }}>上传并校验</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>历史版本</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>版本</th><th>大小</th><th>SHA256</th><th>强制</th>
+        <th>状态</th><th>下载</th><th>上传时间</th><th>操作</th></tr></thead>
+      <tbody>
+      {% for v in versions %}
+        <tr>
+          <td>{{ v.id }}</td>
+          <td>{{ v.version }}</td>
+          <td>{{ (v.size / 1024) | round(0) | int }} KB</td>
+          <td class="hint">{{ v.sha256[:16] }}…</td>
+          <td>{% if v.force_update %}<span class="pill warn">是</span>{% else %}否{% endif %}</td>
+          <td>{% if v.enabled %}<span class="pill ok">在线</span>{% else %}<span class="pill">已下架</span>{% endif %}</td>
+          <td>{{ v.downloads }}</td>
+          <td>{{ v.uploaded_at | ts }}</td>
+          <td class="actions">
+            <form method="post" action="{{ url_for('admin.version_toggle', version_id=v.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn ghost small">{{ '下架' if v.enabled else '上架' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.version_force', version_id=v.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn ghost small">{{ '取消强制' if v.force_update else '设为强制' }}</button>
+            </form>
+            <a class="btn ghost small" href="{{ url_for('admin.version_file', version_id=v.id) }}">下载</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9">还没有版本，先上传一个 zip。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

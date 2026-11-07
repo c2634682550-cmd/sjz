@@ -1,0 +1,43 @@
+# /etc/systemd/system/portal.service
+# 用户与目录：sudo useradd -r -s /sbin/nologin portal && sudo chown -R portal:portal /opt/dafors
+# 启用：sudo systemctl daemon-reload && sudo systemctl enable --now portal
+
+[Unit]
+Description=SJZ card-key download portal (Flask + gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=portal
+Group=portal
+WorkingDirectory=/opt/dafors
+
+Environment=PORTAL_CONFIG=/opt/dafors/portal/config.json
+Environment=PORTAL_TRUST_PROXY=1
+Environment=PORTAL_HTTPS_ONLY=1
+Environment=PYTHONUNBUFFERED=1
+
+# 2 核 2 worker 起步；SQLite 写少读多，够用
+ExecStart=/opt/dafors/.venv/bin/gunicorn \
+    --workers 2 \
+    --threads 4 \
+    --timeout 120 \
+    --bind 127.0.0.1:8000 \
+    --access-logfile - \
+    --error-logfile - \
+    portal.wsgi:application
+
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3
+
+# 收紧权限：只需要写自己的 var 目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/dafors/portal/var
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

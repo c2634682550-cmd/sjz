@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}发卡 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+<section class="card">
+  <h1>单张发卡</h1>
+  <p class="sub">明文卡密只在生成后的页面显示一次；数据库仅保存哈希与掩码。</p>
+  <form method="post" action="{{ url_for('admin.card_new') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <div class="field">
+        <label for="tier">档位</label>
+        <input id="tier" name="tier" value="pro">
+      </div>
+      <div class="field">
+        <label for="days">有效期（天，0 = 永久）</label>
+        <input id="days" name="days" value="365" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="max_per_day">每日下载上限</label>
+        <input id="max_per_day" name="max_per_day" value="5" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="note1">备注</label>
+        <input id="note1" name="note" placeholder="渠道 / 客户备注">
+      </div>
+    </div>
+    <div class="field">
+      <label class="hint"><input type="checkbox" name="bind_device" value="1"> 启用设备绑定（首次下载自动绑定）</label>
+    </div>
+    <button class="btn">生成 1 张卡密</button>
+  </form>
+</section>
+
+<section class="card">
+  <h1>批量发卡</h1>
+  <p class="sub">生成后立即给出一次性 CSV 下载链接（1 小时内有效、只能取一次）。</p>
+  <form method="post" action="{{ url_for('admin.card_batch_create') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <div class="field">
+        <label for="count">数量（1 - 200000）</label>
+        <input id="count" name="count" value="20" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tier2">档位</label>
+        <input id="tier2" name="tier" value="pro">
+      </div>
+      <div class="field">
+        <label for="days2">有效期（天，0 = 永久）</label>
+        <input id="days2" name="days" value="365" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="max2">每日下载上限</label>
+        <input id="max2" name="max_per_day" value="5" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="note2">备注</label>
+        <input id="note2" name="note" placeholder="批次备注">
+      </div>
+    </div>
+    <div class="field">
+      <label class="hint"><input type="checkbox" name="bind_device" value="1"> 整批启用设备绑定</label>
+    </div>
+    <button class="btn">批量生成</button>
+  </form>
+</section>
+{% endblock %}

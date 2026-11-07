@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}发卡结果 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>发卡成功</h1>
+  <div class="msg warn">
+    明文卡密只显示这一次，请立刻复制或下载 CSV。数据库里只有哈希与掩码，之后无法还原。
+  </div>
+  <div class="kv">
+    <span>批次</span><span>#{{ batch_id }}</span>
+    <span>档位</span><span>{{ tier }}</span>
+    <span>有效期</span><span>{{ days }} 天{{ '（永久）' if days == 0 else '' }}</span>
+    <span>数量</span><span>{{ codes | length }}</span>
+    {% if note %}<span>备注</span><span>{{ note }}</span>{% endif %}
+  </div>
+  <div class="toolbar mt">
+    <button class="btn ghost small" type="button" data-copy-target="#codes">复制全部</button>
+    {% if csv_token %}
+    <a class="btn small" href="{{ url_for('admin.batch_csv', batch_id=batch_id, t=csv_token) }}">下载 CSV（一次性）</a>
+    {% endif %}
+  </div>
+  <div class="field">
+    <label for="codes">卡密列表</label>
+    <textarea id="codes" readonly>{{ codes | join('\n') }}</textarea>
+  </div>
+  <a class="btn ghost" href="{{ url_for('admin.cards') }}">返回卡密列表</a>
+</section>
+{% endblock %}

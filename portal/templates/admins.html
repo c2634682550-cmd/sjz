@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}管理员 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+<section class="card">
+  <h1>管理员</h1>
+  <p class="sub">owner 可以管理账号；staff 只能使用业务功能（访问本页会得到 403）。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>TOTP</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody>
+      {% for a in admins %}
+        <tr>
+          <td>{{ a.id }}</td><td>{{ a.username }}</td><td>{{ a.role }}</td>
+          <td>{% if a.totp_enabled %}<span class="pill ok">已启用</span>{% else %}<span class="pill">未启用</span>{% endif %}</td>
+          <td>{{ a.created_at | ts }}</td>
+          <td>
+            {% if a.id != current_admin.id %}
+            <form method="post" action="{{ url_for('admin.admin_delete', admin_id=a.id) }}" class="inline-form"
+                  data-confirm="删除管理员 {{ a.username }}？">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn danger small">删除</button>
+            </form>
+            {% else %}<span class="hint">当前账号</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>新增管理员</h2>
+  <form method="post" action="{{ url_for('admin.admin_create') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <div class="field"><label for="u">用户名（3-32 位）</label><input id="u" name="username" required></div>
+      <div class="field"><label for="p">口令（至少 10 位）</label><input id="p" name="password" type="password" required></div>
+      <div class="field"><label for="r">角色</label>
+        <select id="r" name="role"><option value="staff">staff</option><option value="owner">owner</option></select>
+      </div>
+    </div>
+    <button class="btn">创建</button>
+  </form>
+</section>
+{% endblock %}

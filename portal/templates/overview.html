@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}概览 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+<section class="card">
+  <h1>概览</h1>
+  <div class="grid-stats">
+    <div class="stat"><div class="k">总卡数</div><div class="v">{{ stats.total_cards }}</div></div>
+    <div class="stat"><div class="k">有效卡</div><div class="v">{{ stats.active_cards }}</div></div>
+    <div class="stat"><div class="k">今日下载</div><div class="v">{{ stats.downloads_today }}</div></div>
+    <div class="stat"><div class="k">已封禁</div><div class="v">{{ stats.revoked_cards }}</div></div>
+    <div class="stat"><div class="k">在线版本</div><div class="v">{{ stats.versions_online }}</div></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>近 7 天下载趋势</h2>
+  <div class="trend">
+    {% for item in stats.trend %}
+    <div class="col" title="{{ item.day }}：{{ item.count }} 次">
+      <div class="num">{{ item.count }}</div>
+      <div class="bar" data-pct="{{ item.pct }}"></div>
+      <div class="lab">{{ item.day[5:] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>最近下载</h2>
+  {% if recent %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>时间</th><th>卡密掩码</th><th>版本</th><th>IP</th></tr></thead>
+      <tbody>
+      {% for r in recent %}
+        <tr>
+          <td>{{ r.ts | ts }}</td>
+          <td>{{ r.card_mask }}</td>
+          <td>{{ r.version }}</td>
+          <td>{{ r.ip }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="sub">还没有下载记录。</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>最近发卡</h2>
+  {% if recent_cards %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>掩码</th><th>档位</th><th>到期</th><th>状态</th></tr></thead>
+      <tbody>
+      {% for c in recent_cards %}
+        <tr>
+          <td>{{ c.id }}</td>
+          <td>{{ c.code_mask }}</td>
+          <td>{{ c.tier }}</td>
+          <td>{{ c.expires_at | ts }}</td>
+          <td>{% if c.revoked %}<span class="pill bad">已封禁</span>{% else %}<span class="pill ok">正常</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="sub">还没有卡密，<a href="{{ url_for('admin.card_new') }}">去发卡</a>。</p>{% endif %}
+</section>
+{% endblock %}

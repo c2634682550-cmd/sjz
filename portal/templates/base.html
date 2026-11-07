@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ site_name }}{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='portal.css') }}">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span>{{ site_name }}</div>
+  {% if current_admin %}
+  <nav class="nav">
+    <a href="{{ url_for('admin.overview') }}" class="{{ 'on' if request.path == '/admin/' else '' }}">概览</a>
+    <a href="{{ url_for('admin.cards') }}" class="{{ 'on' if request.path.startswith('/admin/cards') else '' }}">卡密</a>
+    <a href="{{ url_for('admin.card_new') }}" class="{{ 'on' if request.path.startswith('/admin/cards/new') else '' }}">发卡</a>
+    <a href="{{ url_for('admin.versions') }}" class="{{ 'on' if request.path.startswith('/admin/versions') else '' }}">版本</a>
+    <a href="{{ url_for('admin.logs') }}" class="{{ 'on' if request.path.startswith('/admin/logs') else '' }}">记录</a>
+    {% if current_admin.role == 'owner' %}
+    <a href="{{ url_for('admin.admins') }}" class="{{ 'on' if request.path.startswith('/admin/admins') else '' }}">管理员</a>
+    {% endif %}
+    <a href="{{ url_for('admin.security_page') }}" class="{{ 'on' if request.path.startswith('/admin/security') else '' }}">安全</a>
+  </nav>
+  <span class="who"><b>{{ current_admin.username }}</b> · {{ current_admin.role }}</span>
+  <form method="post" action="{{ url_for('admin.logout') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn ghost small">登出</button>
+  </form>
+  {% endif %}
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+<footer>本地自托管 · 无外网 CDN · {{ site_name }}</footer>
+<script src="{{ url_for('static', filename='portal.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}卡密下载 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="hero card">
+  <h1>输入卡密下载</h1>
+  <p class="sub">卡密校验通过后会签发一次性下载地址：60 秒有效、只能兑换一次、绑定当前会话。</p>
+
+  {% if message %}
+  <div class="msg {{ 'ok' if ok else 'err' }}">{{ message }}</div>
+  {% endif %}
+
+  {% if ok and token %}
+  <a class="btn big" href="{{ url_for('public.download', token=token) }}">立即下载</a>
+  <p class="hint">今日剩余下载次数：{{ remain }} · 链接 {{ ttl }} 秒内有效，只能点击一次。</p>
+  {% else %}
+  <form method="post" action="{{ url_for('public.submit') }}">
+    <div class="field">
+      <label for="code">卡密</label>
+      <input id="code" name="code" placeholder="SJZ-XXXX-XXXX-XXXX-XXXX"
+             autocomplete="off" spellcheck="false" autocapitalize="characters" required>
+    </div>
+    {% if captcha %}
+    <div class="field">
+      <label for="captcha">人机验证：{{ captcha }}</label>
+      <input id="captcha" name="captcha" inputmode="numeric" autocomplete="off" required>
+    </div>
+    {% endif %}
+    <button class="btn big" type="submit">校验并下载</button>
+  </form>
+  {% endif %}
+
+  {% if version %}
+  <p class="hint">当前版本 {{ version.version }} · {{ (version.size / 1024) | round(0) | int }} KB</p>
+  {% else %}
+  <p class="hint">管理员还没有上传可用版本。</p>
+  {% endif %}
+</section>
+{% endblock %}

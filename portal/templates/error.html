@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="card" >
+  <h1>{{ code }}</h1>
+  <p class="sub">{{ message }}</p>
+  <div class="mt">
+    <a class="btn ghost" href="{{ url_for('public.index') }}">返回首页</a>
+    {% if current_admin %}<a class="btn ghost" href="{{ url_for('admin.overview') }}">后台概览</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

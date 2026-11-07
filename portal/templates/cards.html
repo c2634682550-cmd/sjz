@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}卡密 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+<section class="card">
+  <div class="toolbar">
+    <form method="get" action="{{ url_for('admin.cards') }}" class="toolbar">
+      <div class="field">
+        <label for="q">卡密筛选（完整卡密或掩码片段）</label>
+        <input id="q" name="q" value="{{ q }}" placeholder="如 WXYZ 或完整卡密">
+      </div>
+      <div class="field">
+        <label for="status">状态</label>
+        <select id="status" name="status">
+          <option value="all" {{ 'selected' if status == 'all' else '' }}>全部</option>
+          <option value="active" {{ 'selected' if status == 'active' else '' }}>有效</option>
+          <option value="revoked" {{ 'selected' if status == 'revoked' else '' }}>已封禁</option>
+          <option value="expired" {{ 'selected' if status == 'expired' else '' }}>已过期</option>
+        </select>
+      </div>
+      <button class="btn ghost">筛选</button>
+      <a class="btn ghost" href="{{ url_for('admin.card_new') }}">+ 发卡</a>
+      <a class="btn ghost" href="{{ url_for('admin.export_csv', kind='cards', q=q, status=status) }}">导出 CSV</a>
+    </form>
+  </div>
+  <p class="sub">共 {{ total }} 条 · 第 {{ page + 1 }} / {{ pages if pages > 0 else 1 }} 页 ·
+    数据库只存卡密哈希，列表中的掩码为“前 4 + 后 4”。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>卡密掩码</th><th>档位</th><th>到期</th><th>状态</th>
+          <th>绑定设备</th><th>今日 / 上限</th><th>总下载</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in cards %}
+        <tr>
+          <td>{{ c.id }}</td>
+          <td>{{ c.code_mask }}</td>
+          <td>{{ c.tier }}</td>
+          <td>{{ c.expires_at | ts }}</td>
+          <td>
+            {% if c.revoked %}<span class="pill bad">已封禁</span>
+            {% elif c.expires_at and c.expires_at <= now_ts %}<span class="pill warn">已过期</span>
+            {% else %}<span class="pill ok">正常</span>{% endif %}
+          </td>
+          <td>{{ c.bound_device or ('待绑定' if c.bind_device else '未启用') }}</td>
+          <td>{{ c.day_count }} / {{ c.max_per_day }}</td>
+          <td>{{ c.total_downloads }}</td>
+          <td class="actions">
+            {% if c.revoked %}
+            <form method="post" action="{{ url_for('admin.card_unrevoke', card_id=c.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn ok small">解封</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('admin.card_revoke', card_id=c.id) }}" class="inline-form"
+                  data-confirm="确定封禁 {{ c.code_mask }}？">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn danger small">封禁</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('admin.card_renew', card_id=c.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input name="days" value="30" inputmode="numeric" aria-label="续期天数">
+              <button class="btn ghost small">续期</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.card_rebind', card_id=c.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input name="device" placeholder="设备 ID" aria-label="设备 ID">
+              <button class="btn ghost small">改绑</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.card_limits', card_id=c.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input name="max_per_day" value="{{ c.max_per_day }}" inputmode="numeric" aria-label="每日上限">
+              <label class="hint"><input type="checkbox" name="bind_device" value="1"
+                {{ 'checked' if c.bind_device else '' }}> 绑定</label>
+              <button class="btn ghost small">限额</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9">没有匹配的卡密。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    {% if page > 0 %}
+    <a class="btn ghost small" href="{{ url_for('admin.cards', q=q, status=status, page=page-1) }}">上一页</a>
+    {% endif %}
+    {% if page + 1 < pages %}
+    <a class="btn ghost small" href="{{ url_for('admin.cards', q=q, status=status, page=page+1) }}">下一页</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

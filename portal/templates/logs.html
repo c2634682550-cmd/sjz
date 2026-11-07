@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}记录 · {{ site_name }}{% endblock %}
+{% block content %}
+{% for kind, msg in flashes %}
+<div class="msg {{ 'ok' if kind == 'ok' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+
+<section class="card">
+  <div class="tabs">
+    <a class="{{ 'on' if tab == 'downloads' else '' }}" href="{{ url_for('admin.logs', tab='downloads') }}">下载记录</a>
+    <a class="{{ 'on' if tab == 'issuance' else '' }}" href="{{ url_for('admin.logs', tab='issuance') }}">发卡 / 操作记录</a>
+    <a class="{{ 'on' if tab == 'logins' else '' }}" href="{{ url_for('admin.logs', tab='logins') }}">登录记录</a>
+  </div>
+
+  <form method="get" action="{{ url_for('admin.logs') }}" class="toolbar">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <div class="field">
+      <label for="start">开始日期</label>
+      <input id="start" type="date" name="start" value="{{ start }}">
+    </div>
+    <div class="field">
+      <label for="end">结束日期</label>
+      <input id="end" type="date" name="end" value="{{ end }}">
+    </div>
+    <div class="field">
+      <label for="q">关键词（卡密/用户名/IP/动作）</label>
+      <input id="q" name="q" value="{{ q }}">
+    </div>
+    <button class="btn ghost">筛选</button>
+    <a class="btn ghost" href="{{ url_for('admin.export_csv', kind=('logins' if tab == 'logins' else ('downloads' if tab == 'downloads' else 'batches')), start=start, end=end, q=q) }}">导出 CSV</a>
+  </form>
+
+  <div class="table-wrap">
+    {% if tab == 'downloads' %}
+    <table>
+      <thead><tr><th>时间</th><th>卡密掩码</th><th>版本</th><th>IP</th><th>UA</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td>{{ r.ts | ts }}</td><td>{{ r.card_mask }}</td><td>{{ r.version }}</td>
+          <td>{{ r.ip }}</td><td class="hint">{{ r.ua }}</td></tr>
+      {% else %}<tr><td colspan="5">没有记录。</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% elif tab == 'logins' %}
+    <table>
+      <thead><tr><th>时间</th><th>用户名</th><th>IP</th><th>结果</th><th>原因</th><th>UA</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td>{{ r.ts | ts }}</td><td>{{ r.username }}</td><td>{{ r.ip }}</td>
+          <td>{% if r.ok %}<span class="pill ok">成功</span>{% else %}<span class="pill bad">失败</span>{% endif %}</td>
+          <td>{{ r.reason }}</td><td class="hint">{{ r.ua }}</td></tr>
+      {% else %}<tr><td colspan="6">没有记录。</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <table>
+      <thead><tr><th>时间</th><th>管理员 ID</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td>{{ r.ts | ts }}</td><td>{{ r.admin_id }}</td><td>{{ r.action }}</td>
+          <td>{{ r.target }}</td><td class="hint">{{ r.detail }}</td></tr>
+      {% else %}<tr><td colspan="5">没有记录。</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  <p class="sub">共 {{ total }} 条 · 第 {{ page + 1 }} / {{ pages if pages > 0 else 1 }} 页</p>
+  <div class="pager">
+    {% if page > 0 %}
+    <a class="btn ghost small" href="{{ url_for('admin.logs', tab=tab, start=start, end=end, q=q, page=page-1) }}">上一页</a>
+    {% endif %}
+    {% if page + 1 < pages %}
+    <a class="btn ghost small" href="{{ url_for('admin.logs', tab=tab, start=start, end=end, q=q, page=page+1) }}">下一页</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

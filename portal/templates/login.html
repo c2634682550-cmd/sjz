@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}后台登录 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="card login-card">
+  <h1>后台登录</h1>
+  <p class="sub">强口令 + 可选 TOTP 二次验证；连续失败会锁定。</p>
+  {% if message %}<div class="msg err">{{ message }}</div>{% endif %}
+  <form method="post" action="{{ url_for('admin.login', next=request.args.get('next', '')) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="username">管理员</label>
+      <input id="username" name="username" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">口令</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <div class="field">
+      <label for="totp">动态验证码（仅启用 TOTP 时需要）</label>
+      <input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code"
+             placeholder="6 位数字，可留空">
+    </div>
+    <button class="btn big" type="submit">登录</button>
+  </form>
+</section>
+{% endblock %}
