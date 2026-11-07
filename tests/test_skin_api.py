@@ -30,21 +30,87 @@ def test_catalog_covers_every_season_and_tier():
 def test_every_skin_knows_its_gun_type():
     """枪种要标出来 —— 它是筛选面板里的一个维度。
 
-    型号认不准没关系（AS Val → ASVa），枪种是准的。
+    型号认不准没关系（AS Val → ASVa），枪种是准的。243 件必须全有枪种，
+    并且正好覆盖面板上的 7 个框（多一个就是有一个框点到别处去了）。
     """
-    unknown = [r["name"] for r in bricks.catalog() if not r.get("gun")]
-    assert len(unknown) <= 2, f"有 {len(unknown)} 件没标枪种：{unknown[:5]}"
-
-
-def test_skins_of_filters_by_gun_type():
+    from core.nav_col import NavColPanel
     rows = bricks.catalog()
-    if not rows:
-        return
-    gun = next((r["gun"] for r in rows if r.get("gun")), None)
-    if not gun:
-        return
-    got = bricks.skins_of(tier=rows[0]["tier"], season=rows[0]["season"])
-    assert all(r["gun"] == gun for r in got)
+    assert rows, "目录是空的"
+    unknown = [r["name"] for r in rows if not r.get("gun")]
+    assert unknown == [], f"这些皮肤没标枪种：{unknown[:5]}"
+    assert {r["gun"] for r in rows} == set(NavColPanel.GUN_ROWS), \
+        f"目录里的枪种集合和面板对不上：{sorted({r['gun'] for r in rows})}"
+
+
+def test_skins_of_really_filters_season_tier_and_series():
+    """`skins_of` 的三个过滤维度必须真的各自生效、且互相取交集。
+
+    以前这里写的是「取第一行的赛季+品阶，然后断言结果枪种都等于某一枪」
+    —— `skins_of` 根本没有 gun 参数，那条断言只是「同赛季同品阶的皮肤
+    枪种都一样」（本来就不成立，只是碰巧 rows[0] 是唯一一件才过），
+    过滤行为一次都没被验证。
+    """
+    rows = bricks.catalog()
+    total = len(rows)
+    assert total > 0
+
+    s1 = bricks.skins_of(season="S1")
+    assert s1, "S1 一件都没有"
+    assert all(r["season"] == "S1" for r in s1), "赛季过滤放进了别的赛季"
+    assert len(s1) < total, f"赛季过滤没生效（还是 {len(s1)} 件）"
+
+    legend = bricks.skins_of(season="S1", tier="传说")
+    assert legend, "S1 传说一件都没有"
+    assert all(r["season"] == "S1" and r["tier"] == "传说" for r in legend)
+    assert len(legend) < len(s1), "品阶过滤没有和赛季取交集（条目没减少）"
+
+    series = s1[0]["series"]
+    got = bricks.skins_of(series=series)
+    assert got, f"系列「{series}」一件都没有"
+    assert all(r["series"] == series for r in got), "系列过滤放进了别的系列"
+    assert len(got) < total, f"系列过滤没生效（还是 {len(got)} 件）"
+
+    # 三个条件取交集：不存在的系列 → 空集。忽略任一维度都会返回非空。
+    assert bricks.skins_of(season="S1", tier="传说",
+                           series="根本没有这个系列") == []
+    # 空过滤不能改变结果（否则「过滤生效」可能只是「过滤坏了」）
+    assert bricks.skins_of(season="S1", tier="传说") == legend
+    assert bricks.skins_of() == rows
+
+
+def test_every_fine_grained_gun_has_a_panel_slot():
+    """官方 8 种枪种（gun_fine）都要能映射到面板的 7 个框，不能有落单的。"""
+    from core import bricks as bricks_mod
+    from core.nav_col import NavColPanel
+    from core.skinfilter import GUN_SLOTS
+    rows = bricks_mod.catalog()
+    no_slot = sorted({r["gun_fine"] for r in rows if r["gun_fine"] not in GUN_SLOTS})
+    assert no_slot == [], f"这些官方枪种没有面板框：{no_slot}"
+    bad_gun = sorted({r["gun"] for r in rows} - set(NavColPanel.GUN_ROWS))
+    assert bad_gun == [], f"这些枪种不是面板上的名字：{bad_gun}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="已知数据缺陷（待主会话修，不在本次测试范围内）："
+           "bricks.json 里 4 条 SVD 的 gun 写成「精准射手步枪」，"
+           "而 gun_fine 与 skins_raw.csv 都是「狙击步枪」"
+           "（SVD狙击步枪·猛兽 / 檀劫铳影 / 酸蚀 / 叠锋）。"
+           "按精准射手步枪去点筛选框，这 4 件永远搜不到")
+def test_gun_slot_mapping_matches_the_skin_database_strict():
+    from core.skinfilter import GUN_SLOTS
+    bad = [(r["name"], r["gun"], r["gun_fine"])
+           for r in bricks.catalog()
+           if GUN_SLOTS.get(r["gun_fine"]) != r["gun"]]
+    assert bad == [], f"枪种映射不一致：{bad[:5]}"
+
+
+def test_the_two_skin_tables_agree():
+    """core/bricks.json 与 core/skins_raw.csv 必须是同一份 243 件（同键同季）。"""
+    from core import skinfilter
+    got = skinfilter.verify(bricks.catalog())
+    assert got["ok"], got["problems"][:8]
+    assert got["count"] == 243, got["count"]
 
 
 def test_gun_filter_rows_cover_the_seven_types():

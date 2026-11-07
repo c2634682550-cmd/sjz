@@ -80,7 +80,7 @@ class FakeMouse:
     def __init__(self):
         self.clicks = []
 
-    def click(self, x, y, verify=True, expect_foreground=None):
+    def click(self, x, y, verify=True, expect_foreground=None, **kw):
         self.clicks.append((x, y))
         return True
 

@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 import pytest
 
-from core import cards, market, vision
+from core import bricks, cards, market, vision
 
 FIXTURE = "tests/fixtures/market/list_unfiltered.png"
 
@@ -202,3 +202,53 @@ def test_short_prices_are_real_prices():
     assert market._price_from_block("9 ， 500") == 9500
     assert market._price_from_block("成色 A") is None
     assert market._price_from_block("0") is None
+
+
+def test_batch_rec_matches_single_card_read(shot):
+    """同一批卡走单卡 `read_card` 与批量 `read_cards`，字段必须逐字节一致。
+
+    批量 rec 会把同一批文字块补齐到同宽，极窄的「|」块被补成空白读成
+    空串 —— 业务字段（name/price/wear/craft）还对得上，但 grade 文本会
+    比单卡路径少一个分隔符。这种字节级偏差以后会被依赖分隔符的解析或
+    展示静默踩到，所以 grade 统一成规范形 `做工|成色`，这里把等号钉住。
+    """
+    if cards._engine() is None:
+        pytest.skip("没有进程内 RapidOCR 引擎，批量路径会退回逐卡读取")
+    found = cards.locate_cards(shot)
+    assert found, "夹具里没有定位到卡片"
+    per = [cards.read_card(shot, r) for r in found]
+    bat = cards.read_cards(shot, found)
+    assert len(per) == len(bat)
+    for i, (a, b) in enumerate(zip(per, bat)):
+        assert (a["name"], a["price"], a["grade"]) == \
+            (b["name"], b["price"], b["grade"]), \
+            f"第 {i} 张卡两条路径不一致：{a} vs {b}"
+        wear = bricks.parse_wear_loose(b["grade"])
+        craft = bricks.parse_craft(b["grade"])
+        if craft and wear:
+            assert b["grade"] == f"{craft}|{wear}"
+
+
+def test_batch_path_has_no_reliable_raw_text(shot):
+    """批量路径不得叫 `text`：它的原始词流和单卡不逐字一致。
+
+    批量 rec 会把同一批文字块补到同宽，极窄的「|」块会被补成空白读成空串，
+    所以批量路径只给 `text_batch` + `text_reliable=False`（仅供 debug，
+    不可用于解析或断言）。这条是接口层面的钉子：谁把 `text` 加回批量返回值，
+    这里就红，避免以后有人拿它做二次解析或断言时静默踩坑。
+    """
+    if cards._engine() is None:
+        pytest.skip("没有进程内 RapidOCR 引擎，批量路径会退回逐卡读取")
+    found = cards.locate_cards(shot)
+    assert len(found) >= 2, "批量路径只在两张卡以上生效"
+    for i, d in enumerate(cards.read_cards(shot, found)):
+        assert "text" not in d, f"第 {i} 张卡批量结果出现了 text：{sorted(d)}"
+        assert d["text_reliable"] is False
+        assert isinstance(d["text_batch"], str)
+    for i, b in enumerate(cards.read_bottoms(shot, found[:2])):
+        assert "text" not in b, f"第 {i} 块底带批量结果出现了 text：{sorted(b)}"
+        assert b["text_reliable"] is False
+        assert isinstance(b["text_batch"], str)
+    # 单卡路径保持不变，仍然给可靠 text
+    assert "text" in cards.read_card(shot, found[0])
+

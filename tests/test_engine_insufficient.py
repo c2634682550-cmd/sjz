@@ -45,7 +45,7 @@ class FakeMouse:
     def ensure_foreground(self, hwnd, tries=3, gap=0.25, screen=None):
         return True
 
-    def click(self, x, y, expect_foreground=None):
+    def click(self, x, y, expect_foreground=None, **kw):
         self.clicks.append((x, y))
 
 
@@ -162,7 +162,7 @@ def test_fire_stops_on_the_first_click_when_money_is_short(eng, monkeypatch):
     monkeypatch.setattr(eng, "_guard_insufficient", guard)
     monkeypatch.setattr(engine_mod, "match", lambda a, b: (0.0, None))
     clicks = []
-    monkeypatch.setattr(eng, "_click", lambda m, x, y: clicks.append((x, y)))
+    monkeypatch.setattr(eng, "_click", lambda m, x, y, **kw: clicks.append((x, y)))
 
     with pytest.raises(engine_mod.Aborted):
         eng._fire_and_confirm(FakeCfg(), RectScreen(_load("insufficient.png")),
@@ -181,7 +181,7 @@ def test_fire_keeps_clicking_when_money_is_fine(eng, monkeypatch):
     monkeypatch.setattr(eng, "_bought_dialog", lambda screen: True)
     monkeypatch.setattr(eng, "_close_reward", lambda *a, **k: None)
     clicks = []
-    monkeypatch.setattr(eng, "_click", lambda m, x, y: clicks.append((x, y)))
+    monkeypatch.setattr(eng, "_click", lambda m, x, y, **kw: clicks.append((x, y)))
 
     assert eng._fire_and_confirm(FakeCfg(), RectScreen(_load("list_unfiltered.png")),
                                  FakeMouse(), _load("insufficient.png"),

@@ -125,6 +125,10 @@ def test_click_posts_client_coordinates_not_screen_coordinates(monkeypatch):
     """
     fake = _FakeUser32()
     monkeypatch.setattr(I, "_user32", fake)
+    # legacy 会借系统光标，2026-11-07 起默认禁用，这里显式打开闸门
+    monkeypatch.setattr(I, "_config_value",
+                        lambda key, default=None:
+                        True if key == "input_legacy_borrow" else default)
 
     m = I.Mouse(_FakeScreen(), game_hwnd=4242, mode="legacy")
     m.click(1700, 885, verify=False)

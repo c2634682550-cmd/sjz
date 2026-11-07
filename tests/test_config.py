@@ -63,3 +63,30 @@ def test_a_fresh_config_gets_the_documented_defaults(tmp_path, monkeypatch):
     assert cfg["workflow"] == "countdown"
     assert cfg["threshold"] == 0.85
     assert path.exists()
+
+
+def test_a_non_object_payload_falls_back_to_defaults():
+    """Config(非 dict) 不能把构造打穿 —— 与 `_raw` 的保护对称。
+
+    读盘主路径 _load_locked 已经把「顶层不是 JSON 对象」隔离成坏文件；
+    但 Config(data) 仍是公开构造器（portal / soak 会把读来的 JSON 原样
+    塞进来）。以前 data.items() 直接 AttributeError，现在退回 DEFAULTS。
+    """
+    cfg = cfgmod.Config([1, 2, 3])
+    assert cfg["threshold"] == 0.85
+    assert cfg._raw is None
+    assert cfg["console"]["quota"] == 1
+
+
+def test_a_null_console_is_normalised_to_a_dict(tmp_path, monkeypatch):
+    """console=null 落盘后再读回来是 DEFAULTS 的 dict，不是 None。
+
+    这条是「_save_config 把 console={} 写成 {}」疑点的依据：内存里的
+    cfg["console"] 永远是 dict，空 payload 走的是「读旧值 → 只覆盖
+    payload 里有的键」的合并路径，不可能把 None 落盘。
+    """
+    path = _write(tmp_path, monkeypatch, {"console": None})
+
+    cfg = cfgmod.Config.load()
+    assert isinstance(cfg["console"], dict)
+    assert cfg["console"]["quota"] == cfgmod.DEFAULTS["console"]["quota"]

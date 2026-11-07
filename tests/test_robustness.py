@@ -330,19 +330,30 @@ def test_page_check_is_a_warning_when_the_engine_can_navigate():
 
 
 def test_elevation_check_looks_at_all_windows_not_the_foreground(monkeypatch):
-    """提权判断不能只看前台窗口。
+    """提权判断不能只看前台窗口，而且**只提示、不自动提权**。
 
     启动那一刻前台通常是终端/资源管理器，权限和我们一样 —— 用
     foreground_integrity 会判成「不用提权」，等切到游戏时 UIPI 已经把
     点击全吞了（症状是「点了没反应」）。
+
+    2026-11 之后的策略：即使判定需要更高权限，也返回 False（继续用当前
+    权限跑），只把提示写进 SJZ_ELEVATE_NOTICE —— 自动重开正是「双击没
+    反应 / 进程杀不掉」的根源。
     """
+    import os
+
     import desktop
     from core import input as input_mod
 
+    monkeypatch.delenv("SJZ_ELEVATE_NOTICE", raising=False)
+    monkeypatch.setattr(desktop, "_ELEVATE_NOTICE", "", raising=False)
     monkeypatch.setattr(input_mod, "needs_elevation", lambda: True)
-    monkeypatch.setattr(input_mod, "elevate_self", lambda: True)
-    assert desktop._elevate_if_needed() is True, "该提权的时候没提"
+    monkeypatch.setattr(input_mod, "process_integrity", lambda: 0x2000)
+
+    assert desktop._elevate_if_needed() is False, "不许自动提权重开自己"
+    notice = os.environ.get("SJZ_ELEVATE_NOTICE", "")
+    assert "管理员" in notice and "UIPI" in notice
 
     monkeypatch.setattr(input_mod, "needs_elevation", lambda: False)
-    assert desktop._elevate_if_needed() is False, "不该提权的时候瞎提"
+    assert desktop._elevate_if_needed() is False, "不该提权的时候更不能动"
 

@@ -89,7 +89,7 @@ def env(monkeypatch):
 
     monkeypatch.setattr(server, "Config", Cfg)
 
-    def collect(cfg, mode="list"):
+    def collect(cfg, mode="list", workflow=None):
         if state["boom"]:
             raise state["boom"]
         return state["facts"]

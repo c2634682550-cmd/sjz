@@ -14,6 +14,9 @@ pywebview 的 `get_functions()`（`webview/util.py` 里 `inject_pywebview` 的
 修法是给那个引用加下划线前缀。这个改动很容易被「顺手改成 win 更清楚」而
 改回去，所以钉住 `WinCtl` 对外的可见属性。
 
+契约：对外可见的只能是**白名单里的方法**；窗口引用、悬浮窗引用、状态字段
+（`_win` / `_overlay` / `_maxed`）一律下划线，不许出现在 JS 可见面。
+
 `get_functions` 是嵌套函数，导不出来，所以这里断言的是它的**输入**：
 `dir(obj)` 里那些不以 `_` 开头的名字。pywebview 就是照这个集合往下走的。
 """
@@ -26,6 +29,16 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import desktop  # noqa: E402
+
+# 页面（web/index.html + overlay.js）实际会调用的方法白名单。
+# 新增对外方法必须同时改这里 —— 多一个名字，pywebview 就多展开一条对象图。
+ALLOWED_PUBLIC = {
+    "minimize", "destroy",
+    "win_minimize", "win_maximize", "win_close",
+    "purchase_start", "purchase_stop",
+    "overlay_toggle", "get_overlay_state", "overlay_size",
+    "restart_elevated",
+}
 
 
 class FakeWindow:
@@ -44,6 +57,12 @@ class FakeWindow:
     def minimize(self):
         pass
 
+    def maximize(self):
+        pass
+
+    def restore(self):
+        pass
+
     def destroy(self):
         pass
 
@@ -56,18 +75,31 @@ def ctl():
     return c
 
 
+@pytest.fixture
+def no_hard_exit(monkeypatch):
+    """把 `_hard_exit` 换成记账桩。
+
+    `win_close/destroy` 是「关窗即真退出」的实现：它会起后台线程调
+    `_hard_exit`（内部 TerminateProcess 杀掉**当前进程**）。测试进程里必须
+    拦掉，否则跑完这几条用例 pytest 自己就被收掉了。
+    """
+    calls = []
+    monkeypatch.setattr(desktop, "_hard_exit", lambda code=0: calls.append(code))
+    return calls
+
+
 def _public_names(obj):
     """pywebview 会往下递归的那些名字。"""
     return {n for n in dir(obj) if not n.startswith("_")}
 
 
 def test_only_the_intended_methods_are_visible_to_js(ctl):
-    """对外可见的只有 minimize / destroy。
+    """对外可见的只能是白名单方法。
 
     多出任何一个名字，pywebview 都会去展开它 —— 如果它指向 Window，
     就是上面说的白屏 + HTTP 全挂。
     """
-    extra = _public_names(ctl) - {"minimize", "destroy"}
+    extra = _public_names(ctl) - ALLOWED_PUBLIC
     assert extra == set(), (
         f"WinCtl 对外暴露了 {sorted(extra)}；这些名字会被 pywebview 递归展开"
     )
@@ -80,7 +112,7 @@ def test_window_reference_is_not_visible(ctl):
     递归进 Window 的对象图。
     """
     names = _public_names(ctl)
-    for bad in ("win", "events", "native"):
+    for bad in ("win", "events", "native", "overlay", "maxed"):
         assert bad not in names, f"WinCtl.{bad} 对外可见"
 
 
@@ -98,8 +130,18 @@ def test_visible_attribute_values_are_all_plain_functions(ctl):
         )
 
 
-def test_minimize_and_destroy_reach_the_window():
-    """两个方法必须真的调到窗口上，不能因为改名而变成空操作。"""
+def _wait(cond, timeout=1.2):
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return cond()
+
+
+def test_minimize_reaches_the_window_and_close_triggers_exit(no_hard_exit):
+    """minimize 要真的调到窗口上；destroy 是「真退出」而不是 window.destroy。"""
     calls = []
 
     class W:
@@ -113,11 +155,20 @@ def test_minimize_and_destroy_reach_the_window():
     c._win = W()
     c.minimize()
     c.destroy()
-    assert calls == ["minimize", "destroy"]
+    assert calls == ["minimize"], "minimize 必须落到窗口上；destroy 不再调 window.destroy"
+    assert _wait(lambda: no_hard_exit), "destroy 必须排在退出收尾"
 
 
-def test_methods_are_safe_before_the_window_exists():
+def test_win_close_requests_a_real_exit(no_hard_exit):
+    """win_close 是页面上的关闭按钮：必须排一次硬退出，不能只是隐藏窗口。"""
+    c = desktop.WinCtl()
+    assert c.win_close() is True
+    assert _wait(lambda: no_hard_exit), "win_close 没有触发退出收尾"
+    assert no_hard_exit == [0]
+
+
+def test_methods_are_safe_before_the_window_exists(no_hard_exit):
     """窗口还没建好时调用不能抛 —— 页面可能先于 create_window 完成加载。"""
     c = desktop.WinCtl()
-    c.minimize()
-    c.destroy()
+    assert c.minimize() is True        # 没有窗口也返回 True：最小化是幂等空操作
+    assert c.destroy() is True

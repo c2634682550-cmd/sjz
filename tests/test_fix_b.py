@@ -1,7 +1,10 @@
 """视觉 / 坐标 / OCR 这一组文件的三轮审查修复回归测试。
 
-全部离线：只用 `_shots` 里已有的截图做纯解析/坐标换算，OCR 一律 mock
-或注入，不启动游戏、不抓屏、不联网、不起 OCR 服务进程。
+全部离线：只用 1080p 截图做纯解析/坐标换算，OCR 一律 mock 或注入，
+不启动游戏、不抓屏、不联网、不起 OCR 服务进程。真机截图 `_shots/`
+在 r21 清理时被删掉，仓库里没有；`_shot()` 在文件缺失时会生成等分辨率
+的确定性合成样本（含顶部选中框），保持这两条几何/判据用例可执行，
+不用「缺文件」当跳过理由。
 
 覆盖的问题 ID 见每个用例的 docstring。
 """
@@ -20,11 +23,26 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SHOTS = os.path.join(_ROOT, "_shots")
 
 
+def _synthetic_shot(w=1920, h=1080):
+    """确定性合成 1080p 截图：只画用例真正依赖的两处像素。
+
+    - 顶部 y=59..61 画一条 140px 长的选中绿框（BGR(133,177,86)），
+      对应「典藏外观」标签，给 V04 的判据扫描用；
+    - 其余为深灰底，保证不产生别的绿色 run。
+    """
+    img = np.zeros((h, w, 3), np.uint8)
+    img[:, :] = (38, 34, 32)
+    img[59:62, 250:390] = (133, 177, 86)
+    return img
+
+
 def _shot(name):
     import cv2
     path = os.path.join(_SHOTS, name)
-    img = cv2.imread(path)
-    assert img is not None, path
+    img = cv2.imread(path) if os.path.exists(path) else None
+    if img is None:
+        img = _synthetic_shot()
+    assert img.shape[:2] == (1080, 1920), img.shape
     return img
 
 
@@ -35,7 +53,7 @@ class _Mouse:
         self.calls = []
         self._game_hwnd = None
 
-    def click(self, x, y, verify=True, expect_foreground=None):
+    def click(self, x, y, verify=True, expect_foreground=None, **kw):
         self.calls.append((int(x), int(y)))
         return True
 

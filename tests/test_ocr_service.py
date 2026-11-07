@@ -42,6 +42,7 @@ def env(monkeypatch):
     state = {
         "up": {8081},          # 哪些端口「有服务」
         "spawned": [],
+        "attempts": [],        # 拉起尝试（含失败）
         "killed": [],
         "probe_ok": True,
         "spawn_error": None,
@@ -54,6 +55,7 @@ def env(monkeypatch):
     monkeypatch.setattr(ocr, "_backend", None, raising=False)
 
     def spawn(port):
+        state["attempts"].append(port)
         if state["spawn_error"]:
             raise state["spawn_error"]
         state["spawned"].append(port)
@@ -75,11 +77,13 @@ def env(monkeypatch):
         state["up"].discard(port)
 
     def make(**cfg):
+        log = cfg.pop("log", None)
         return ocr_service.Supervisor(
             settings={"enabled": True, "healthy_timeout_s": 1.0,
                       "idle_wait_s": 0, "check_interval_s": 999, **cfg},
             is_busy=lambda: state["busy"],
-            spawn=spawn, probe=probe, kill=kill, kill_port=kill_port)
+            spawn=spawn, probe=probe, kill=kill, kill_port=kill_port,
+            log=log)
 
     yield state, make
 
@@ -376,3 +380,103 @@ def test_boot_does_not_adopt_a_foreign_service_on_the_configured_port(env):
     assert svc._adopt_or_spawn() is True
     assert state["spawned"] == [8082], "不该接管别人的端口"
     assert ocr.current_url() == "http://127.0.0.1:8082"
+
+
+# ---------------- 二级服务只是可选加速：起不来要安静降级 ----------------
+
+def test_optional_service_failure_degrades_with_one_log(env):
+    """8081 起不来 → 一条说明 + 降级状态，不逐轮刷日志。
+
+    现场症状：日记里每轮三条（没响应 / 重启 8081→8081 / 前端把
+    FileNotFoundError 翻译成「缺少需要的文件」）。根因是把它当必需服务，
+    每 60 秒无条件重起一次；内置 RapidOCR 本来就能跑，不该这样折腾。
+    """
+    state, make = env
+    state["up"] = set()
+    state["spawn_error"] = FileNotFoundError(
+        r"没有 C:\x\.venv-vl\Scripts\paddlex.exe（OCR 服务环境没装）")
+    logs = []
+    svc = make(log=logs.append)
+
+    assert svc._adopt_or_spawn() is False
+    st = svc.status()
+    assert st["degraded"] is True, "可选服务起不来要进降级"
+    assert st["fails"] >= 1
+    assert len(logs) == 1, f"降级只写一条日志，实际 {len(logs)} 条：{logs}"
+    assert "降级为内置识别" in logs[0]
+    assert "FileNotFoundError" not in logs[0], \
+        "异常类名会被前端翻译成「缺少需要的文件」，是误报"
+    assert state["attempts"] == [8081], "启动时只尝试一次"
+
+
+def test_degraded_state_does_not_retry_or_log_every_tick(env):
+    """降级之后挂机：不重启、不写日志，只累加失败次数。"""
+    state, make = env
+    state["up"] = set()
+    state["busy"] = False
+    logs = []
+    svc = make(log=logs.append, spawn_error=None)
+    svc._degraded = True
+    svc._next_retry_at = time.monotonic() + 600.0
+    n_logs = len(logs)
+    n_attempts = len(state["attempts"])
+
+    for _ in range(30):
+        assert svc.tick() is None
+
+    assert len(logs) == n_logs, f"降级期间又写日志了：{logs[n_logs:]}"
+    assert len(state["attempts"]) == n_attempts, "降级期间不该反复拉进程"
+    assert svc.status()["degraded"] is True
+
+
+def test_degraded_retry_is_low_frequency_and_silent_on_failure(env):
+    """到重试点才试一次；再失败只累加次数，不写重复日志。"""
+    state, make = env
+    state["up"] = set()
+    state["spawn_error"] = FileNotFoundError("没有 paddlex.exe")
+    logs = []
+    svc = make(log=logs.append)
+    svc._degraded = True
+    svc._next_retry_at = 0.0
+    n_logs = len(logs)
+
+    assert svc.tick() is None
+    assert len(state["attempts"]) == 1, "到点应静默重试一次"
+    assert len(logs) == n_logs, "重试失败不写日志"
+    assert svc.status()["fails"] >= 1
+    # 重试后下一次窗口又是 600 秒，期间不再打进程
+    for _ in range(10):
+        svc.tick()
+    assert len(state["attempts"]) == 1
+
+
+def test_degraded_recovers_when_the_port_answers(env):
+    """二级服务自己回来了：一条恢复日志，状态回到正常。"""
+    state, make = env
+    state["up"] = {8081}
+    state["probe_ok"] = True
+    logs = []
+    svc = make(log=logs.append)
+    svc._degraded = True
+    svc._next_retry_at = 0.0
+
+    assert svc.tick() is True
+    st = svc.status()
+    assert st["degraded"] is False and st["healthy"] is True
+    assert "已恢复" in logs[-1]
+    assert state["attempts"] == [], "端口自己能认字就不该再拉进程"
+
+
+def test_flapping_service_is_degraded_instead_of_restarted_forever(env):
+    """起来几秒就挂的实例：连续两次就认定拉不住，别再无限重启。"""
+    state, make = env
+    state["up"] = set()
+    svc = make()
+    svc._port = 8081
+    svc._started_at = time.monotonic() - 10.0
+    assert svc.tick() is True              # 第一次：起来过一次
+    state["up"].discard(8081)
+    svc._started_at = time.monotonic() - 5.0   # 刚起来 5 秒又挂
+    svc.tick()
+    assert svc.status()["degraded"] is True
+    assert state["attempts"] == [8081], "第二次不该再拉进程"

@@ -64,6 +64,11 @@ def _break_config_reads(monkeypatch, path):
         return real_open(file, *a, **kw)
 
     monkeypatch.setattr(builtins, "open", fake_open)
+    # 轮询缓存（Config.load_cached）：盘上指纹没变、快照 <2s 时会直接返回
+    # 上一份正常快照，config_ok 还是 True。本用例要验的是「真读不出来」时
+    # 接口必须报 False，所以先把轮询短路成阻塞读（不改产品代码）。
+    monkeypatch.setattr(cfgmod.Config, "load_cached",
+                        classmethod(lambda cls, **kw: cls.load()))
 
 
 # ---------------------------------------------------------------- R1
@@ -209,16 +214,55 @@ class _Drv:
         self.calls = []
         self.fail_at = fail_at
 
-    def send_mouse(self, state, x=0, y=0, flags=0):
+    def mouse_device(self, force=False):
+        # 2026-11-07 起驱动点击会先拿「真实设备」再 send
+        return {"device": 14, "vid": 0x1234, "pid": 0x5678,
+                "virtual": False, "hardware_id": r"HID\VID_1234",
+                "source": "auto"}
+
+    def send_mouse(self, state, x=0, y=0, flags=0, device=None):
         self.calls.append(state)
         if self.fail_at is not None and len(self.calls) == self.fail_at:
             raise X.InterceptionError("驱动被卸了")
 
 
+class _Watch:
+    """假的 WM_INPUT 旁观窗口：始终报告 down/up 已落地。"""
+
+    def reset(self):
+        pass
+
+    def wait_buttons(self, **_kw):
+        return {"ok": True}
+
+
+class _User32:
+    """只实现点击路径用到的两个调用；SetCursorPos 只记录不动真实光标。"""
+
+    _METRICS = {76: 0, 77: 0, 78: 1920, 79: 1080}
+
+    def __init__(self):
+        self.moves = []
+
+    def GetSystemMetrics(self, index):
+        return self._METRICS.get(index, 0)
+
+    def SetCursorPos(self, x, y):
+        self.moves.append((x, y))
+        return 1
+
+
 def _mouse_with(drv, monkeypatch):
     monkeypatch.setattr(X, "shared", lambda: drv)
+    # 全程离线：不建 Raw Input 窗口、不读/写真实光标
+    monkeypatch.setattr(X, "delivery_watch", lambda: _Watch())
+    monkeypatch.setattr(I, "_user32", _User32())
+    monkeypatch.setattr(I, "_cursor_pos", lambda: (100, 100))
+    # legacy 默认被禁用（input_legacy_borrow=false）；这里只借它的构造路径
+    # 跳过驱动真实检测，随后立刻切换成 interception，不会碰真实光标。
+    monkeypatch.setattr(I, "_legacy_allowed", lambda: True)
     m = I.Mouse(None, mode="legacy")
-    m._mode = "interception"          # 跳过 driver_ready 的真实检测
+    m._mode = "interception"          # 跳过驱动真实检测
     return m
 
 
@@ -239,7 +283,9 @@ def test_click_up_failure_keeps_cause(monkeypatch):
     m = _mouse_with(drv, monkeypatch)
     with pytest.raises(I.MouseStolen) as ei:
         m.click(100, 100)
-    assert drv.calls == [0, X.MOUSE_LEFT_DOWN, X.MOUSE_LEFT_UP]
+    # UP 自己失败后必须再补一次 UP：否则按下态会留在系统里。
+    assert drv.calls == [0, X.MOUSE_LEFT_DOWN, X.MOUSE_LEFT_UP, X.MOUSE_LEFT_UP], \
+        f"UP 失败后没有补 UP，实际发送 {drv.calls}"
     assert isinstance(ei.value.__cause__, X.InterceptionError)
 
 

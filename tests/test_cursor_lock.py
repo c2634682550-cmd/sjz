@@ -1,117 +1,126 @@
-"""光标锁检测与解除。
+"""光标裁剪锁：**只读记录，不改写**（release_cursor_lock 已停用写操作）。
 
-游戏独占全屏时会把光标钉在一个点上（ClipCursor）。这时 SendInput 和
-SetCursorPos **全部静默失效** —— 函数照返回成功，GetCursorPos 照返回坐标
-（但那是被锁住的位置），表现是「程序说点了，游戏没反应」。
+游戏独占全屏时会把光标钉在一个点上（ClipCursor）。旧实现用
+`ClipCursor(None)` 清掉它，确实能让 SetCursorPos 恢复，但那是**全局改写
+用户桌面状态**，和「不碰本机鼠标」的要求直接冲突。
 
-实测（docs/auto-buy-design.md §4.8）：手动 ClipCursor(None) 之后
-SetCursorPos 立刻恢复正常。
+现在的契约：
+- 只调用 `GetClipCursor`（读），**从不**调用 `ClipCursor`（写）；
+- **从不**移动光标；
+- 返回值恒为 `(True, False)`，表示「没有做任何清锁动作」；
+- 检测到裁剪区时只往输入账本里记一条 info。
 
-这些测试跑在真实桌面上，会短暂移动光标（几十毫秒内放回原位）。
+本文件的所有用例都替换 `core.input._user32`，不读、不写真实光标。
 """
+import ctypes
+import ctypes.wintypes  # noqa: F401  (RECT 类型断言要用)
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core import input as input_mod  # noqa: E402
 from core.input import Mouse  # noqa: E402
 
 
-@pytest.fixture(autouse=True)
-def _restore_cursor():
-    """测试结束后把光标放回原处。"""
-    before = Mouse.cursor()
-    yield
-    try:
-        import ctypes
-        ctypes.windll.user32.SetCursorPos(*before)
-    except Exception:
-        pass
+class FakeUser32:
+    """只实现 `release_cursor_lock` 允许触达的调用。
 
-
-def test_release_cursor_lock_returns_a_pair():
-    """返回值是 (是否成功, 之前有没有锁)，两个都要是 bool。
-
-    调用方靠第二个值决定要不要在日志里提一句「清掉了锁」。
+    任何写裁剪区 / 移动光标的调用都记下来 —— 本版本一次都不许出现。
     """
+
+    def __init__(self, *, had_lock=True):
+        self.had_lock = had_lock
+        self.get_clip_calls = 0
+        self.clip_writes = []
+        self.cursor_moves = []
+
+    def GetClipCursor(self, _ref):
+        self.get_clip_calls += 1
+        return 1 if self.had_lock else 0
+
+    def ClipCursor(self, rect):
+        self.clip_writes.append(rect)
+        return 1
+
+    def SetCursorPos(self, x, y):
+        self.cursor_moves.append((x, y))
+        return 1
+
+    def GetCursorPos(self, _ref):
+        return 0
+
+
+def _use(monkeypatch, fake):
+    monkeypatch.setattr(input_mod, "_user32", fake)
+    return fake
+
+
+def test_never_reports_a_cleanup_it_did_not_do(monkeypatch):
+    """即使系统里有锁，也不许报「刚清掉了一个锁」—— 本版本什么都没做。"""
+    fake = _use(monkeypatch, FakeUser32(had_lock=True))
     ok, had = Mouse.release_cursor_lock()
-    assert isinstance(ok, bool)
-    assert isinstance(had, bool)
+
+    assert (ok, had) == (True, False)
+    assert fake.get_clip_calls == 1, "应该读一次系统状态"
+    assert fake.clip_writes == [], "不许调用 ClipCursor 改写裁剪区"
+    assert fake.cursor_moves == [], "不许移动光标"
 
 
-def test_cursor_is_locked_returns_a_bool():
-    assert isinstance(Mouse.cursor_is_locked(), bool)
+def test_no_lock_still_reports_nothing_done(monkeypatch):
+    fake = _use(monkeypatch, FakeUser32(had_lock=False))
+    ok, had = Mouse.release_cursor_lock()
+
+    assert (ok, had) == (True, False)
+    assert fake.clip_writes == []
+    assert fake.cursor_moves == []
 
 
-def test_lock_detection_survives_an_already_unlocked_cursor(monkeypatch):
-    """已经解锁时检测不能报「锁着」。
-
-    误报的后果：引擎启动时无端给用户弹一条「点击可能无效」的错误。
-
-    这里用可控的假光标而不是真实桌面：真机上有游戏在跑时，它会不断把
-    ClipCursor 重新设上，用真实光标测这条会时好时坏。
-    """
-    import ctypes
-    import ctypes.wintypes as wt
-
-    state = {"x": 500, "y": 500}
-
-    def fake_set(x, y):
-        state["x"], state["y"] = x, y
-        return True
-
-    def fake_get(ref):
-        ref._obj.x, ref._obj.y = state["x"], state["y"]
-        return True
-
-    monkeypatch.setattr(ctypes.windll.user32, "SetCursorPos", fake_set)
-    monkeypatch.setattr(ctypes.windll.user32, "GetCursorPos", fake_get)
-
-    assert Mouse.cursor_is_locked() is False, "光标能动就不该报「锁着」"
-
-
-def test_lock_detection_actually_probes_by_moving():
-    """检测必须靠「设一个位置、看它有没有动」，不能只看 GetClipCursor。
-
-    实测游戏会把裁剪区设成**整个屏幕**，GetClipCursor 看起来完全正常，
-    光标却纹丝不动。所以只看返回值的实现会漏判 —— 这条用例用猴子补丁
-    模拟「GetClipCursor 正常但 SetCursorPos 无效」，要求检测仍然报 True。
-    """
-    import ctypes
-    import ctypes.wintypes as wt
-
-    real_set = ctypes.windll.user32.SetCursorPos
-    real_get = ctypes.windll.user32.GetCursorPos
-
-    frozen = wt.POINT()
-    real_get(ctypes.byref(frozen))
-
-    def fake_set(x, y):
-        return True              # 假装成功，但不真的动
-
-    def fake_get(ref):
-        # 永远返回那个冻结位置 —— 模拟被锁住的光标
-        ref._obj.x = frozen.x
-        ref._obj.y = frozen.y
-        return True
-
-    ctypes.windll.user32.SetCursorPos = fake_set
-    ctypes.windll.user32.GetCursorPos = fake_get
-    try:
-        assert Mouse.cursor_is_locked() is True, (
-            "GetCursorPos 永远返回同一位置时，应当判为「锁着」"
-        )
-    finally:
-        ctypes.windll.user32.SetCursorPos = real_set
-        ctypes.windll.user32.GetCursorPos = real_get
-
-
-def test_lock_detection_puts_the_cursor_back():
-    """探测完必须把光标放回原位，不能把用户的鼠标留在别处。"""
+def test_detected_clip_is_recorded_in_the_ledger(monkeypatch):
+    """检测到裁剪区只记账（info），不改写系统状态。"""
+    _use(monkeypatch, FakeUser32(had_lock=True))
+    before = len(input_mod.channel_events())
     Mouse.release_cursor_lock()
-    before = Mouse.cursor()
-    Mouse.cursor_is_locked()
-    after = Mouse.cursor()
-    assert after == before, f"光标没归位：{before} -> {after}"
+
+    events = input_mod.channel_events()[before:]
+    hits = [e for e in events if e.get("stage") == "cursor_lock"]
+    assert len(hits) == 1, "检测到裁剪区必须落一条账"
+    assert hits[0]["severity"] == "info"
+    assert hits[0]["ok"] is True
+
+
+def test_no_ledger_entry_when_there_is_no_clip(monkeypatch):
+    _use(monkeypatch, FakeUser32(had_lock=False))
+    before = len(input_mod.channel_events())
+    Mouse.release_cursor_lock()
+
+    events = input_mod.channel_events()[before:]
+    assert [e for e in events if e.get("stage") == "cursor_lock"] == []
+
+
+def test_returns_real_bools_not_the_raw_api_wints(monkeypatch):
+    _use(monkeypatch, FakeUser32(had_lock=True))
+    ok, had = Mouse.release_cursor_lock()
+    assert isinstance(ok, bool) and isinstance(had, bool)
+
+
+def test_no_cursor_is_locked_api():
+    """`cursor_is_locked` 必须不存在 —— 它的实现会真实移动用户光标。"""
+    assert not hasattr(Mouse, "cursor_is_locked")
+
+
+def test_calls_into_ctypes_are_the_ones_we_think(monkeypatch):
+    """确认 `_user32` 被真的用上了（不是绕过它直接摸 ctypes.windll）。"""
+    fake = _use(monkeypatch, FakeUser32(had_lock=False))
+    seen = []
+    orig = fake.GetClipCursor
+
+    def spy(ref):
+        seen.append(ref)
+        return orig(ref)
+
+    fake.GetClipCursor = spy
+    Mouse.release_cursor_lock()
+    assert len(seen) == 1
+    assert type(seen[0]).__name__ == "CArgObject", "传进去的应该是 RECT 的指针"
+    assert isinstance(seen[0]._obj, ctypes.wintypes.RECT), "指针应该指向 RECT，不是别的结构"

@@ -187,6 +187,9 @@ def tmp_records(tmp_path):
     from core import records
     old = records.PATH
     records.PATH = str(tmp_path / "records.jsonl")
+    # 这个 fixture 自己起了 httpd，绕过了 serve()；生产里预热是启动的一部分
+    # （`serve()` 在接请求之前同步 warm），这里补上同样的前置条件。
+    records.warm(50)
     try:
         yield records
     finally:
@@ -316,12 +319,34 @@ def test_task_can_be_disabled_and_reenabled(server):
     _post(server, "/api/tasks/remove", {"id": tid})
 
 
-# ---------------------------------------------------------------- 任务清单
+# ---------------------------------------------------------------- 场景守卫
 
-def _post(base, path, payload, timeout=10):
-    import urllib.request
-    req = urllib.request.Request(
-        base + path, data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.status, json.loads(r.read().decode("utf-8"))
+def test_guard_endpoint_exposes_state_and_doing(server):
+    """前端要靠这个端点画「现在在做什么 / 唯一主按钮」，不能是空壳。"""
+    code, body = _get(server, "/api/guard")
+    assert code == 200
+    data = json.loads(body)
+    assert data["ok"] is True
+    g = data["guard"]
+    assert g["state"] in ("ok", "recovering", "waiting_human", "halted")
+    assert g["level"] in (0, 1, 2, 3, 4, 5)
+    assert g["doing"]
+    assert "message" in g and "button" in g
+    assert g["button"] is None or set(g["button"]) == {"id", "label"}
+
+
+def test_guard_resume_endpoint_clears_pause(server):
+    code, data = _post(server, "/api/guard/resume", {})
+    assert code == 200 and data["ok"] is True
+    assert data["guard"]["state"] == "ok"
+
+
+def test_keepalive_connections_have_a_read_timeout():
+    """浏览器切后台/崩溃后 keep-alive 连接不会永久占线程和句柄。
+
+    HTTP/1.1 + 无超时 = 每条半开连接常驻 1 线程 + 7 句柄（R02-L02）；
+    实测 20 条常驻 45s 不退。基类在 setup() 里用 Handler.timeout 设置
+    socket 超时，所以这里锁住「必须有值且不能太长」。
+    """
+    assert 0 < Handler.timeout <= 60
+

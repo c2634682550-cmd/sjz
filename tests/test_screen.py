@@ -9,6 +9,8 @@ md5 相同；引擎把画面里的「跳过」当成成交弹窗，凭空记了�
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import screen as scr  # noqa: E402
@@ -49,6 +51,32 @@ def test_single_display_falls_back_cleanly(monkeypatch):
     monkeypatch.setattr(scr.mss, "mss", lambda: FakeMss(only))
     s = scr.Screen(1)
     assert s.size == (1280, 720)
+
+
+def test_failed_construction_releases_mss(monkeypatch):
+    """显示器号非法导致构造失败时，mss 已经占的 DC/Bitmap 必须关掉。
+
+    每次失败漏 2 个 GDI 对象，用户反复点「定位」几小时就能把进程 GDI
+    配额吃满（R02-L01）。
+    """
+    holder = {}
+
+    class Closing(FakeMss):
+        def __init__(self, monitors):
+            super().__init__(monitors)
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    def make():
+        holder["m"] = Closing(_monitors())
+        return holder["m"]
+
+    monkeypatch.setattr(scr.mss, "mss", make)
+    with pytest.raises(ValueError):
+        scr.Screen(99)
+    assert holder["m"].closed, "构造失败后 mss 没关，GDI 对象泄漏"
 
 
 # ---------------------------------------------------------------- 等画面换过来

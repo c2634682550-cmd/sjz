@@ -43,7 +43,7 @@ class FakeMouse:
     def ensure_foreground(self, hwnd, tries=3, gap=0.25, screen=None):
         return True
 
-    def click(self, x, y, expect_foreground=None):
+    def click(self, x, y, expect_foreground=None, **kw):
         self.clicks.append((x, y))
 
 
@@ -154,6 +154,10 @@ def test_close_reward_clicks_skip_then_continue(monkeypatch):
                                       "w": 18, "h": 16}
                                      for i, t in enumerate(next(screens))])
     monkeypatch.setattr(engine_mod.time, "sleep", lambda s: None)
+    # PERF:flow 之后「回没回列表」认的是卡片线（≥2 张），不再整屏认
+    # 「只显示公示期」。桩证要给出的正是这个信号。
+    monkeypatch.setattr(engine_mod.cards, "locate_cards",
+                        lambda img: [(0, 0, 10, 10), (20, 0, 30, 10)])
 
     e._close_reward(FakeScreen(), mouse)
 

@@ -37,7 +37,7 @@ class _Mouse:
         self.foreground_calls += 1
         return True
 
-    def click(self, x, y, expect_foreground=None):
+    def click(self, x, y, expect_foreground=None, **kw):
         self.clicks.append((int(x), int(y)))
 
 
@@ -85,8 +85,6 @@ def test_start_clears_one_shot_flags(monkeypatch):
     monkeypatch.setattr(engine_mod.Mouse, "foreground", staticmethod(lambda: None))
     monkeypatch.setattr(engine_mod.Mouse, "release_cursor_lock",
                         staticmethod(lambda: (True, False)))
-    monkeypatch.setattr(engine_mod.Mouse, "cursor_is_locked",
-                        staticmethod(lambda: False))
     monkeypatch.setattr(Engine, "_run", lambda self, *a: None)
     e = Engine()
     e._price_filter_tried = True
@@ -144,7 +142,7 @@ def test_buy_without_dialog_clicks_price_button(monkeypatch):
 
 
 def test_ons_ready_switches_filter_and_refreshes(monkeypatch):
-    """_ons_ready 会真的切「不显示公示期」并刷新列表。"""
+    """_ons_ready 会真的切「只显示公示期」并刷新列表。"""
     built = []
 
     class _Nav:
@@ -158,9 +156,11 @@ def test_ons_ready_switches_filter_and_refreshes(monkeypatch):
             built.append(("ons_refresh",))
 
     monkeypatch.setattr(engine_mod, "Navigator", lambda *a, **k: _Nav())
+    monkeypatch.setattr(engine_mod.market, "scan", lambda frame, **k: [{}])
     e = Engine()
     mouse = _Mouse()
     e._ons_ready(_Cfg(**_LIST_CFG), _Screen(), mouse)
+    assert ("pub_filter", "只显示公示期") in built
     assert ("ons_refresh",) in built
 
 
@@ -207,7 +207,7 @@ def test_countdown_marks_position_after_missing_serial(monkeypatch):
 
     monkeypatch.setattr(Engine, "_countdown_prepare", _prepare)
 
-    def _gone(self, cfg, screen, already_unlocked=False):
+    def _gone(self, cfg, screen, already_unlocked=False, **kw):
         raise Aborted("这件没了")
 
     monkeypatch.setattr(Engine, "_watch_countdown", _gone)
@@ -325,11 +325,60 @@ def test_ons_ready_reuses_prepared_nav(monkeypatch):
         raise AssertionError("不该再建 Navigator（导航跑了两遍）")
 
     monkeypatch.setattr(engine_mod, "Navigator", _boom)
+    monkeypatch.setattr(engine_mod.market, "scan", lambda frame, **k: [{}])
     e = Engine()
     mouse = _Mouse()
     e._ons_ready(_Cfg(**_LIST_CFG), _Screen(), mouse, _Nav())
-    assert calls == [("pub_filter", "不显示公示期"), ("ons_refresh",)]
+    assert calls == [("pub_filter", "只显示公示期"), ("ons_refresh",)]
     assert mouse.foreground_calls == 0
+
+
+# ---------------- 公示期严格模式：筛后 0 条不蒙混 ----------------
+
+def test_ons_public_gate_aborts_when_nothing_after_filter(monkeypatch):
+    """严格模式下筛后 0 条必须置 no_public_stock 并中止，日志带筛前/筛后条数。"""
+    monkeypatch.setattr(engine_mod.market, "scan", lambda frame, **k: [])
+    said = []
+    e = Engine()
+    e._say = lambda msg, level="info": said.append((level, msg))
+    e._set = lambda **kw: e.__dict__.update(
+        {"_state_code": kw.get("state_code", e.__dict__.get("_state_code"))})
+    nav = _RecordingNav()
+    with pytest.raises(Aborted) as ei:
+        e._ons_public_gate(_Cfg(regions={"list": _BOX(0.1, 0.1, 0.5, 0.5)},
+                                active_task={"name": "MK4冲锋枪-疾光魅影"}),
+                           _Screen(), nav, 6)
+    assert e.__dict__.get("_state_code") == "no_public_stock"
+    assert any("公示期无货：MK4冲锋枪-疾光魅影" in m for _, m in said), said
+    assert any("筛前 6 条" in m and "筛后 0 条" in m for _, m in said), said
+    assert "不自动退回" in str(ei.value)
+    # 严格模式不许自己切回「不限公示期」
+    assert ("pub_filter", "不限公示期") not in nav.calls
+
+
+def test_ons_public_gate_falls_back_only_when_switch_is_on(monkeypatch):
+    """filters.public_fallback=true 才退回「不限公示期」。"""
+    monkeypatch.setattr(engine_mod.market, "scan", lambda frame, **k: [])
+    e = Engine()
+    e._say = lambda msg, level="info": None
+    e._set = lambda **kw: None
+    nav = _RecordingNav()
+    e._ons_public_gate(_Cfg(regions={"list": _BOX(0.1, 0.1, 0.5, 0.5)},
+                            filters={"public_period": "only",
+                                     "public_fallback": True}),
+                       _Screen(), nav, 6)
+    assert ("pub_filter", "不限公示期") in nav.calls
+
+
+class _RecordingNav:
+    def __init__(self):
+        self.calls = []
+
+    def pub_filter(self, value):
+        self.calls.append(("pub_filter", value))
+
+    def ons_refresh(self):
+        self.calls.append(("ons_refresh",))
 
 
 # ---------------- 记录里的 mode / verified ----------------

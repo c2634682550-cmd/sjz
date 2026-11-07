@@ -9,7 +9,7 @@
 """
 import pytest
 
-from core import bricks
+from core import bricks, skinfilter
 
 # (目录原文, 游戏显示的赛季)
 CATALOG = [
@@ -58,3 +58,54 @@ def test_catalog_is_sorted_newest_first():
     """
     order = [int(s[1:]) for _, s in CATALOG]
     assert order == sorted(order, reverse=True)
+
+
+# ---------------------------------------------------------------- 枪种列
+#
+# 筛选面板上只有 7 个枪种框，而官方数据有 8 种枪（「突击步枪」「战斗步枪」
+# 都并进「步枪」）。砖块表里的 `gun` 是**面板框**、`gun_fine` 是**官方枪种**；
+# 记错哪个，找皮肤时就会去点一个不存在的框，或者错点成别的枪。
+
+def test_gun_column_is_exactly_the_seven_panel_slots():
+    rows = bricks.catalog()
+    assert rows, "品阶目录是空的"
+    guns = {r["gun"] for r in rows}
+    assert guns == set(skinfilter.GUN_SLOTS.values()), (
+        f"gun 列不是面板上的 7 个框：多出 {guns - set(skinfilter.GUN_SLOTS.values())}，"
+        f"缺 {set(skinfilter.GUN_SLOTS.values()) - guns}"
+    )
+    assert len(guns) == 7
+
+
+def test_fine_gun_column_covers_all_eight_official_types():
+    rows = bricks.catalog()
+    fines = {r["gun_fine"] for r in rows}
+    assert fines == set(skinfilter.GUN_SLOTS), (
+        f"gun_fine 列与官方 8 种枪种不一致：多出 {fines - set(skinfilter.GUN_SLOTS)}，"
+        f"缺 {set(skinfilter.GUN_SLOTS) - fines}"
+    )
+    empty = [r["name"] for r in rows if not r["gun_fine"]]
+    assert not empty, f"这些行没有 gun_fine：{empty[:5]}"
+
+
+# 已知的数据 bug（见 _test_fixes.md 待修清单②）：这 4 条 SVD 的 `gun` 写成
+# 精准射手步枪，而官方枪种 / skins_raw.csv 都是狙击步枪。修好后本测试会
+# 反过来失败（missing 非空），提醒同步更新清单而不是悄悄放宽。
+KNOWN_SVD_ROWS = {
+    "SVD狙击步枪·猛兽",
+    "SVD狙击步枪·檀劫铳影",
+    "SVD狙击步枪·酸蚀",
+    "SVD狙击步枪·叠锋",
+}
+
+
+def test_gun_column_matches_the_fine_gun_except_the_known_svd_rows():
+    bad = [(r["name"], r["gun"], r["gun_fine"]) for r in bricks.catalog()
+           if skinfilter.GUN_SLOTS.get(r["gun_fine"]) != r["gun"]]
+    extra = [b for b in bad if b[0] not in KNOWN_SVD_ROWS]
+    assert not extra, f"gun 与 gun_fine 的映射对不上：{extra[:5]}"
+    missing = KNOWN_SVD_ROWS - {b[0] for b in bad}
+    assert not missing, (
+        f"已知 SVD 数据问题看起来被修好了：{missing}。"
+        "请同步更新 _test_fixes.md 的待修清单并删掉这几条例外"
+    )

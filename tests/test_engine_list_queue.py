@@ -137,7 +137,7 @@ class FakeMouse:
         return True
 
 
-def _run(monkeypatch, rows, fire_results):
+def _run(monkeypatch, rows, fire_results, clock_words=None):
     """跑一次 _execute_list。fire_results 是 _fire_and_confirm 的返回值序列。"""
     e = Engine()
     e._stop = threading.Event()
@@ -154,13 +154,20 @@ def _run(monkeypatch, rows, fire_results):
     monkeypatch.setattr(e, "_load", staticmethod(lambda cfg, name: np.zeros((4, 4))))
     clicks = []
     monkeypatch.setattr(e, "_click", lambda m, x, y: clicks.append((x, y)))
+    if clock_words is not None:
+        monkeypatch.setattr(
+            e, "_ocr_clock",
+            staticmethod(lambda screen, px: [dict(w) for w in clock_words]))
 
     seq = list(fire_results)
+    fired = []
 
     def fire(*a, **k):
+        fired.append(k.get("item"))
         return seq.pop(0) if seq else False
 
     monkeypatch.setattr(e, "_fire_and_confirm", fire)
+    e._fire_calls = fired
     return e, clicks
 
 
@@ -204,10 +211,38 @@ def test_refreshes_and_restarts_when_the_page_is_exhausted(monkeypatch):
 
 
 def test_list_mode_excludes_publicity_period(monkeypatch):
-    """起手就把筛选切到「不显示公示期」——公示期到点也抢不到。"""
+    """起手把筛选切到「只显示公示期」——严格模式，筛后 0 条算无货。"""
     e, _ = _run(monkeypatch, [LEFT], [True])
     e._execute_list(FakeCfg(), FakeScreen(), FakeMouse(), None)
-    assert ("pub_filter", "不显示公示期") in FakeNav.made[0].calls
+    assert ("pub_filter", "只显示公示期") in FakeNav.made[0].calls
+
+
+class _FakeTime:
+    """给 engine 的循环一个可控时钟：每次读时间前进固定步长。
+
+    这样「扫描 0.12 秒 / 每 0.01 秒刷新」就是确定性的，不靠真机墙钟，
+    也不会因为机器忙而只刷新了 0 次。
+    """
+
+    def __init__(self, start=1_000.0, step=0.004):
+        self.now = start
+        self.step = step
+
+    def perf_counter(self):
+        self.now += self.step
+        return self.now
+
+    def monotonic(self):
+        return self.perf_counter()
+
+    def time(self):
+        return self.now
+
+    def time_ns(self):
+        return int(self.now * 1_000_000_000)
+
+    def sleep(self, seconds):
+        self.now += max(float(seconds), 0.0)
 
 
 def test_idle_refresh_when_nothing_matches_for_a_while(monkeypatch):
@@ -216,6 +251,7 @@ def test_idle_refresh_when_nothing_matches_for_a_while(monkeypatch):
     光等是等不到的：不刷新就永远看着同一批卖不动的货。
     """
     monkeypatch.setattr(eng_mod, "QUEUE_IDLE_REFRESH_S", 0.01)
+    monkeypatch.setattr(eng_mod, "time", _FakeTime())
     e, clicks = _run(monkeypatch, [_row(40.0, 10.0, price=99999.0)], [])
     e._execute_list(FakeCfg(list_scan_timeout=0.12), FakeScreen(),
                     FakeMouse(), None)
@@ -235,19 +271,22 @@ def test_no_refresh_loop_when_nothing_matches(monkeypatch):
 
 
 def test_list_mode_sets_the_price_range_before_scanning(monkeypatch):
-    """列表模式起手要：切「不显示公示期」→ 开面板设价格 → 确定 → 刷新。
+    """列表模式起手要：开面板设价格 → 确定 → 切「只显示公示期」→ 刷新。
 
     价格不设就扫列表，等于在全档位里按行筛 —— 用户要的是游戏里先筛好，
-    列表里只剩 1000~3000 的货。
+    列表里只剩 1000~3000 的货。公示期严格模式排在价格之后，筛前条数
+    取的是价格筛选后的列表。
     """
     FakeNav.price_returns = None
     e, clicks = _run(monkeypatch, [LEFT], [True])
     e._execute_list(FakeCfg(), FakeScreen(), FakeMouse(), None)
     calls = FakeNav.made[0].calls
-    assert calls[0] == ("pub_filter", "不显示公示期"), calls
+    assert calls[0] == ("filter",), calls
     assert ("price", 1000, 3000) in calls, calls
     assert calls.index(("filter",)) < calls.index(("price", 1000, 3000)) \
         < calls.index(("confirm",)), f"顺序必须是 开面板→设价格→确定：{calls}"
+    assert calls.index(("confirm",)) < calls.index(
+        ("pub_filter", "只显示公示期")), f"公示期筛选要在价格之后：{calls}"
     assert ("refresh",) in calls, "设完筛选要刷新"
 
 
@@ -350,4 +389,51 @@ def test_budget_counts_what_was_already_spent(monkeypatch):
     e._execute_list(cfg, FakeScreen(), FakeMouse(), None)
 
     assert len(clicks) == 1, f"预算不够时不许点第二件，实际点了 {clicks}"
+
+
+# ---------------- 列表直达路径也要「来不及跳过」 ----------------
+# 用户/自愈流程直接落到列表页时不走 _countdown_prepare，判定必须同样生效，
+# 否则同一件在两个入口上一个跳一个不跳，真机上表现为「有时候跳有时候不跳」。
+
+CLOCK_WORDS_LATE = [{"text": "0分", "x": 0}, {"text": "1秒", "x": 1},
+                    {"text": "后解锁购买", "x": 2}]
+CLOCK_WORDS_ENOUGH = [{"text": "0分", "x": 0}, {"text": "5秒", "x": 1},
+                      {"text": "后解锁购买", "x": 2}]
+
+
+def _cfg_with_clock(**kw):
+    """带倒计时区域、阈值 4 秒的配置（列表直达路线只有配了钟才判）。"""
+    base = FakeCfg()
+    regions = dict(base["regions"])
+    regions["clock"] = {"x": 0.2, "y": 0.1, "w": 0.5, "h": 0.08}
+    return FakeCfg(regions=regions, buy={"skip_late": {"threshold_s": 4}}, **kw)
+
+
+def test_list_path_skips_late_item_without_booking_a_try(monkeypatch):
+    """列表直达 + 首读只剩 1 秒（反推 2 秒 < 阈值 4）→ 跳过且不入账。"""
+    cfg = _cfg_with_clock(list_scan_timeout=0.2)
+    e, clicks = _run(monkeypatch, [LEFT], [True], clock_words=CLOCK_WORDS_LATE)
+    e._execute_list(cfg, FakeScreen(), FakeMouse(), None)
+
+    assert len(clicks) == 1, "详情点开一次就该判完，不许反复点"
+    assert not e._fire_calls, f"来不及就不许进场：{e._fire_calls}"
+    skips = e._stats.get("late_skips") or []
+    assert len(skips) == 1, f"要留一条跳过记录：{e._stats}"
+    assert skips[0]["source"] == "inferred"
+    assert skips[0]["remaining_s"] < 4
+    assert e._fails_in_row == 0, "跳过不是失败，不许计入连败"
+    assert any("来不及" in msg and "跳过不进场" in msg
+               for _lvl, msg in e._said), e._said
+
+
+def test_list_path_still_buys_when_remaining_is_enough(monkeypatch):
+    """列表直达 + 首读还剩 5 秒（反推 6 秒 ≥ 阈值 4）→ 正常进场成交。"""
+    cfg = _cfg_with_clock()
+    e, clicks = _run(monkeypatch, [LEFT], [True], clock_words=CLOCK_WORDS_ENOUGH)
+    e._execute_list(cfg, FakeScreen(), FakeMouse(), None)
+
+    assert e._state == DONE
+    assert len(clicks) == 1
+    assert len(e._fire_calls) == 1, "剩余充足必须正常进场"
+    assert not (e._stats.get("late_skips") or []), "够时间就不该记跳过"
 

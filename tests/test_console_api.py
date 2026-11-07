@@ -168,16 +168,28 @@ def test_removing_an_unknown_task_is_not_an_error(server, cfg_file):
     assert data["removed"] == 0
 
 
-def test_a_task_without_the_list_region_is_refused(server, tmp_path, monkeypatch):
-    """列表模式要知道盯哪块屏幕，没框选就不能加任务 —— 否则白跑一轮。"""
+def test_a_list_task_falls_back_to_the_builtin_list_region(server, tmp_path,
+                                                          monkeypatch):
+    """空 regions 的老配置按产品口径补成内置坐标，列表任务照样能加。
+
+    为什么不是 400：config 的 regions 归一化对空表一律回落
+    `core/region_table.BUILTIN`（买家不用自己拖框，见
+    `tests/test_regions_api.py::test_old_config_without_regions_uses_defaults`）。
+    也就是说「没有列表区域」这个状态在 API 层根本构造不出来。能守的是：
+    加进来的列表任务必须真的带着可用的列表区域，否则才是白跑一轮。
+    """
+    from core.region_table import BUILTIN
+
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"regions": {}, "queue": []}), encoding="utf-8")
     monkeypatch.setattr(cfgmod, "CONFIG_PATH", str(path))
 
     code, data = _post(server, "/api/tasks/add", {"name": "", "mode": "list",
                                                   "max_price": 100})
-    assert code == 400, data
-    assert not data.get("ok") and data.get("msg")
+    assert code == 200 and data.get("ok"), data
+    regions = data["task"]["regions"]
+    assert regions["list"] == BUILTIN["list"]
+    assert regions["buy"] == BUILTIN["buy"]
 
 
 # ---------------------------------------------------------------- 启动前检查
@@ -194,7 +206,10 @@ def test_preflight_reports_every_item_with_a_fix(server, cfg_file):
     # 没校过时时钟这一项必须没过 —— 拿没校准的钟去掐点是抢不准的
     clock = next(c for c in data["checks"] if c["id"] == "clock")
     assert not clock["ok"]
-    assert clock["fix"]["tab"] == "run", "要能一键跳到校时那一页"
+    # 2026-11-07 起时间校准改成「启动自动校、运行中自动重校」，没有可
+    # 跳转的手动校准页；没过只给提示 + warn，不再携带 fix.tab。
+    assert clock["fix"] is None, "自动校时没有可跳转的手动页"
+    assert clock.get("warn") is True
 
 
 # ---------------------------------------------------------------- 设置页
@@ -260,6 +275,9 @@ def test_records_endpoint_returns_rows_and_stats(server, cfg_file, tmp_path, mon
     monkeypatch.setattr(rec, "PATH", str(tmp_path / "records.jsonl"))
     rec.add(name="AKM-群星", price=2050, result="hit", elapsed=1.2)
     rec.add(name="M4A1-电玩高手", price=None, result="miss", elapsed=0.8)
+    # 生产里 serve() 在接请求之前就同步预热过；这个 fixture 直接起了 httpd，
+    # 补上同样的前置条件（否则首请求拿到的是 warming 占位统计）。
+    rec.warm(50)
 
     code, data = _get(server, "/api/records")
     assert code == 200
@@ -344,3 +362,49 @@ def test_updating_a_task_can_change_the_sort(server, cfg_file):
     code, data = _post(server, "/api/tasks/update", {"id": tid, "sort": "wear"})
     assert code == 200 and data.get("ok"), data
     assert data["task"]["sort"] == "wear"
+
+
+def test_update_keeps_the_wear_limit_the_caller_sent(server, cfg_file):
+    """显式传的 max_wear 要原样生效；没传则保持原值。
+
+    check_conditions 会给缺省键补默认值，max_wear 的默认是 0.0（= 不限制
+    磨损）。以前 update 的校验集合漏了 max_wear、回写判据又是 `k in fields`：
+    显式传 0.4 时 clean 里的默认 0.0 照样被写回 —— 界面显示设了上限，
+    引擎实际不限磨损。
+    """
+    _, first = _post(server, "/api/tasks/add", {
+        "name": "", "mode": "list", "max_price": 100, "max_wear": 0.4})
+    assert first.get("ok"), first
+    tid = first["task"]["id"]
+
+    code, data = _post(server, "/api/tasks/update", {"id": tid, "max_wear": 0.25})
+    assert code == 200 and data.get("ok"), data
+    assert data["task"]["max_wear"] == 0.25, "显式传的磨损上限被默认 0 覆盖了"
+
+    # 只改排序（没传 max_wear）：保持原值，不能被默认 0 冲掉
+    code, data = _post(server, "/api/tasks/update", {"id": tid, "sort": "wear"})
+    assert code == 200 and data.get("ok"), data
+    assert data["task"]["max_wear"] == 0.25, "没传 max_wear 却被改成了 0"
+
+
+def test_empty_console_payload_keeps_existing_values(server, cfg_file):
+    """`console={}` 不该把已存的条件清掉，也不该把类型变成别的东西。
+
+    走的是「读出当前节 → 只覆盖 payload 里有的键」这条合并路径：
+    payload 空字典 = 一个键都不覆盖，盘上那份原样写回。以前担心的是
+    `console` 为 None 被写成 {} —— Config._normalize 已把非 dict 的
+    console（null / 缺键 / 手改坏）回落到 DEFAULTS 的 dict，读到的
+    永远是 dict，这条路径压根不可能把 None 落盘（见 test_config.py）。
+    """
+    code, data = _post(server, "/api/config", {"console": {
+        "min_price": 100, "max_price": 3000, "quota": 2}})
+    assert code == 200 and data.get("ok"), data
+
+    code, data = _post(server, "/api/config", {"console": {}})
+    assert code == 200 and data.get("ok"), data
+    c = data["config"]["console"]
+    assert c["min_price"] == 100 and c["max_price"] == 3000 and c["quota"] == 2
+
+    disk = json.loads(cfg_file.read_text(encoding="utf-8"))
+    assert isinstance(disk["console"], dict), "console 被写成了非 dict"
+    assert disk["console"]["min_price"] == 100

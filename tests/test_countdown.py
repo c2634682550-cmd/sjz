@@ -8,6 +8,7 @@
   3. 引擎在归零那一刻真的会返回（不是等到下一跳，也不是永不返回）
 """
 import math
+import random
 import threading
 import time
 
@@ -511,3 +512,441 @@ def test_watch_countdown_fires_through_the_unlock_flip(monkeypatch):
     late = time.perf_counter() - zero
     assert flipped["n"] > 0, "循环根本没跨过解锁那一刻，测试是空转的"
     assert 0.0 <= late <= 0.5, f"距归零 {late * 1000:+.0f}ms"
+
+
+# ---------------------------------------------------------------- T0 反推
+#
+# 契约（2026-11 独立审查后重写，与实现解耦，逐条对应审查里的 P0）：
+#   1. 不可信时 `zero_at / remaining` 必须是 None、`due` 必须 False；
+#      原始粗估只能从 `zero_at_raw` 拿到，调用方拿不到会被误用的数
+#   2. 显示值冻结 0.90~1.60s（含「一开始就冻结」和「跑一截再冻结」）
+#      一律不可信，`due()` 自己挡住，不依赖调用方先调 `gate()`
+#   3. inf / NaN / 离谱大数 / 非法时间戳：忽略或明确拒绝，绝不许抛
+#   4. 只喂跳变沿（没有「跳变前一帧」）锁不死 T0；喂成对数据可以压到毫秒级
+#   5. 时钟前跳 / 后跳 / 缓冲乱序：要么重置，要么明确不可信
+
+def _series(t0, start_s, n, dt=(0.004, 0.012), seed=0, err_rate=0.0,
+            drop_rate=0.0):
+    """造观测序列：读数 = floor(t0 - t)，可带 OCR 错读和丢帧。
+
+    t 轴放到 1000 秒量级，和真机 perf_counter 同数量级 —— 用 0 起会掩盖
+    大数相减的浮点精度问题。
+    """
+    rng = random.Random(seed)
+    t = t0 - start_s
+    obs = []
+    for _ in range(n):
+        t += rng.uniform(*dt)
+        true = int(math.floor(t0 - t))
+        if true < 0:
+            break
+        if rng.random() < drop_rate:
+            continue
+        bad = rng.random() < err_rate
+        s = true
+        if bad:
+            # 单字 OCR 抖动：±1 为主，偶尔 ±2
+            s = max(0, true + rng.choice([-1, -1, -1, -1, 1, 1, 1, 1, -2, 2]))
+        obs.append((t, s, bad))
+    return obs
+
+
+def _feed(obs, **kw):
+    est = countdown.T0Estimator(**kw)
+    for t, s, _bad in obs:
+        est.observe(s, t)
+    return est
+
+
+def _pairs(t0, ticks, seed=0, err_rate=0.075, dt=0.008, start_left=None):
+    """只喂「跳变前一帧 `(t, S+1)`」+「跳变后第一帧 `(t, S)`」的成对数据。
+
+    这是审查里指出的另一种喂法：不是只喂跳变沿，而是把跳变前后的两帧
+    都交出来。每个跳变 2 条读数，6 个跳变 12 条。
+
+    取对按**真值跳变**触发（物理上就是那一次跳秒），前一帧的读数用干净值
+    `S+1`（契约就是这样喂）；跳变后那一帧允许 ±1 错读 —— 错读会把这对的
+    `sa-sb==1` 破坏，由实现自己筛掉，这里不替它擦屁股。
+    """
+    rng = random.Random(seed)
+    if start_left is None:
+        start_left = ticks + 2.0
+    t = t0 - start_left
+    obs = []
+    prev_true = int(math.floor(t0 - t))
+    prev_frame = None
+    real = 0
+    while real < ticks and t0 - t < 60:
+        t += max(rng.uniform(0.55 * dt, 1.45 * dt), 0.0015)
+        s = int(math.floor(t0 - t))
+        if s < 0:
+            break
+        bad = rng.random() < err_rate
+        so = max(0, s + rng.choice([-1, -1, -1, -1, 1, 1, 1, 1, -2, 2]))
+        if not bad:
+            so = s
+        if s != prev_true:                 # 真跳变：交出一对
+            real += 1
+            prev_true = s
+            if prev_frame is not None:
+                obs.append(prev_frame)
+            obs.append((t, so))
+        prev_frame = (t, s)
+    return obs
+
+
+def _feed_pairs(t0, ticks, seed, err_rate=0.075):
+    est = countdown.T0Estimator()
+    for t, s in _pairs(t0, ticks, seed, err_rate):
+        est.observe(s, t)
+    return est
+
+
+def test_estimator_first_reading_is_raw_only():
+    """第一个读数就有粗估，但只能从 `zero_at_raw` 拿；对外的 `zero_at` 是 None。"""
+    t0 = 1050.0
+    est = countdown.T0Estimator()
+    est.observe(6, t0 - 6.2)
+    e = est.estimate(want_qpc=False)
+    assert e.n == 1 and e.n_inliers == 1
+    assert abs(e.zero_at_raw - t0) <= 0.51
+    assert e.zero_at is None
+    assert not e.trust
+    assert "有效读数" in e.reason
+
+
+def test_estimator_two_readings_still_untrusted():
+    """最坏采样条件：只读到 1~2 个读数。误差仍有几百毫秒，必须报不可信。"""
+    t0 = 1050.0
+    est = countdown.T0Estimator()
+    obs = _series(t0, 6.0, 2, seed=3)
+    for t, s, _bad in obs:
+        est.observe(s, t)
+    e = est.estimate(want_qpc=False)
+    assert e.n == 2
+    assert abs(e.zero_at_raw - t0) <= 0.51
+    assert e.zero_at is None
+    assert not e.trust
+
+
+def test_untrusted_never_exposes_a_usable_number():
+    """P0-2：不可信时 zero_at / remaining / due / info 都不能给出像样的数。"""
+    est = countdown.T0Estimator()
+    est.observe(6, 1000.0)
+    e = est.estimate(want_qpc=False)
+    assert not e.trust
+    assert e.zero_at is None
+    assert est.zero_at() is None
+    assert est.remaining(1000.2) is None
+    assert est.due(1e9) is False
+    assert est.trusted() is False
+    assert est.info()["zero_at"] is None
+
+
+@pytest.mark.parametrize("mode,dur", [
+    ("start", 0.90), ("start", 0.96), ("start", 0.99), ("start", 1.05),
+    ("start", 1.20), ("start", 1.50), ("start", 1.60),
+    ("after", 0.90), ("after", 0.96), ("after", 0.99), ("after", 1.05),
+    ("after", 1.20), ("after", 1.50), ("after", 1.60),
+])
+def test_frozen_display_is_never_trusted(mode, dur):
+    """P0-1：冻结 0.96~1.5s 被判成可信是审查的原始 bug。
+
+    start：缓冲里只有一段冻结读数（相当于一进来界面就不动）
+    after：先跑 1.4s 正常副（读数 3、2），再冻结 dur 秒
+    """
+    t0 = 1050.0
+    dt = 0.010
+    obs = []
+    if mode == "start":
+        for k in range(int(dur / dt)):
+            obs.append((t0 - 1.0 + k * dt, 9))
+    else:
+        t = t0 - 3.0
+        while t < t0 - 1.6 - 0.001:
+            t += dt
+            obs.append((t, int(math.floor(t0 - t))))
+        fv = int(math.floor(t0 - t))
+        for k in range(int(dur / dt)):
+            t += dt
+            obs.append((t, fv))
+    est = countdown.T0Estimator()
+    for tt, ss in obs:
+        est.observe(ss, tt)
+    e = est.estimate(want_qpc=False)
+    assert not e.trust, f"{mode}/{dur}s 冻结被判可信：{e.reason}"
+    assert e.zero_at is None
+    assert est.zero_at() is None
+    # due() 自己必须挡住 —— 不传 gate 也要 False
+    assert est.due(t0) is False
+    assert est.due(t0 - 0.2) is False
+
+
+def test_frozen_reading_still_untrusted_after_long_freeze():
+    """同一读数持续 2s 以上（界面切走）：更不许可信，也不许 due。"""
+    est = countdown.T0Estimator()
+    for k in range(200):
+        est.observe(9, 1000.0 + k * 0.01)
+    e = est.estimate(want_qpc=False)
+    assert not e.trust
+    assert e.zero_at is None
+    assert est.due(1009.0) is False
+    assert est.is_frozen(1002.5) is True
+
+
+def test_estimator_converges_on_dense_clean_readings():
+    """干净密集采样（≈2.4 秒、300 帧）：误差要进 20ms，且报可信。"""
+    t0 = 1050.0
+    obs = _series(t0, 20.0, 300, seed=7)
+    est = _feed(obs)
+    e = est.estimate(want_qpc=False)
+    assert abs(e.zero_at - t0) < 0.020, f"误差 {(e.zero_at - t0) * 1000:.1f}ms"
+    assert e.half_width < 0.020
+    assert e.trust, e.reason
+
+
+def test_estimator_survives_wrong_digits():
+    """8% 错读（±1/±2）：估计误差仍进 20ms，大部分错读被剔掉。"""
+    t0 = 1050.0
+    obs = _series(t0, 25.0, 320, seed=11, err_rate=0.08)
+    est = _feed(obs)
+    e = est.estimate(want_qpc=False)
+    assert abs(e.zero_at - t0) < 0.020, f"误差 {(e.zero_at - t0) * 1000:.1f}ms"
+    assert e.trust, e.reason
+    # 估计器只保留最近 maxlen 条，比对也要对齐到这段窗口
+    buf = obs[-est.maxlen:]
+    bad = [o for o in buf if o[2]]
+    assert len(bad) >= 15, "样本里错读太少，测不到剔除逻辑"
+    assert e.n_outliers >= len(bad) * 0.9, (e.n_outliers, len(bad))
+    flagged = sum(1 for i, o in enumerate(buf) if o[2] and not e.mask[i])
+    assert flagged >= len(bad) * 0.9, (flagged, len(bad))
+
+
+def test_estimator_tolerates_lost_frames():
+    """3Hz 低采样（丢帧 + 间隔 0.3 秒）：精度下降但仍有界、可解释。"""
+    t0 = 1050.0
+    obs = _series(t0, 12.0, 40, dt=(0.28, 0.32), seed=5)
+    est = _feed(obs)
+    e = est.estimate(tolerance_s=0.05, want_qpc=False)
+    assert abs(e.zero_at - t0) < 0.050, f"误差 {(e.zero_at - t0) * 1000:.1f}ms"
+    assert e.trust, e.reason
+
+
+def test_estimator_resets_on_target_switch():
+    """读数突然变大 20 秒以上 = 换了目标，旧观测作废。"""
+    est = countdown.T0Estimator()
+    for i in range(10):
+        est.observe(5, 1000.0 + i * 0.1)
+    est.observe(120, 1001.5)            # 新目标，剩余 120 秒
+    e = est.estimate(want_qpc=False)
+    assert e.n == 1
+    assert abs(e.zero_at_raw - (1001.5 + 120 + 0.5)) <= 0.51
+
+
+def test_estimator_small_ocr_jump_is_not_a_switch():
+    """OCR 把 5 读成 6（+1）不算换目标，只当异常值，不能被 reset 掉历史。"""
+    est = countdown.T0Estimator()
+    t0 = 1050.0
+    est.observe(5, t0 - 5.4)
+    est.observe(6, t0 - 4.9)            # 错读
+    assert est.estimate(want_qpc=False).n == 2
+
+
+def test_estimator_stale_and_empty():
+    est = countdown.T0Estimator()
+    assert est.is_stale(1e12) is False
+    assert est.estimate(want_qpc=False).zero_at is None
+    est.observe(9, 1000.0)
+    assert est.is_stale(1002.5) is False
+    assert est.is_stale(1003.0) is True
+
+
+@pytest.mark.parametrize("bad", [
+    float("inf"), float("-inf"), float("nan"), 1e300, -1, 6.7, None, True,
+])
+def test_observe_rejects_bad_reading_without_raising(bad):
+    """P0-3：inf/NaN/离谱值/非整数一律拒绝，不许抛 OverflowError。"""
+    est = countdown.T0Estimator()
+    assert est.observe(bad, 1000.0) is False
+    assert est.estimate(want_qpc=False).reason_code == "no_data"
+
+
+@pytest.mark.parametrize("bad_t", [
+    float("nan"), float("inf"), float("-inf"), 1e300, "x",
+])
+def test_observe_rejects_bad_timestamp_without_raising(bad_t):
+    est = countdown.T0Estimator()
+    assert est.observe(9, bad_t) is False
+    assert est.estimate(want_qpc=False).reason_code == "no_data"
+
+
+def test_estimate_survives_poisoned_buffer():
+    """就算有人绕过 observe 往缓冲里塞 NaN，estimate 也不许抛。"""
+    est = countdown.T0Estimator()
+    est.observe(9, 1000.0)
+    est._buf.append((float("nan"), 8))
+    est._buf.append((1001.0, float("inf")))
+    e = est.estimate(want_qpc=False)    # 不抛即通过
+    assert e.trust is False
+
+
+def test_clock_backward_jump_resets():
+    """NTP 后跳 / 手动改表：旧缓冲必须作废。"""
+    est = countdown.T0Estimator()
+    for i in range(5):
+        est.observe(9 - i, 1000.0 + i * 0.1)
+    assert est.observe(6, 998.0) is True     # 倒退 1.4s
+    e = est.estimate(want_qpc=False)
+    assert e.n == 1
+    assert e.zero_at is None
+    assert est.info()["note"] == "clock_backward"
+
+
+def test_clock_forward_gap_resets():
+    """长时间断喂（前跳 >8s）：两段轴混在一起没有意义，必须清空。"""
+    est = countdown.T0Estimator()
+    for i in range(5):
+        est.observe(9 - i, 1000.0 + i * 0.1)
+    assert est.observe(6, 1010.0) is True
+    e = est.estimate(want_qpc=False)
+    assert e.n == 1
+    assert e.zero_at is None
+    assert est.info()["note"] == "clock_gap"
+
+
+def test_out_of_order_buffer_is_untrusted():
+    """缓冲里出现明显倒退（例如两个线程打点没加锁）：明确不可信。"""
+    est = countdown.T0Estimator()
+    est._buf.append((1001.0, 5))
+    est._buf.append((999.0, 5))
+    e = est.estimate(want_qpc=False)
+    assert not e.trust
+    assert e.reason_code == "bad_time"
+
+
+def test_tick_edges_only_cannot_lock():
+    """只喂跳变沿（每个跳变 1 条读数）：数学上锁不死，必须报不可信。"""
+    t0 = 1050.0
+    est = countdown.T0Estimator()
+    for i in range(16):
+        est.observe(20 - i, t0 - 20.0 + i)
+    e = est.estimate(want_qpc=False)
+    assert not e.trust
+    assert e.zero_at is None
+    assert e.reason_code == "sparse"
+
+
+@pytest.mark.parametrize("seed", [1, 3, 5, 7, 9, 11])
+def test_jump_pairs_lock_to_milliseconds(seed):
+    """P0 后继：6 个跳变 = 6 对 12 条读数，误差要压到毫秒级。"""
+    t0 = 1050.0
+    est = _feed_pairs(t0, 6, seed)
+    e = est.estimate(want_qpc=False)
+    assert e.trust, e.reason
+    assert abs(e.zero_at - t0) < 0.010, f"误差 {(e.zero_at - t0) * 1000:.2f}ms"
+    assert e.half_width < 0.010
+    assert e.n_ticks >= 3
+
+
+@pytest.mark.parametrize("seed", [1, 4, 7])
+def test_pair_feed_passes_gate(seed):
+    """成对喂法整批只有十几条读数，`gate()` 不能拿「≥100 条」把它全拒。
+
+    gate 的 100 条门槛是为整帧流定的；成对档用「≥12 条 + 跨度 ≥5s」等价替换，
+    否则只喂跳变的调用方永远点不出去（就算估计已经准到 ±2ms）。
+    """
+    t0 = 1050.0
+    est = _feed_pairs(t0, 10, seed)          # 10 次跳变 ≈ 14~20 条读数
+    e = est.estimate(want_qpc=False)
+    ok, why = countdown.gate(e)
+    assert ok, f"{why}（inl={e.n_inliers} span={e.span:.2f}s hw={e.half_width * 1e3:.2f}ms）"
+    assert e.n_inliers < 100 and e.span >= 5.0
+    assert e.admissible
+
+
+@pytest.mark.parametrize("seed", [2, 5, 9])
+def test_jump_pairs_never_false_trust_under_heavy_noise(seed):
+    """15% 错读下：要么不可信，要么可信且误差 < 50ms，不许假可信。"""
+    t0 = 1050.0
+    est = _feed_pairs(t0, 6, seed, err_rate=0.15)
+    e = est.estimate(want_qpc=False)
+    if e.trust:
+        assert abs(e.zero_at - t0) < 0.050
+
+
+def test_single_tick_with_plus_one_misread_cannot_fake_a_narrow_interval():
+    """一个 tick 内两条 +1 错读会把交集从「整秒宽」钉成 8ms 的假窄点。
+
+    实测（tools/bench，30 条全是同一个读数）：错读落在 v=t+s 的高端，
+    交集变成 [max v, min v+1)，宽度 8ms，中点偏 +541ms，而内点计数 27/30
+    完全正常 —— 只靠计数和半宽都拦不住。必须靠「读数只能不变或变小」这条
+    物理约束把 +1 错读整条剔掉，剔完后交集回到 0.6s 宽 → wide → 不可信。
+    """
+    t0 = 1050.0
+    t = t0 - 31.6
+    obs = []
+    for _ in range(30):
+        t += 0.008
+        obs.append((t, int(math.floor(t0 - t)), False))
+    obs[1] = (obs[1][0], obs[1][1] + 1, True)
+    obs[2] = (obs[2][0], obs[2][1] + 1, True)
+    e = _feed(obs).estimate(want_qpc=False)
+    assert not e.trust, e.reason
+    assert e.zero_at is None
+    assert e.mask[1] is False and e.mask[2] is False
+
+
+def test_120_readings_is_borderline_and_honestly_bounded():
+    """120 条 ≈0.96s：区间半宽正好卡在 20ms 容差线上，可信率会掉。
+
+    最坏相位（窗口完全落在同一格读数内部）下，交集宽度就是 1-0.96=40ms，
+    半宽 20ms，一半样本被判 wide；这不是算法问题，是数据只剩这么多信息。
+    这里钉住两点：仍有一半可信；所有可信样本误差都在 20ms 内。
+    随机相位下的整体表现见 tools/bench_countdown.json。
+    """
+    ok = 0
+    errs = []
+    for seed in range(1, 21):
+        t0 = 1050.0
+        obs = _series(t0, 8.0, 120, seed=seed, err_rate=0.075)
+        est = _feed(obs)
+        e = est.estimate(want_qpc=False)
+        if e.trust:
+            ok += 1
+            errs.append(abs(e.zero_at - t0))
+    assert ok >= 8, f"120 条只有 {ok}/20 可信，退化比报告里写的更严重"
+    assert max(errs) < 0.020, f"可信样本里出现 {max(errs) * 1000:.1f}ms 误差"
+
+
+def test_expired_target_reports_negative_remaining():
+    """T0 已过期：remaining 返回负数（由上层判断），不是 None 也不是 0。"""
+    t0 = 1050.0
+    est = _feed(_series(t0, 6.0, 240, seed=4))
+    e = est.estimate(want_qpc=False)
+    assert e.trust, e.reason
+    r = est.remaining(t0 + 0.5)
+    assert r is not None and -0.55 < r < -0.45, r
+
+
+def test_due_fires_near_zero_on_dense_feed():
+    """正常密集数据：归零前 False、归零后 True，且别被「距上次跳变 ≈1s」误挡。"""
+    t0 = 1050.0
+    est = _feed(_series(t0, 3.0, 320, seed=7))
+    assert est.estimate(want_qpc=False).trust
+    assert est.due(t0 - 0.3) is False
+    assert est.due(t0 + 0.05) is True
+
+
+def test_estimator_zero_at_qpc_is_qpc_count():
+    """T0 要能以 QPC 计数给出，且与 perf_counter 秒一致（Windows）。"""
+    freq = countdown.qpc_frequency()
+    if freq is None:
+        pytest.skip("非 Windows，没有 QPC")
+    t0 = 1050.0
+    est = _feed(_series(t0, 20.0, 300, seed=9))
+    e = est.estimate()
+    assert isinstance(e.zero_at_qpc, int)
+    p = time.perf_counter()
+    q = countdown.qpc_now()
+    gap = (e.zero_at_qpc - q) / freq - (e.zero_at - p)
+    assert abs(gap) < 0.020, f"QPC 与秒轴差 {gap * 1000:.1f}ms"

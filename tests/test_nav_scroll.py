@@ -30,7 +30,7 @@ class FakeScreen:
 
 
 class FakeMouse:
-    def click(self, x, y, verify=True, expect_foreground=None):
+    def click(self, x, y, verify=True, expect_foreground=None, **kw):
         return True
 
 
@@ -55,26 +55,20 @@ class _FakeUser32:
         return True
 
 
-def test_wheel_uses_real_mouse_event(monkeypatch):
-    """滚轮必须是真实事件 —— PostMessage 版的滚轮游戏不理。
+def test_wheel_legacy_is_refused_without_borrow(monkeypatch):
+    """legacy 通道不再提供滚轮：不再借系统光标、不再发 mouse_event。
 
-    默认走 Interception 驱动注入（真事件）；这条钉的是 legacy 兜底
-    路径：驱动不可用时自动退回来，仍必须 mouse_event 而不是消息。
+    旧实现会自动退回 user32 的 mouse_event —— 那会把真实滚轮事件发给
+    用户当前光标下的窗口。现在只有在显式 input_legacy_borrow=true 时
+    才允许 legacy，而滚轮本身只走驱动。
     """
     import core.input as inp
     fake = _FakeUser32()
     monkeypatch.setattr(inp, "_user32", fake)
 
-    Keyboard(1234, mode="legacy").wheel(600, 400, -1)
-
-    kinds = [c[0] for c in fake.calls]
-    assert "mouse_event" in kinds, "滚轮没走 mouse_event，游戏会无视"
-    assert "PostMessageW" not in kinds, "滚轮还在发 WM_MOUSEWHEEL 消息"
-    # 滚轮事件标志 MOUSEEVENTF_WHEEL = 0x0800
-    ev = [c for c in fake.calls if c[0] == "mouse_event"]
-    assert ev[0][1] == 0x0800
-    # 负数 = 向下（Windows 惯例）
-    assert ev[0][2] == -120
+    with pytest.raises(inp.InputChannelError):
+        Keyboard(1234, mode="legacy").wheel(600, 400, -1)
+    assert fake.calls == [], "拒绝之后不许往 user32 上发任何东西"
 
 
 @pytest.mark.skipif(not X.driver_ready()[0], reason="Interception 驱动未安装")
@@ -85,33 +79,56 @@ def test_wheel_default_goes_through_driver(monkeypatch):
     monkeypatch.setattr(inp, "_user32", fake)
 
     sent = []
+
     class _Spy:
+        def mouse_device(self):
+            return {"device": 11}
+
         def send_mouse(self, state, **kw):
             sent.append((state, kw))
+
     monkeypatch.setattr(X, "shared", lambda: _Spy())
 
     Keyboard(1234, mode="interception").wheel(600, 400, -1)
 
-    assert sent, "默认模式滚轮必须走驱动"
-    state, kw = sent[0]
-    assert state == X.MOUSE_WHEEL
-    assert kw["rolling"] == -120
-    # 驱动滚轮也不该再调 mouse_event（真事件已由驱动注入）
+    states = [s for s, _kw in sent]
+    assert X.MOUSE_WHEEL in states, "默认模式滚轮必须走驱动"
+    wheels = [kw for s, kw in sent if s == X.MOUSE_WHEEL]
+    assert wheels[0]["rolling"] == -120, "负数 = 向下一格（Windows 惯例）"
+    assert wheels[0]["device"] == 11
     kinds = [c[0] for c in fake.calls]
     assert "mouse_event" not in kinds, "驱动滚轮不该再发 user32 事件"
-    assert "SetCursorPos" in kinds, "光标还是要挪过去 —— 游戏按光标位置分流滚动"
+    assert "SetCursorPos" not in kinds, "回原位也走驱动事件，不再借 user32 挪光标"
 
 
 def test_wheel_moves_cursor_first(monkeypatch):
-    """先把真实光标挪到目标位置，游戏才知道该把这一滚交给谁。"""
+    """先把光标（用驱动绝对坐标事件）挪到目标位置，再滚。
+
+    驱动 send 用 spy 替掉，避免真往系统注入滚轮事件。
+    """
     import core.input as inp
     fake = _FakeUser32()
     monkeypatch.setattr(inp, "_user32", fake)
 
+    sent = []
+
+    class _Spy:
+        def mouse_device(self):
+            return {"device": 11}
+
+        def send_mouse(self, state, **kw):
+            sent.append((state, kw))
+
+    monkeypatch.setattr(X, "shared", lambda: _Spy())
+
     Keyboard(1234).wheel(613, 380, 1)
 
-    assert fake.calls[0] == ("SetCursorPos", 613, 380), \
-        "滚轮前没有挪光标，这一滚会落在别的地方"
+    assert sent, "滚轮没走驱动"
+    state, kw = sent[0]
+    assert state == 0, "第一条必须是移动事件"
+    assert kw["flags"] & X.MOUSE_MOVE_ABSOLUTE, "移动要用绝对坐标，游戏按坐标路由滚动"
+    assert (kw["x"], kw["y"]) != (0, 0), "滚轮前没有把位置挪过去"
+    assert fake.calls == [], "移动/滚动/回原位全程走驱动，不碰 user32"
 
 
 # ------------------------------------------------------- 2. 滚动方向符号

@@ -51,7 +51,7 @@ class FakeMouse:
         self.clicks = []
         self._on_click = on_click
 
-    def click(self, x, y, verify=True, expect_foreground=None):
+    def click(self, x, y, verify=True, expect_foreground=None, **kw):
         self.clicks.append((x, y))
         if self._on_click:
             self._on_click(x, y)
@@ -610,7 +610,7 @@ def test_col_filter_switches_back_to_the_trade_tab_when_the_panel_will_not_open(
     state = {"on_trade": False}
 
     class M:
-        def click(self, x, y, verify=True, expect_foreground=None):
+        def click(self, x, y, verify=True, expect_foreground=None, **kw):
             clicks.append((x, y))
             if (x, y) == COL_TRADE_TAB:
                 state["on_trade"] = True

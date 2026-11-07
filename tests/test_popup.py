@@ -174,14 +174,24 @@ def test_cancel_inside_a_longer_word_is_still_found():
 
 # ---------------- 性能 ----------------
 
-def test_detection_is_fast_enough_for_the_buy_loop():
+def test_detection_is_fast_enough_for_the_buy_loop(perf_machine):
     """买完一次要立刻查弹窗。识别超过 300ms 就会明显拖慢重试节奏。
 
     实测本机约 50ms（弹窗区域 690x400）。
+
+    取 7 次的中位数，阈值仍是 300ms：单次墙钟会被操作系统调度尖刺
+    （本机常有别的 pytest 在跑）放大到几百毫秒，中位数才是这段逻辑
+    的稳定成本。不用 process_time：OCR 内部是多线程，CPU 时间会把
+    所有工作线程累加，反而恒大于墙钟、量不出真实响应。
     """
     img = _load("insufficient.png")
     popup.scan(img)          # 预热：首次调用要建 OCR 引擎
-    t = time.perf_counter()
-    popup.scan(img)
-    dt = time.perf_counter() - t
-    assert dt < 0.3, f"识别耗时 {dt * 1000:.0f}ms，太慢"
+    samples = []
+    for _ in range(7):
+        t = time.perf_counter()
+        popup.scan(img)
+        samples.append(time.perf_counter() - t)
+    samples.sort()
+    med = samples[len(samples) // 2]
+    assert med < 0.3, (f"识别中位耗时 {med * 1000:.0f}ms，太慢"
+                       f"（min {samples[0] * 1000:.0f} / max {samples[-1] * 1000:.0f}ms）")

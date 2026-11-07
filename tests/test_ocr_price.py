@@ -102,7 +102,39 @@ def test_two_scales_agree(idx):
 ])
 def test_thousand_separator_gate(text, want):
     assert ocr_chain.price_from_text(text)[0] == want
-    assert ocr.last_number(text) == want      # 对外入口同一套规则
+
+
+@pytest.mark.parametrize("text,want", [
+    ("2,049 0+ 0 40+", 40),        # 三组货币，最右一组三角币
+    ("2,049 0+ 22+", 22),
+    ("2,049 0+ 26 +", 26),         # `+` 与数字之间有空格
+    ("2,049\n0+\n0\n40+", 40),     # read_text 逐词换行，并成一行
+    ("2,049 0+ 0 40+ 限购5", 40),  # 末尾带标签干扰数字：只能是 40 或 None
+    ("2,049 0+ 0 40+ 满5+", 40),   # 带 `+` 的批量折扣提示，有标签就不是货币组
+    ("2,049 0+ 0 40+ 剩余5次", 40),
+    ("2,049 0+ 0 40+ 5", None),    # 裸数字：不知道属于谁，拒识
+    ("2,049 0+ 0 40,", None),      # 最右一组被截断（千分位坏）→ 不许退到中间组
+    ("2,049 0+ 0 1,000,00|+", None),
+    ("2,537K 2,075 + à", None),    # 最右一组没读出来：不许退到中间组
+    ("2,049", None),               # 没有 `+`：结构不明，不猜
+    ("暂无", None),
+    ("", None),
+])
+def test_balance_entry_never_borrows_another_group(text, want):
+    """余额栏锁死：要么读出最右一组货币，要么 None，绝不拿别的数字顶替。"""
+    assert ocr_chain.balance_from_text(text)[0] == want
+    assert ocr.last_number(text) == want
+
+
+def test_balance_trailing_limit_number_never_wins():
+    """用户点名的锁死用例：`限购5` 在末尾，余额必须仍是 40（或 None）。
+
+    旧实现 `rest[-1]` 会把 5 当余额 —— 读低 8 倍，成交判定与止损就全偏了。
+    """
+    text = "2,049 0+ 0 40+ 限购5"
+    got = ocr.last_number(text)
+    assert got in (40, None)
+    assert got != 5
 
 
 # ---------------------------------------------------------------- 4. 分数闸门
@@ -137,24 +169,40 @@ class _Rapid:
 
 
 class _PP:
-    def __init__(self, words=None, boom=False):
-        self.words, self.boom, self.cfg = words or [], boom, {"model": "PP-OCRv6 tiny"}
+    def __init__(self, words=None, boom=False, crash=False):
+        self.words, self.boom, self.crash = words or [], boom, crash
+        self.cfg = {"model": "PP-OCRv6 tiny"}
+        self.last_error = ""
 
     def available(self):
+        # crash=True 模拟「端口在听、每次推理 500」：探活成功，调用必炸。
         return not self.boom
 
     def read_words(self, img, timeout=None):
+        if self.crash:
+            raise RuntimeError("500 ConvertPirAttribute2RuntimeAttribute not support")
         if self.boom:
             raise RuntimeError("服务不在")
         return self.words
 
+    def stats_line(self):
+        return "pp stub"
 
-def _chain(rapid_words=None, pp_words=None, tpl=None, rap_boom=False, pp_boom=False):
+    def selfcheck(self, timeout=None, probe_timeout=0.3):
+        if self.crash:
+            return False, "RuntimeError: 500 ConvertPirAttribute2RuntimeAttribute"
+        return True, ""
+
+
+def _chain(rapid_words=None, pp_words=None, tpl=None, rap_boom=False,
+           pp_boom=False, pp_crash=False):
     b = ocr_chain.Backend.__new__(ocr_chain.Backend)
     b.rapid = _Rapid(rapid_words, rap_boom)
-    b.pp = _PP(pp_words, pp_boom)
+    b.pp = _PP(pp_words, pp_boom, pp_crash)
     b.tpl = tpl or type("T", (), {"read_detail": staticmethod(lambda img: (None, "", 0.0))})()
-    b.stats = {"calls": 0, "empty": 0, "tier2": 0, "tier3": 0, "ms": 0.0, "fails": 0}
+    b.stats = {"calls": 0, "empty": 0, "tier2": 0, "tier2_fail": 0,
+               "tier3": 0, "ms": 0.0, "fails": 0}
+    b._pp_err = ""
     b.url = ""
     return b
 
@@ -181,6 +229,80 @@ def test_tier3_is_the_last_resort():
     assert b.read_price(np.zeros((32, 120, 3), np.uint8)) == 250000
     b2 = _chain([], [], pp_boom=True)
     assert b2.read_price(np.zeros((32, 120, 3), np.uint8)) is None
+
+
+def test_tier2_listening_but_500_degrades_counts_and_keeps_error():
+    """二级端口在听、每次推理都 500（本机 Paddle+oneDNN 的实际形态）。
+
+    价格链必须：计数 + 记错误 + 继续落三级；不许把异常冒到上层，也不许
+    把它当成「这一块没字」。
+    """
+    tpl_hit = type("T", (), {"read_detail": staticmethod(
+        lambda img: (250000, "250,000", 0.72))})()
+    b = _chain([{"text": "150,000", "score": 0.42, "x": 0, "y": 0, "w": 80, "h": 20}],
+               tpl=tpl_hit, pp_crash=True)
+    assert b.read_price(np.zeros((32, 120, 3), np.uint8)) == 250000
+    assert b.stats["tier2"] == 1 and b.stats["tier2_fail"] == 1
+    assert "PirAttribute" in b.last_error
+    assert "二级推理失败" in b.name()
+
+
+def test_tier2_500_on_text_path_does_not_raise_or_lose_tier1():
+    """普通文本路径同样只降级不抛异常；一级读到的字不许被二级的死拖累。"""
+    b = _chain([], pp_crash=True)
+    img = np.zeros((40, 160, 3), np.uint8)
+    assert b.read_words(img) == []                 # 空结果，不是异常
+    assert b.stats["tier2"] == 1 and b.stats["tier2_fail"] == 1
+
+    words = [{"text": "稀有度极品", "score": 0.9, "x": 0, "y": 0, "w": 60, "h": 20}]
+    b2 = _chain(words, pp_crash=True)
+    assert b2.read_words(img) == words             # 一级有字就不该再去碰二级
+    assert b2.stats["tier2"] == 0
+
+
+def test_tier1_and_tier2_both_dead_still_raises_for_strict_callers():
+    """一级崩 + 二级 500：再次往上抛，交给 ocr.read_text(raise_on_error=True)
+    转成 OCRError —— 不能让「两层都瞎」被当成「没字」。"""
+    b = _chain(rap_boom=True, pp_crash=True)
+    try:
+        b.read_words(np.zeros((40, 160, 3), np.uint8))
+    except RuntimeError as e:
+        assert "rapid" in str(e)
+    else:
+        raise AssertionError("两层都不可用时必须抛")
+    assert b.stats["tier2_fail"] == 1
+
+
+def test_selfcheck_pp_reports_configured_but_crashing_tier2():
+    """启动自检要能区分「关掉」「没起」「在听但在崩」。"""
+    b = _chain([{"text": "1", "score": 1.0, "x": 0, "y": 0, "w": 1, "h": 1}])
+    ok, err = b.selfcheck_pp()
+    assert ok is True and err == ""                # stub 没有 selfcheck → 视为可用
+
+    b2 = _chain([], pp_crash=True)
+    ok2, err2 = b2.selfcheck_pp()
+    assert ok2 is False and err2
+    assert "二级不可用" in b2.name()         # 自检阶段还没真实调用，不写「失败 0 次」
+
+
+def test_name_shows_breaker_and_off_instead_of_missing_service():
+    """available() 为假有三种原因：没起 / 关闭 / 熔断。状态栏不许一律写「未起」。
+
+    本机 Paddle+oneDNN 的情形是第三种：端口在听、每次推理 500，连续三次后
+    熔断。写成「服务未起」会让人去查进程，查了也查不出问题。
+    """
+    b = _chain([])
+    b.pp.available = lambda: False
+    b.pp.last_error = ("HTTPError: HTTP Error 500: Internal Server Error"
+                       "（连续 3 次失败，本会话长时间停用 PP-OCR）")
+    n = b.name()
+    assert "二级已熔断" in n and "未起" not in n
+
+    b2 = _chain([])
+    b2.pp.available = lambda: False
+    b2.pp.mode = "off"
+    b2.pp.last_error = ""
+    assert "二级已关闭" in b2.name()
 
 
 # ---------------------------------------------------------------- 6. 缺模型

@@ -271,7 +271,9 @@ def test_prepare_picks_the_earliest_unlock_on_the_first_page(monkeypatch):
         return rows
 
     monkeypatch.setattr(eng_mod.market, "scan", fake_scan)
-    clocks = iter([_cd_words(300), _cd_words(45), _cd_words(90)])
+    # 三次 + 一次：前两张卡各读一次，选中 45 秒那件后引擎会再读一次做
+    # 残影交叉校验（复核第 13 条），最后选中目标再点一次读 90。
+    clocks = iter([_cd_words(300), _cd_words(45), _cd_words(45), _cd_words(90)])
     serials = iter(["P1B"])        # 只有挑中的那件才认序号
     monkeypatch.setattr(e, "_ocr_clock", lambda scr, px: next(clocks))
     monkeypatch.setattr(e, "_read_serial", lambda scr: next(serials))

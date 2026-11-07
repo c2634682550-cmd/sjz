@@ -84,6 +84,10 @@ def _quiet(eng, monkeypatch, match):
     eng._balance = lambda *a, **k: None
     eng._bought_dialog = lambda s: True
     eng._close_reward = lambda *a, **k: None
+    # 证据探针（core/pooltrace.py）是成交判定之后的真 OCR 读取，单次
+    # 215ms~3.2s。它不计入成交耗时（引擎从 elapsed 里扣掉），但确实占墙面
+    # 时间；本组用例量的是「点击闭环本身」，探针不是被测对象，必须换假。
+    eng._probe_toast = lambda *a, **k: None
     eng._record = lambda *a, **k: None
     eng._say = lambda *a, **k: None
 
@@ -128,12 +132,8 @@ def test_unlock_waits_for_the_real_zero(monkeypatch):
 
 # ---------------------------------------------------------------- 确认闭环
 
-def test_confirm_stops_as_soon_as_the_dialog_closes(monkeypatch):
-    """确认弹窗一消失就收手，不再盲点满 20 下。
-
-    以前盲点 20 × 10ms：第一下成功的话，剩下 19 下全打在奖励弹窗上
-    （那上面有「跳过」），还白等 190ms。
-    """
+def _confirm_loop(monkeypatch):
+    """搭好「点一下确认弹窗就关」的闭环场景，返回 (engine, mouse)。"""
     eng = engine_mod.Engine()
     mouse = _Mouse()
     state = {"open": True}
@@ -150,13 +150,40 @@ def test_confirm_stops_as_soon_as_the_dialog_closes(monkeypatch):
 
     _quiet(eng, monkeypatch, fake_match)
     monkeypatch.setattr(eng, "_click", fake_click)
+    return eng, mouse
 
+
+def test_confirm_stops_as_soon_as_the_dialog_closes(monkeypatch):
+    """确认弹窗一消失就收手，不再盲点满 20 下。
+
+    以前盲点 20 × 10ms：第一下成功的话，剩下 19 下全打在奖励弹窗上
+    （那上面有「跳过」），还白等 190ms。
+
+    这里只断言**行为**（点几下就停）。墙钟预算拆到下面的性能用例，
+    否则重负载机器上一条 1514ms 的调度尖刺就会把这条功能用例染红。
+    """
+    eng, mouse = _confirm_loop(monkeypatch)
+    t = time.perf_counter()
+    assert eng._fire_and_confirm(_cfg(), _Screen(), mouse,
+                                 np.zeros((10, 10), np.uint8), (500, 500), t) is True
+    assert mouse.clicks <= 3, f"点了 {mouse.clicks} 下才停（闭环应该 1~2 下）"
+
+
+def test_confirm_round_trip_stays_within_the_click_budget(monkeypatch, perf_machine):
+    """整轮确认闭环 < 120ms（原 `elapsed < 0.12` 墙钟断言）。
+
+    这条量的是**空载机器**上的成本：并发跑多份 pytest 时实测同一条断言
+    要 1514ms（本机常有别的会话在跑全量），红得没有分辨力 —— 真退化是
+    4 倍以上量级，调度尖刺不是。所以按 `test_popup.py` /
+    `test_precision.py` 的既有做法用 `perf_machine` 门控：只有显式
+    设了 `SJZ_PERF=1`、且机器空载时才跑；门控关闭时整条 skip，
+    跳过原因由夹具写明「性能门槛用例：需空载机器，显式设 SJZ_PERF=1 才跑」。
+    """
+    eng, mouse = _confirm_loop(monkeypatch)
     t = time.perf_counter()
     assert eng._fire_and_confirm(_cfg(), _Screen(), mouse,
                                  np.zeros((10, 10), np.uint8), (500, 500), t) is True
     elapsed = time.perf_counter() - t
-
-    assert mouse.clicks <= 3, f"点了 {mouse.clicks} 下才停（闭环应该 1~2 下）"
     assert elapsed < 0.12, f"整轮用了 {elapsed * 1000:.0f}ms"
 
 

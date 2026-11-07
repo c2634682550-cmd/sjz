@@ -88,7 +88,7 @@ class FakeMouse:
     def ensure_foreground(self, hwnd, tries=3, gap=0.25, screen=None):
         return True
 
-    def click(self, x, y, expect_foreground=None):
+    def click(self, x, y, expect_foreground=None, **kw):
         pass
 
 

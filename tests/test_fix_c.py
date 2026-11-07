@@ -149,6 +149,10 @@ def test_keyboard_click_builds_a_fully_initialised_mouse(monkeypatch):
         seen["warn"] = self._drv_warn
 
     monkeypatch.setattr(input_mod.Mouse, "click", fake_click)
+    # legacy 会借系统光标，2026-11-07 起默认禁用，这里显式打开闸门
+    monkeypatch.setattr(input_mod, "_config_value",
+                        lambda key, default=None:
+                        True if key == "input_legacy_borrow" else default)
     kb = input_mod.Keyboard(1234, mode="legacy")
     kb.click(10, 20)
     assert seen["x"] == 10 and seen["y"] == 20
@@ -156,7 +160,11 @@ def test_keyboard_click_builds_a_fully_initialised_mouse(monkeypatch):
     assert isinstance(seen["vx"], int)
 
 
-def test_mouse_accepts_a_none_screen():
+def test_mouse_accepts_a_none_screen(monkeypatch):
+    # legacy 会借系统光标，2026-11-07 起默认禁用，这里显式打开闸门
+    monkeypatch.setattr(input_mod, "_config_value",
+                        lambda key, default=None:
+                        True if key == "input_legacy_borrow" else default)
     m = input_mod.Mouse(None, mode="legacy")
     assert m._origin_left == 0 and m._origin_top == 0
     assert m._vx == input_mod._user32.GetSystemMetrics(input_mod._SM_XVIRTUALSCREEN)

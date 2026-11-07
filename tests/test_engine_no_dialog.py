@@ -36,12 +36,12 @@ class FakeMouse:
     def ensure_foreground(self, hwnd, tries=3, gap=0.25, screen=None):
         return True
 
-    def click(self, x, y, expect_foreground=None):
+    def click(self, x, y, expect_foreground=None, **kw):
         self.clicks.append((x, y))
 
 
 class FakeCfg:
-    """真 Config 是对象：既按 key 取值，也有 region()。"""
+    """真 Config 是对象：既按 key 取值，也有 region()/get()。"""
 
     def __init__(self, values):
         self.values = values
@@ -49,8 +49,11 @@ class FakeCfg:
     def __getitem__(self, key):
         return self.values[key]
 
+    def get(self, key, default=None):
+        return self.values.get(key, default)
+
     def region(self, name):
-        return None
+        return (self.values.get("regions") or {}).get(name)
 
 
 def _engine(monkeypatch, balances, record):
@@ -195,3 +198,96 @@ def test_the_click_loop_really_asks_before_it_clicks(monkeypatch):
 
     assert ok is False
     assert mouse.clicks == [], "价格条还不能点的时候点了，等于瞎点"
+
+
+def test_no_confirm_region_delegates_to_single_click_buy_exactly_once(monkeypatch):
+    """没有「确认」区域时必须走且只走一次 `_buy_without_dialog`。
+
+    这条钉的是分支本身：以前 `confirm_region is None` 时继续往下走
+    `expand(None)` 会 TypeError，或者退化成盲点循环。用 spy 记录调用，
+    同时把模板匹配换成「谁调谁记」，确认它压根没进弹窗循环。
+    """
+    cfg = FakeCfg({"threshold": 0.85, "click_hz": 50, "fire_timeout_s": 0.1,
+                   "confirm_clicks": 1, "confirm_interval_ms": 0,
+                   "failsafe": False})
+    e = _engine(monkeypatch, [], lambda *a, **k: None)
+    delegations = []
+
+    def spy_buy(screen, mouse, buy_click, t_start, item="", price=None):
+        delegations.append((buy_click, item, price))
+        return True
+
+    e._buy_without_dialog = spy_buy
+    matched = []
+    monkeypatch.setattr(engine_mod, "match",
+                        lambda *a, **k: matched.append(1) or (0.0, None))
+    monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
+
+    ok = e._fire_and_confirm(cfg, FakeScreen(), FakeMouse(), "CONFIRM_TEMPLATE",
+                             (1600, 930), 0.0, item="G3战斗步枪-叠锋", price=2)
+
+    assert ok is True
+    assert delegations == [((1600, 930), "G3战斗步枪-叠锋", 2)], (
+        f"没有确认框时应该恰好转交一次无框购买，实际 {delegations}"
+    )
+    assert matched == [], "没有确认框却进了确认弹窗的模板匹配循环"
+
+
+def test_confirm_region_present_but_no_dialog_returns_false_without_fallback(monkeypatch):
+    """有「确认」区域但弹窗一直不出现：按没抢到记，绝不许退回单点购买。
+
+    没有确认框才走单点购买；有确认框时如果偷偷退回去，等于在「等弹窗」
+    vs 「直接成交」两种界面语义之间乱猜 —— 真实结果是买错东西。
+    """
+    cfg = FakeCfg({
+        "threshold": 0.85, "click_hz": 50, "fire_timeout_s": 0.08,
+        "confirm_clicks": 1, "confirm_interval_ms": 0, "failsafe": False,
+        "regions": {"confirm": {"x": 0.3, "y": 0.3, "w": 0.4, "h": 0.5}},
+    })
+    records = []
+    e = _engine(monkeypatch, [], lambda *a, **k: records.append(k))
+    monkeypatch.setattr(engine_mod, "match", lambda *a, **k: (0.0, None))
+    monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
+    e._buy_without_dialog = lambda *a, **k: pytest.fail(
+        "有确认框却没等到弹窗时退回了无框单点购买")
+
+    ok = e._fire_and_confirm(cfg, FakeScreen(), FakeMouse(), "CONFIRM_TEMPLATE",
+                             (1600, 930), 0.0, item="G3战斗步枪-叠锋", price=2)
+
+    assert ok is False
+    assert records and records[0]["result"] == "miss", "没等到弹窗却记成了成交"
+
+
+def test_insufficient_popup_aborts_the_fire_loop_after_one_buy_click(monkeypatch):
+    """余额不足弹窗一出现：只点一次购买，点「取消」，抛 Aborted 收场。
+
+    钱不够时游戏不弹确认框，直接弹「三角币不足」，右边就是「充值」。
+    多点在开火循环里继续点购买，等于对着模态弹窗乱点。
+    """
+    cfg = FakeCfg({
+        "threshold": 0.85, "click_hz": 50, "fire_timeout_s": 8.0,
+        "confirm_clicks": 1, "confirm_interval_ms": 0, "failsafe": False,
+        "regions": {"confirm": {"x": 0.3, "y": 0.3, "w": 0.4, "h": 0.5}},
+    })
+    e = _engine(monkeypatch, [], lambda *a, **k: None)
+    e._insufficient_showing = lambda screen: True
+    popup_result = {
+        "found": True, "kind": "insufficient", "shortfall": 2001,
+        "recommend": 328, "text": "您当前的三角币不足，是否前往充值？",
+        "buttons": {"cancel": {"cx": 700, "cy": 600},
+                    "recharge": {"cx": 900, "cy": 600}},
+    }
+    monkeypatch.setattr(engine_mod.popup, "scan", lambda img: popup_result)
+    monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
+
+    mouse = FakeMouse()
+    with pytest.raises(engine_mod.Aborted) as ei:
+        e._fire_and_confirm(cfg, FakeScreen(), mouse, "CONFIRM_TEMPLATE",
+                            (1600, 930), 0.0, item="G3战斗步枪-叠锋", price=2)
+
+    assert "余额不足" in str(ei.value)
+    assert mouse.clicks.count((1600, 930)) == 1, (
+        f"余额不足弹窗出来后还在继续点购买：{mouse.clicks}"
+    )
+    assert (700, 600) in mouse.clicks, "认出了弹窗却没点「取消」，模态框会盖住后续操作"
+    assert (900, 600) not in mouse.clicks, "点到了「充值」——这是真花钱的按钮"

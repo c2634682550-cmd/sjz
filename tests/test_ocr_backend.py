@@ -261,6 +261,20 @@ def test_repeated_failures_disable_client_for_a_long_time(fake, use_backend):
     assert "长时间停用" in (b.last_error or "")
 
 
+def test_breaker_message_does_not_nest_on_repeated_blocks(fake, use_backend):
+    """熔断期内每次被挡都会再走一遍 _trip：文案只留最底层原因，不许套娃。"""
+    fake.status = 500
+    use_backend(url=fake.url, timeout_s=1, cooldown_s=0.01,
+                fail_limit=3, long_cooldown_s=600)
+    for _ in range(6):
+        ocr.read_text(_img(120, 32))
+        time.sleep(0.02)
+    b = ocr._client()
+    msg = b.last_error or ""
+    assert "长时间停用" in msg
+    assert msg.count("长时间停用") == 1
+
+
 def test_backend_name_reports_measurement_after_calls(fake, use_backend):
     """自检要带实测耗时 —— 一眼看出是不是慢到不该用。"""
     use_backend(url=fake.url, timeout_s=3)

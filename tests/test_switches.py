@@ -162,13 +162,19 @@ class _Mouse:
 
 
 class _Cfg(dict):
-    """最小配置：只提供 _fire_and_confirm 用到的那几项。"""
+    """最小配置：提供 _fire_and_confirm / _countdown_prepare 用到的那几项。
+
+    regions 是真实配置的形状（norm 坐标），`region("clock")` 没框选区域时
+    _countdown_prepare 会直接 RuntimeError，所以两个区域都给上。
+    """
 
     def __init__(self, **over):
         super().__init__(**config.DEFAULTS)
         self["regions"] = {
             "confirm": {"x": 0.4, "y": 0.4, "w": 0.2, "h": 0.2},
             "buy": {"x": 0.4, "y": 0.8, "w": 0.2, "h": 0.1},
+            "clock": {"x": 0.55, "y": 0.30, "w": 0.12, "h": 0.05},
+            "list": {"x": 0.20, "y": 0.18, "w": 0.40, "h": 0.60},
         }
         self.update(over)
 
@@ -256,36 +262,125 @@ def test_fire_lag_is_measured(monkeypatch):
     assert eng._fire_lag > 0, "没记下实测延迟，自适应等于没有"
 
 
+def _drive_countdown_prepare(monkeypatch, **over):
+    """跑一次**真实的** `_countdown_prepare`，在扫描第一步（pub_filter）掐断。
+
+    以前这条用例把 `eng._follow` 换成自己的 lambda 再手动套一个
+    `if switches.get(...)` —— 被测的是测试自己抄的那行 if，引擎里真实的
+    门控（core/engine.py 的 `if switches.get(cfg, "follow.before_buy")`）
+    一次都没执行。这里改走真路径：
+
+        _countdown_prepare → where()=collection → locate()
+            → SkinFinder.find(ok) → nav.buy() → where()=onsale
+            → 真实门控 → 真实 _follow() → nav.set_follow()
+            → scan_first_page() → nav.pub_filter() 抛 NavError 收尾
+
+    只有真的走过从 `_countdown_prepare` 到 `set_follow` 的整条链，
+    删掉那行门控才会让下面「开时必须恰点一次」的断言失败。
+    """
+    from core import engine as engine_mod
+    from core import skinfind as skinfind_mod
+
+    # Keyboard 的真身会去探测输入驱动（碰真机）；这条链不需要它。
+    monkeypatch.setattr(engine_mod, "Keyboard", lambda *a, **k: object())
+
+    made = []
+
+    class FakeNav:
+        def __init__(self, *a, **kw):
+            self.set_follow_calls = []
+            self.buy_calls = 0
+            self.pub_filter_calls = []
+            self._pages = ["collection", "onsale"]
+
+        def where(self):
+            return (self._pages.pop(0), None)
+
+        def buy(self):
+            self.buy_calls += 1
+
+        def set_follow(self, want=True, wait=0.45, skip_done=True):
+            self.set_follow_calls.append((want, wait, skip_done))
+            return want
+
+        def pub_filter(self, value):
+            self.pub_filter_calls.append(value)
+            raise engine_mod.NavError("到扫描第一步就够了")
+
+    def _make_nav(*a, **kw):
+        nav = FakeNav(*a, **kw)
+        made.append(nav)
+        return nav
+
+    monkeypatch.setattr(engine_mod, "Navigator", _make_nav)
+
+    class _Finder:
+        def __init__(self, *a, **k):
+            pass
+
+        def find(self, *a, **kw):
+            return {"ok": True}
+
+    monkeypatch.setattr(skinfind_mod, "SkinFinder", _Finder)
+
+    eng = engine_mod.Engine()
+    # 目标皮肤走**真实** bricks 目录解析（_target_skin → bricks.find_skin）
+    cfg = _Cfg(active_task={"name": "M4A1突击步枪·棱镜攻势"}, **over)
+    with pytest.raises(engine_mod.NavError):
+        eng._countdown_prepare(cfg, _Screen(), _Mouse())
+    assert made, "定位路径根本没构造 Navigator"
+    return made[0]
+
+
 def test_follow_before_buy_calls_the_navigator(monkeypatch):
-    """「抢前先关注」打开时，进详情后要真的去点星标；关掉时一次都不点。
+    """「抢前先关注」打开时，真实定位路径要真的走一次 set_follow；关掉一次都不走。
 
     默认值是**关**（2026-11-03 改）：进购买界面多一次点击就多一次抢不到
     的机会，而且星标在详情面板顶部，点到别处会切走页面。
     """
-    eng, _ = _engine(monkeypatch)
-    called = []
-    eng._follow = lambda nav, cfg, want: called.append(want)
+    on = _drive_countdown_prepare(monkeypatch, follow_before_buy=True,
+                                  follow_wait_ms=800, follow_skip_done=False)
+    assert on.buy_calls == 1, "没有真的点开目标详情，后面的关注断言就落空了"
+    assert on.set_follow_calls, "开关打开时引擎没有真的去点星标"
+    assert len(on.set_follow_calls) == 1, \
+        f"关注被点了 {len(on.set_follow_calls)} 次（一次成功就该收手）"
+    # 星标参数必须来自配置，而不是写死的 0.45/True
+    assert on.set_follow_calls[0] == (True, 0.8, False), \
+        f"set_follow 的参数没跟配置走：{on.set_follow_calls[0]!r}"
+    assert on.pub_filter_calls, "没走到扫描第一步 —— 说明上面命中的不是真实门控"
 
-    class Nav:
-        def set_follow(self, want=True, wait=0.45):
-            return want
+    off = _drive_countdown_prepare(monkeypatch, follow_before_buy=False)
+    assert off.buy_calls == 1, off.buy_calls
+    assert off.set_follow_calls == [], \
+        "开关关掉时仍在购买界面点星标 —— 多一次点击，还可能把页面切走"
+    assert off.pub_filter_calls, off.pub_filter_calls
 
-    # 开：调一次
-    on = _Cfg(follow_before_buy=True)
-    if switches.get(on, "follow.before_buy"):
-        eng._follow(Nav(), on, True)
-    assert called == [True], "开关打开时没去点星标"
-
-    # 关：不调
-    eng2, _ = _engine(monkeypatch)
-    called2 = []
-    eng2._follow = lambda nav, cfg, want: called2.append(want)
-    off = _Cfg(follow_before_buy=False)
-    if not switches.get(off, "follow.before_buy"):
-        pass
-    assert called2 == []
     assert switches.get(_Cfg(), "follow.before_buy") is False, \
         "默认应该是关（不要在购买界面多点那一下）"
+
+
+def test_follow_retries_then_gives_up_without_stopping_the_run(monkeypatch):
+    """星标点不动时按 follow.retry 重试，最后只记警告、不打断抢购。"""
+    from core import engine as engine_mod
+
+    monkeypatch.setattr(engine_mod.time, "sleep", lambda s: None)
+    eng = engine_mod.Engine()
+    warns = []
+    eng._say = lambda msg, level="info": warns.append((level, msg))
+
+    class Nav:
+        def __init__(self):
+            self.calls = 0
+
+        def set_follow(self, want=True, **kw):
+            self.calls += 1
+            return None                 # 颜色没变 = 没点动
+
+    nav = Nav()
+    cfg = _Cfg(follow_retry=2)
+    assert eng._follow(nav, cfg, True) is None
+    assert nav.calls == 3, f"重试次数没按配置走：只点了 {nav.calls} 次"
+    assert [lv for lv, _ in warns] == ["warn"], warns
 
 
 # ---------------------------------------------------------------- 任务 ↔ 全局开关

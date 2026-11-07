@@ -184,3 +184,219 @@ def test_backend_name_matches_a_real_recognition():
     img = _roi()[0:120, 0:700]
     text = ocr.read_text(img)
     assert text.strip(), "自检报告可用，但识别结果是空的"
+
+
+# ---------------------------------------------------------------- 批量路径的决策来源
+
+def _batch_scan(monkeypatch, got_items):
+    """用假的批量认卡结果跑 _scan_cards：不碰真 OCR，只看字段来源。"""
+    import numpy as np
+
+    from core import cards as cardmod
+
+    rects = [(10, 20, 310, 210), (320, 20, 620, 210)][:len(got_items)]
+    monkeypatch.setattr(cardmod, "read_cards",
+                        lambda img, recs, upscale=2: list(got_items))
+    monkeypatch.setattr(cardmod, "read_bottoms",
+                        lambda img, recs, upscale=3: [])
+    return market._scan_cards(np.zeros((400, 700, 3), np.uint8), rects)
+
+
+def test_batch_text_cannot_move_the_click(monkeypatch):
+    """批量路径的 text_batch 被污染（商品名改一个字），点击决策必须不受影响。
+
+    真实事故形状：批量 rec 与单卡 rec 有 15 处差一个 `|`。哪天差的不是
+    分隔符而是名字里的一个字，拿整行 text 去匹配就会点错商品。所以名字、
+    价格、成色只认结构化块，text_batch 只许出现在展示/日志里。
+    """
+    good = "QBZ95-1突击步枪-王牌之剑"
+    poison = "QBZ95-1突击步枪-王牌之刃"
+    polluted = f"{poison}\n极品|B 28,888"
+    items = [{"name": good, "grade": "极品|B", "price": "28,888",
+              "text_batch": polluted, "text_reliable": False} for _ in range(2)]
+
+    rows = _batch_scan(monkeypatch, items)
+    assert len(rows) == 2
+    for row in rows:
+        assert row["name"] == good
+        assert row["name_source"] == "structured"
+        # 匹配串必须逐字等于结构化名字：污染的那个字一次都不能出现
+        assert market._match_text(row) == good
+        assert poison not in market._match_text(row)
+        # 展示串也由结构化字段拼成，污染的名字根本进不来
+        assert poison not in row["text"]
+
+    task = {"name": good, "max_price": 40000}
+    ok, why = market.check(rows[0], task)
+    assert ok, why
+
+    row, why, diag = market.pick(rows, task)
+    assert row is not None, why
+    assert row["name"] == good
+    assert (row["x0"], row["y0"]) == (10, 20)
+    assert diag[0]["name_source"] == "structured"
+
+
+def test_poisoned_text_cannot_steal_the_click(monkeypatch):
+    """批量文本被换成**另一件商品**的名字：不能因此抢走本该点另一张卡的决策。
+
+    这是「点错商品」的具体形状：左边那张卡的结构化名字是 A，批量文本却被
+    污染成 B；右边那张才是 B。按结构化名字匹配，任务 B 只能选中右边；
+    若拿整行 text 匹配，两张都会被判成 B，`pick` 会按屏幕顺序点中左边。
+    """
+    name_a = "QBZ95-1突击步枪-王牌之剑"
+    name_b = "Vector冲锋枪-美杜莎"
+    items = [
+        {"name": name_a, "grade": "极品|B", "price": "28,888",
+         "text_batch": f"{name_b}\n极品|B 28,888", "text_reliable": False},
+        {"name": name_b, "grade": "极品|B", "price": "28,888",
+         "text_batch": f"{name_b}\n极品|B 28,888", "text_reliable": False},
+    ]
+    rows = _batch_scan(monkeypatch, items)
+    task = {"name": name_b, "max_price": 40000}
+
+    assert market.check(rows[0], task)[0] is False
+    assert market.check(rows[1], task)[0] is True
+
+    row, why, diag = market.pick(rows, task)
+    assert row is not None, why
+    assert row["name"] == name_b
+    assert (row["x0"], row["y0"]) == (320, 20)   # 右边的卡，不是被污染的左边
+
+
+def test_scanner_batch_rows_use_structured_name(monkeypatch):
+    """生产路径 Scanner().scan 也必须走结构化字段（批量 text_batch 只展示）。
+
+    引擎列表模式走的是 Scanner，不是 `_scan_cards` —— 同一类风险有两条路，
+    这条钉住第二条：行的名字只来自结构化 name，text_batch 里的污染不参与。
+    """
+    import numpy as np
+
+    from core import cards as cardmod
+
+    good = "QBZ95-1突击步枪-王牌之剑"
+    poison = "Vector冲锋枪-美杜莎"
+    rects = [(10, 20, 310, 210), (320, 20, 620, 210)]
+    monkeypatch.setattr(cardmod, "locate_cards",
+                        lambda img, gray=None, bottom_half=False: list(rects))
+    monkeypatch.setattr(cardmod, "read_cards", lambda img, recs, upscale=2: [
+        {"name": good, "grade": "极品|B", "price": "28,888",
+         "text_batch": f"{poison}\n极品|B 28,888", "text_reliable": False}
+        for _ in recs])
+    monkeypatch.setattr(cardmod, "read_bottoms",
+                        lambda img, recs, upscale=3: [])
+
+    sc = market.Scanner()
+    rows = sc.scan(np.zeros((400, 700, 3), np.uint8))
+    assert len(rows) == 2
+    for row in rows:
+        assert row["name"] == good
+        assert row["name_source"] == "structured"
+        assert poison not in row["text"]
+    assert market.check(rows[0], {"name": poison})[0] is False
+
+
+def test_batch_result_without_text_never_keyerrors(monkeypatch):
+    """全仓守护：批量结果**只有 text_batch、没有 text**，任何公开入口都不许 KeyError。
+
+    第三轮把 `text` 改名成 `text_batch` 时漏掉了 `Scanner.scan` 的
+    `got["text"]`，生产列表模式会直接崩。这条把「批量结果形状」钉死：
+    字段再改名时，下面这些入口会立刻红。
+    """
+    import numpy as np
+
+    from core import cards as cardmod
+
+    good = "QBZ95-1突击步枪-王牌之剑"
+    rects = [(10, 20, 310, 210), (320, 20, 620, 210)]
+    batch = [{"name": good, "grade": "极品|B", "price": "28,888",
+              "text_batch": f"{good}\n极品|B 28,888", "text_reliable": False}
+             for _ in rects]
+    for d in batch:
+        assert "text" not in d
+
+    monkeypatch.setattr(cardmod, "locate_cards",
+                        lambda img, gray=None, bottom_half=False: list(rects))
+    monkeypatch.setattr(cardmod, "read_cards",
+                        lambda img, recs, upscale=2: list(batch))
+    monkeypatch.setattr(cardmod, "read_bottoms",
+                        lambda img, recs, upscale=3: [])
+
+    frame = np.zeros((400, 700, 3), np.uint8)
+
+    # 扫描入口：模块级批量认卡 + 生产 Scanner
+    rows = market._scan_cards(frame, rects)
+    assert [r["name"] for r in rows] == [good, good]
+    rows2 = market.Scanner().scan(frame)
+    assert [r["name"] for r in rows2] == [good, good]
+
+    # 行级入口：拿一条没有 text 的行（只可能是批量结果形状）
+    bare = dict(batch[0])
+    bare.update(price=28888.0, x0=0, y0=0, x1=0, y1=0, cy=0)
+    assert "text" not in bare
+    assert market._match_text(bare) == good
+    assert market.check(bare, {"name": good})[0] is True
+    picked, why, diag = market.pick([bare], {"name": good})
+    assert picked is not None, why
+    assert diag[0]["text"] == ""
+
+
+def test_text_only_row_is_flagged_and_never_bought(monkeypatch):
+    """结构化名字块空了、只剩 text_batch：打降级标记，只展示不购买。
+
+    降级标记字段是 `name_source`（值 text_batch / none），`check()` 直接
+    拒绝、`pick()` 的台账里也带着它，出问题能查出来是哪一行降级了。
+    """
+    good = "QBZ95-1突击步枪-王牌之剑"
+    items = [{"name": "", "grade": "极品|B", "price": "28,888",
+              "text_batch": f"{good}\n极品|B 28,888", "text_reliable": False}]
+
+    rows = _batch_scan(monkeypatch, items)
+    assert rows[0]["name_source"] == "text_batch"
+    assert market._match_text(rows[0]) == ""
+
+    ok, why = market.check(rows[0], {"name": good})
+    assert not ok
+    assert "降级" in why and "name_source=text_batch" in why
+
+    row, why, diag = market.pick(rows, {"name": good})
+    assert row is None
+    assert diag[0]["name_source"] == "text_batch"
+    assert "降级" in diag[0]["why"]
+
+
+# ============================================================ 整幅兜底的保守判据
+# 回归来源：385 帧重测里，面板拼条价格拒识后走整幅兜底，`编号 000104429`
+# 被「取最大 ≥100 的整数」当成价格，9,999,999 输出成 104,429（静默错价）。
+# 抢购场景下这种错价会直接下成高价单，比拒识危险得多。
+
+def test_whole_frame_never_reads_id_as_price():
+    """编号行不得当价格：000104429 是货号。"""
+    text = "煙灭の時幻羽\n编号 000104429\n9.999.999"
+    row = market.parse_row(text, whole_frame=True)
+    assert row["price"] is None
+    assert row["price_note"] == market.PRICE_UNREAD
+    # 纯编号行同样拒识（单卡行路径也不认）
+    assert market.parse_row("编号 000104429", whole_frame=True)["price"] is None
+    assert market.parse_row("编号 000104429")["price"] is None
+
+
+def test_whole_frame_accepts_labeled_price():
+    """带标签的行能确认价格语义，照常取值。"""
+    text = "售价 9,999,999\n编号 000104429"
+    assert market.parse_row(text, whole_frame=True)["price"] == 9999999
+
+
+def test_whole_frame_only_accepts_ref_matching_number():
+    """无标签时只认与面板拼条一致的数；无参照就拒识，不猜。"""
+    assert market.parse_row("129.999", whole_frame=True,
+                            ref_price="129,999")["price"] == 129999
+    assert market.parse_row("129.999", whole_frame=True)["price"] is None
+    assert market.parse_row("17,000\n104,429", whole_frame=True,
+                            ref_price="17,000")["price"] == 17000
+
+
+def test_whole_frame_rejects_overlong_and_zero_padded_tokens():
+    """位数异常/多前导 0 的数字串按编号排除，不参与价格判定。"""
+    assert market.parse_row("饰品 025000 金币 1200", whole_frame=True)["price"] is None
+    assert market.parse_row("1044290000", whole_frame=True)["price"] is None

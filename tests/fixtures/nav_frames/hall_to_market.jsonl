@@ -1,0 +1,12 @@
+{"id":"01_hall_full","phase":"hall","expect":"hall","source":"真机 OCR 原文（tests/test_nav.py HALL_TEXT）","text":"CNUIO:I巳巳917734233179499一2囗231囗2囗1917开始游戏，别然茄汞兰分虐、老太轼[世界]赛伊德F3：航天找老仓库特战干员部门交易行特勤处02，477K极星守望0显示装备s11：群星零量杰坝02，089+0返行动9天2时27分行前备找0游对局"}
+{"id":"02_hall_fade_start","phase":"transition","expect":"transition","source":"真机 OCR 原文片段（大厅开始淡出）","text":"开始游戏，别然茄汞兰分虐、老太轼[世界]赛伊德F3：航天找老仓库特战干员部门交易行特勤处"}
+{"id":"03_hall_fade_mid","phase":"transition","expect":"transition","source":"真机 OCR 原文片段（大厅中段）","text":"特战干员部门交易行特勤处"}
+{"id":"04_transition_bare_entry","phase":"transition","expect":"transition","source":"合成占位：只有入口词，页面文案未出现","text":"交易行"}
+{"id":"05_transition_entering","phase":"transition","expect":"transition","source":"合成占位：过渡提示出现，市场正文尚未出","text":"正在进入交易行"}
+{"id":"06_loading_blank","phase":"loading","expect":"loading","source":"合成占位：黑屏/加载帧没有可读文字","text":""}
+{"id":"07_loading_words","phase":"loading","expect":"loading","source":"合成占位：加载提示（无真机过渡帧素材）","text":"正在加载资源"}
+{"id":"08_loading_latin","phase":"loading","expect":"loading","source":"合成占位：加载提示（无真机过渡帧素材）","text":"LOADING"}
+{"id":"09_market_full","phase":"market","expect":"market","source":"真机 OCR 原文（tests/test_nav.py MARKET_TEXT）","text":"CNUIO:I917734233179499一2囗231囗2囗19132，0490曼德尔砖交易筛选典藏外观典藏挂饰0-AKM突击步枪．群星当前市场流通量：999+交开放时间：08：00．次日05040+我的关注典藏工坊MK4冲锋枪．疾光魅影生典藏AKM突击步枪．群星生典藏KC17突击步枪．造物纪一生典藏"}
+{"id":"10_market_sparse","phase":"market","expect":"market","source":"真机 OCR 原文（tests/test_nav.py MARKET_TEXT_SPARSE）","text":"典崆外当季产出曼德尔砖．疾光魅影：：：二一一往季产曼德尔砖．星尔气感应。典藏饰0曼德尔砖·电玩高手2=当市流通量999+个拥有，0/1000个成交均价2，04900+，4044142交开放、400次日05，00"}
+{"id":"11_onsale_after_entry","phase":"market","expect":"market","source":"真机 OCR 原文（tests/test_nav.py ONSALE_TEXT）：进入后落在在售子页，也算已在交易行","text":"CNUIO:I巳巳917734233179499一2囗231囗2囗1巳57204940+，0推荐0不限公示期默0争认摊序MK4冲锋枪一疾光魅影MK4冲锋枪疾光魅影．MK4冲锋枪疾光魅影．"}
+{"id":"12_popup_insufficient_over_onsale","phase":"popup","expect":"popup","source":"合成占位：在售页文字 + 余额不足弹窗文字（整屏 OCR 拼串混在一起）","text":"推荐不限公示期默认排序MK4冲锋枪疾光魅影您当前的三角币不足，是否前往充值？（缺少2,001三角币，推荐充值328档位）取消充值"}

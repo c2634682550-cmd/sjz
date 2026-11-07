@@ -35,7 +35,7 @@ def test_everything_green_passes():
     checks = preflight.evaluate(_facts(), "list")
     assert preflight.all_ok(checks), [(c["label"], c["detail"]) for c in checks if not c["ok"]]
     assert [c["id"] for c in checks] == ["window", "ocr", "clock", "templates",
-                                        "integrity", "driver", "page"]
+                                        "calibration", "integrity", "driver", "page"]
 
 
 def test_driver_not_ready_is_warn_only():
@@ -50,6 +50,47 @@ def test_driver_not_ready_is_warn_only():
     assert c["warn"], "驱动未就绪必须是警示，不能拦启动"
     assert preflight.all_ok(checks), "warn 项不参与拦截"
     assert "PostMessage" in c["detail"]
+
+
+def test_calibration_error_blocks_but_skipped_passes():
+    """error（没跑起来/窗口越界）必须拦；skipped（没锚点、用内置）放行。"""
+    c = _by_id(preflight.evaluate(
+        _facts(calibration={"status": "error", "message": "窗口有一部分在屏幕外"}),
+        "list"), "calibration")
+    assert not c["ok"] and not c["warn"]
+    assert "屏幕外" in c["detail"]
+
+    c = _by_id(preflight.evaluate(
+        _facts(calibration={"status": "fallback",
+                            "message": "缺少关键锚点：购买按钮 没找到（最高分 0.512）"}),
+        "list"), "calibration")
+    assert not c["ok"] and "购买按钮" in c["detail"]
+
+    # P0-B：skipped 不是绿灯，没锚点又没手框就必须拦。
+    c = _by_id(preflight.evaluate(
+        _facts(calibration={"status": "skipped", "message": "按钮位置未经校对"}),
+        "list"), "calibration")
+    assert not c["ok"] and "未经校对" in c["detail"]
+
+    # 手框过（manual_ready）才允许 skipped 放行，且带 warn。
+    c = _by_id(preflight.evaluate(
+        _facts(calibration={"status": "skipped", "manual_ready": True,
+                            "message": "画面里没找到可校验锚点"}),
+        "list"), "calibration")
+    assert c["ok"] and c["warn"]
+
+    # adjusted 超阈值：autocalib 写下的 block 必须当次拦，不能是「绿+警告」
+    c = _by_id(preflight.evaluate(
+        _facts(calibration={"status": "adjusted", "block": "",
+                            "offset": [2.0, 1.0], "message": "已微调"}),
+        "list"), "calibration")
+    assert c["ok"] and c["warn"]
+
+    c = _by_id(preflight.evaluate(
+        _facts(calibration={"status": "adjusted", "offset": [53.0, 11.5],
+                            "block": "微调量 +53.0/+11.5 px 超出可信上限 24.0 px"}),
+        "list"), "calibration")
+    assert not c["ok"] and "可信上限" in c["detail"]
 
 
 def test_wrong_resolution_blocks_the_start():
@@ -277,3 +318,37 @@ def test_clock_drift_is_warn_only():
     c2 = _by_id(never, "clock")
     assert not c2["ok"] and c2.get("warn"), "从没校过时也要能开抢，但要提示"
     assert "不影响" in c2["detail"], c2["detail"]
+
+
+def test_collect_reports_the_configured_input_mode_not_the_route(monkeypatch):
+    """collect(cfg, mode, workflow) 的第二个形参是「路线」，不是「输入通道」。
+
+    server.py 按位置传 list/detail/countdown，签名不能改。函数体里以前
+    用同名局部变量 `mode` 装 cfg["input_mode"]，把形参整个盖掉 ——
+    读代码时分不清这两条线。改名后：facts["input_mode"] 只认配置，
+    传什么路线都不影响它。
+    """
+    from core import config as cfgmod
+    from core import input as input_mod
+    from core import ocr, ocr_service, timesync
+    from core import screen as screen_mod
+
+    cfg = cfgmod.Config({"input_mode": "legacy"})
+    # 只查这条分支的字段，别让真抓屏 / OCR / 校时把用例拖慢
+    monkeypatch.setattr(timesync, "auto_wait_first", lambda *a, **k: None)
+    monkeypatch.setattr(timesync, "info", lambda: {})
+    monkeypatch.setattr(ocr, "available", lambda: False)
+    monkeypatch.setattr(ocr, "backend_name", lambda: "stub")
+    monkeypatch.setattr(ocr_service, "current", lambda: None)
+    monkeypatch.setattr(input_mod, "process_integrity", lambda: None)
+    monkeypatch.setattr(input_mod, "game_integrity", lambda: None)
+
+    def _no_screen(*a, **k):
+        raise RuntimeError("测试里不抓屏")
+
+    monkeypatch.setattr(screen_mod, "Screen", _no_screen)
+
+    for route in ("list", "detail", "countdown"):
+        facts = preflight.collect(cfg, route, route)
+        assert facts["input_mode"] == "legacy", route
+        assert facts["driver"]["mode"] == "legacy", route
