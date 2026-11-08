@@ -13,7 +13,8 @@
 import numpy as np
 import pytest
 
-from core.nav import NavError, Navigator
+from core.nav import NavError, Navigator, judge_click
+from core.nav_col import NavColPanel
 from core.nav_coords import (COL_FILTER, COL_GUN_X2, COL_GUN_Y, COL_NOT_OWNED,
                              COL_OWNED, COL_RARITY_X, COL_RARITY_Y, COL_SEASON,
                              COL_SEASON_ITEM_DY, COL_SEASON_ITEM_X,
@@ -648,3 +649,93 @@ def test_col_filter_switches_back_to_the_trade_tab_when_the_panel_will_not_open(
     assert first < tab, "顺序错了：应该先点「筛选」，打不开再切「交易」"
     assert clicks.count((COL_FILTER[0], COL_FILTER[1])) == 2, \
         "切回「交易」之后应该再点一次「筛选」"
+
+
+# ------------------------------------------- 下拉「单击」语义（2026-11-08）
+
+def test_dropdown_toggle_takes_exactly_one_press():
+    """下拉是切换语义：一下开、再一下关 —— 只按一次，绝不补第二下。
+
+    真机实测：用双击配方（hold 0.08 / gap 0.25）点下拉，整帧 diff 只有
+    0.026，OCR 一行没多 —— 第一下展开、第二下又收起，互相抵消。
+    """
+    n, screen, mouse, kb, state = _make_nav()
+    assert state["open"] is True
+
+    n._click_once(COL_SEASON, "赛季下拉·收")
+    assert len(mouse.clicks) == 1, "下拉只允许按一次"
+    assert state["open"] is False
+
+    n._click_once(COL_SEASON, "赛季下拉·开")
+    assert len(mouse.clicks) == 2
+    assert state["open"] is True
+
+
+def test_double_click_on_dropdown_cancels_itself():
+    """双击下拉 = 开→关，状态回到原点；这是「被抵消」不是「注入失败」。"""
+    n, screen, mouse, kb, state = _make_nav()
+    before = state["open"]
+    n._double_click(COL_SEASON, "赛季下拉")
+    assert len(mouse.clicks) == 2
+    assert state["open"] is before, "两次点击应该互相抵消"
+
+
+def test_judge_click_calls_tiny_diff_plus_same_page_cancelled():
+    """判据：diff < 0.05 且页面没变 → cancelled（本轮第 13 条就是 0.026）。"""
+    assert judge_click(0.026, "filter_collection", "filter_collection") == "cancelled"
+    # 驱动层报错才是 inject_failure —— 不要混为一谈
+    assert judge_click(0.026, "filter_collection", "filter_collection",
+                       channel_error="not foreground") == "inject_failure"
+    # 页面没变、diff 在灰区 → 单击没接住，可以补一次
+    assert judge_click(0.07, "filter_collection", "filter_collection") == "no_response"
+    # 页面变了 / diff 够大 → ok
+    assert judge_click(0.026, "filter_collection", "market") == "ok"
+    assert judge_click(0.31, "market", "market") == "ok"
+
+
+def test_confirm_retries_once_then_succeeds():
+    """「确认」第一发双击没关掉面板 → 补一次，成功就不再补。"""
+    n, screen, mouse, kb, state = _make_nav()
+    pages = iter(["filter_collection", "market"])
+    n.where = lambda: (next(pages), "")
+
+    assert n.col_filter_confirm() is True
+    # 每次双击 = 2 下，补一次共 4 下；第三发绝不能出现
+    assert len(mouse.clicks) == 4, f"点击了 {len(mouse.clicks)} 下，应为 4"
+
+
+def test_confirm_raises_after_two_attempts_no_replay():
+    """两次双击都还在 filter_collection → 抛错，不再重放。"""
+    n, screen, mouse, kb, state = _make_nav()
+    n.where = lambda: ("filter_collection", "")
+
+    with pytest.raises(NavError, match="2 次"):
+        n.col_filter_confirm()
+    assert len(mouse.clicks) == 4, "上限 2 次双击 = 4 下，不能多"
+
+
+# --------------------------------------- 赛季名 OCR 纠错（2026-11-08）
+
+def test_series_ocr_fix_maps_garbled_s2_name():
+    """真机 OCR 把「棱镜攻势S2」读成「持镜攻热C2」，必须纠回标准名。
+
+    不修的话下拉里永远找不到「棱镜攻势S2」—— 三项里错三项（持/棱、
+    热/势、C/S），按字符重合度算只剩「镜」「攻」「2」，功能等同不可用。
+    """
+    assert NavColPanel._fix_series_ocr("持镜攻热C2") == "棱镜攻势S2"
+    # 其余实测错字也一并纠回
+    assert NavColPanel._fix_series_ocr("悬赏今") == "悬赏令"
+    assert NavColPanel._fix_series_ocr("命运王牒") == "命运王牌"
+    assert NavColPanel._fix_series_ocr("气獠感应") == "气象感应"
+    # 不能把 S1 也改成 S2
+    assert NavColPanel._fix_series_ocr("棱镜攻势") == "棱镜攻势"
+
+
+def test_series_spans_reads_garbled_s2_as_s2():
+    """错误串进到行分组后，仍然要落到「棱镜攻势S2」而不是 S1。"""
+    words = [{"text": "持镜攻热C2", "x": 590, "y": 400, "h": 16}]
+    spans = NavColPanel._series_spans(words, y0=0, by=0)
+    assert "棱镜攻势S2" in spans, spans
+    assert "棱镜攻势" not in spans, "S2 那行不能落到 S1 上"
+
+
