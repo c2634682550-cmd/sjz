@@ -492,6 +492,193 @@ def raw_mouse_activity(ms_budget=1200):
     return {"by_vidpid": by_vidpid, "counts": dict(holder), "names": names}
 
 
+class PhysicalMouseWatch:
+    """旁路监听**物理鼠标**的 Raw Input 活动，不拦截、不阻塞。
+
+    为什么不用 interception_set_filter 监听：driver 的 filter 位一旦打开，
+    事件会先进本进程队列、必须 interception_send 再放行，物理鼠标就被人为
+    拖慢甚至卡住（正是「抢鼠标」的另一面）。Raw Input 的 RIDEV_INPUTSINK
+    只是复制一份给本进程，事件照常到游戏，filter 保持 0。
+
+    注入事件的剔除：注入与本机物理鼠标共用同一设备号，Raw Input 无法从
+    事件本身区分来源；所以由发送方在注入窗口内调 `suppress()`，窗口内到达
+    的事件计入 injected_skipped，不触发让路。
+
+    回调在监听线程里执行，必须极轻（只置标志）。
+    """
+
+    def __init__(self, vidpid=None, on_activity=None):
+        self.vidpid = {str(v).upper() for v in (vidpid or []) if v}
+        self._cb = on_activity
+        self._thread = None
+        self._stop = threading.Event()
+        self._ready = threading.Event()
+        self._hwnd = None
+        self._proc_ref = None
+        self._lock = threading.Lock()
+        self.suppress_until = 0.0
+        self.events = 0
+        self.injected_skipped = 0
+        self.other_device = 0
+        self.last_at = 0.0
+        self.error = None
+
+    # ---- 生命周期 ----
+    def start(self, timeout=1.0):
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        self._stop.clear()
+        self._ready.clear()
+        self._thread = threading.Thread(target=self._run, name="phys-mouse-watch",
+                                        daemon=True)
+        self._thread.start()
+        self._ready.wait(timeout)
+        return self._ready.is_set()
+
+    def stop(self):
+        self._stop.set()
+        th = self._thread
+        if th is not None:
+            th.join(timeout=0.6)
+        self._thread = None
+
+    # ---- 供发送方调用 ----
+    def suppress(self, ms=8.0):
+        """声明接下来 ms 内的事件是注入产生的，不算人工操作。"""
+        now = time.perf_counter()
+        self.suppress_until = max(self.suppress_until, now + ms / 1000.0)
+
+    def poke(self, n=1):
+        """测试用：模拟一次物理鼠标活动，走与真实事件完全相同的回调路径。"""
+        for _ in range(n):
+            self._fire(time.perf_counter())
+
+    def _fire(self, ts):
+        self.events += 1
+        self.last_at = ts
+        cb = self._cb
+        if cb is not None:
+            try:
+                cb(ts)
+            except Exception:                                # noqa: BLE001
+                pass
+
+    # ---- 内部 ----
+    def _run(self):
+        try:
+            self._loop()
+        except Exception as e:                               # noqa: BLE001
+            self.error = f"{type(e).__name__}: {e}"
+        finally:
+            self._ready.set()
+
+    def _loop(self):
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        user32.DefWindowProcW.restype = ctypes.c_ssize_t
+        user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                          wintypes.WPARAM, wintypes.LPARAM]
+        user32.CreateWindowExW.restype = wintypes.HWND
+        user32.CreateWindowExW.argtypes = [
+            wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, ctypes.c_void_p]
+        user32.RegisterRawInputDevices.restype = wintypes.BOOL
+        user32.RegisterRawInputDevices.argtypes = [ctypes.c_void_p, wintypes.UINT,
+                                                   wintypes.UINT]
+        user32.GetRawInputData.restype = wintypes.UINT
+        user32.GetRawInputData.argtypes = [wintypes.HANDLE, wintypes.UINT,
+                                           ctypes.c_void_p,
+                                           ctypes.POINTER(wintypes.UINT),
+                                           wintypes.UINT]
+        WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND,
+                                     wintypes.UINT, wintypes.WPARAM,
+                                     wintypes.LPARAM)
+        names = _raw_device_names(user32)
+
+        def wndproc(hwnd, msg, wp, lp):
+            if msg == 0x00FF:  # WM_INPUT
+                size = wintypes.UINT(0)
+                user32.GetRawInputData(lp, 0x10000003, None, ctypes.byref(size),
+                                       ctypes.sizeof(_RAWINPUTHEADER))
+                buf = ctypes.create_string_buffer(max(1, size.value))
+                n = user32.GetRawInputData(lp, 0x10000003, buf,
+                                           ctypes.byref(size),
+                                           ctypes.sizeof(_RAWINPUTHEADER))
+                if n:
+                    hdr = ctypes.cast(buf,
+                                      ctypes.POINTER(_RAWINPUTHEADER)).contents
+                    if hdr.dwType == 0:  # RIM_TYPEMOUSE
+                        if self.vidpid:
+                            m = _VPID.search(names.get(int(hdr.hDevice), ""))
+                            key = (f"{m.group(1).upper()}_{m.group(2).upper()}"
+                                   if m else "")
+                            if key and key not in self.vidpid:
+                                self.other_device += 1
+                                return 0
+                        now = time.perf_counter()
+                        with self._lock:
+                            if now < self.suppress_until:
+                                self.injected_skipped += 1
+                                return 0
+                        self._fire(now)
+                return 0
+            return user32.DefWindowProcW(hwnd, msg, wp, lp)
+
+        self._proc_ref = WNDPROC(wndproc)
+        class_name = f"TraePhysMouse{os.getpid()}"
+        WNDCLASS = type("WNDCLASS", (ctypes.Structure,), {"_fields_": [
+            ("style", ctypes.c_uint), ("lpfnWndProc", WNDPROC),
+            ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int),
+            ("hInstance", wintypes.HINSTANCE), ("hIcon", wintypes.HICON),
+            ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HBRUSH),
+            ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR)]})
+        hinst = kernel32.GetModuleHandleW(None)
+        user32.RegisterClassW(ctypes.byref(WNDCLASS(0, self._proc_ref, 0, 0, hinst,
+                                                     None, None, None, None,
+                                                     class_name)))
+        self._hwnd = user32.CreateWindowExW(0, class_name, "trae-phys", 0,
+                                            0, 0, 0, 0, None, None, hinst, None)
+        if not self._hwnd:
+            raise InterceptionError("物理鼠标旁路监听窗口创建失败")
+        rid = _RAWINPUTDEVICE(1, 2, 0x00000100, self._hwnd)  # RIDEV_INPUTSINK
+        user32.RegisterRawInputDevices(ctypes.byref(rid), 1,
+                                       ctypes.sizeof(_RAWINPUTDEVICE))
+        msg = wintypes.MSG()
+        self._ready.set()
+        while not self._stop.is_set():
+            got = False
+            while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+                got = True
+            if not got:
+                time.sleep(0.002)
+        user32.DestroyWindow(self._hwnd)
+        self._hwnd = None
+
+
+_PHYS_WATCH = None
+_PHYS_LOCK = threading.Lock()
+
+
+def physical_mouse_watch(vidpid=None, on_activity=None):
+    """进程级单例：物理鼠标活动监听（首次调用才建线程）。"""
+    global _PHYS_WATCH
+    with _PHYS_LOCK:
+        if _PHYS_WATCH is None:
+            w = PhysicalMouseWatch(vidpid=vidpid, on_activity=on_activity)
+            if not w.start():
+                return None
+            _PHYS_WATCH = w
+        else:
+            if on_activity is not None:
+                _PHYS_WATCH._cb = on_activity
+            if vidpid:
+                _PHYS_WATCH.vidpid = {str(v).upper() for v in vidpid}
+        return _PHYS_WATCH
+
+
 def select_mouse(prefer=None, allow_virtual=None, probe_ms=None):
     """挑一只用于注入的鼠标设备。
 

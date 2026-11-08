@@ -10,6 +10,7 @@ legacy / message 两条通道只接受显式配置（`input_mode`），不会作
 """
 import ctypes
 import logging
+import re
 import threading
 import time
 from ctypes import wintypes
@@ -491,6 +492,80 @@ CLICK_OPT_DEFAULTS = {"batch": True, "cache": True,
                       "btn_noabs": False}
 
 
+class UserGate:
+    """人工操作让路：检测到物理鼠标动静就暂停注入，静默 1.5 秒再继续。
+
+    判据来自真机：判定 B（游戏吃系统光标）下没有「全程零位移」路径，
+    所以目标改成「动得短 + 人一动就让路」。监听线程（interception.
+    PhysicalMouseWatch）只做一件事：把活动时刻扔给 `note()`；`gate()` 在
+    每次注入前被调用，等人停手满 quiet_s 才放行。
+
+    响应时间口径：`note()` 记下首个活动时刻，`gate()` 第一次被观测到就
+    追加一条样本 (now - 首活动时刻)。脚本在注入间隙里没有阻塞点——
+    点击是同步的，`gate()` 就紧挨在发送之前，所以这条样本就是「用户动
+    鼠标 → 脚本停手」的真实响应时间。
+    """
+
+    QUIET_S = 1.5
+
+    def __init__(self, quiet_s=None):
+        self.quiet_s = float(self.QUIET_S if quiet_s is None else quiet_s)
+        self._lock = threading.Lock()
+        self._yield_until = 0.0
+        self._pending = None
+        self.events = 0          # 观测到的人工活动次数
+        self.pauses = 0          # 触发的暂停段数（每段只记一条日志）
+        self.samples = []        # 响应时间样本（ms）
+        self.waited_ms = 0.0
+
+    def note(self, ts=None):
+        """监听线程回调：物理鼠标动了一下。只置标志，log 不在这个线程打。"""
+        ts = time.perf_counter() if ts is None else ts
+        with self._lock:
+            in_pause = ts < self._yield_until
+            self.events += 1
+            self._yield_until = ts + self.quiet_s
+            if not in_pause:
+                self.pauses += 1
+                self._pending = ts
+
+    def gate(self):
+        """注入前调用。有人工活动就等到静默期满；返回本次等待毫秒。"""
+        now = time.perf_counter()
+        with self._lock:
+            pending = self._pending
+            self._pending = None
+            until = self._yield_until
+        if pending is not None:
+            self.samples.append(round((now - pending) * 1000.0, 3))
+            _LOG.info("检测到人工操作，暂停 %.1f 秒", self.quiet_s)
+        t0 = time.perf_counter()
+        while True:
+            now = time.perf_counter()
+            with self._lock:
+                until = self._yield_until
+            if now >= until:
+                break
+            time.sleep(min(0.05, until - now))
+        waited = (time.perf_counter() - t0) * 1000.0
+        self.waited_ms += waited
+        return waited
+
+    def stats(self):
+        s = sorted(self.samples)
+
+        def pct(p):
+            if not s:
+                return None
+            return s[min(len(s) - 1, int(round(p / 100.0 * (len(s) - 1))))]
+
+        return {"events": self.events, "pauses": self.pauses,
+                "samples": len(s), "p50_ms": pct(50), "p95_ms": pct(95),
+                "max_ms": s[-1] if s else None,
+                "waited_ms": round(self.waited_ms, 1),
+                "quiet_s": self.quiet_s}
+
+
 class Mouse:
     # ---- 点击性能/快速路径字段的类级默认值 BEGIN ----
     # 这些字段只在 `_init_click_perf()` 里被实例化成可变对象。测试与
@@ -512,6 +587,9 @@ class Mouse:
     _home_deadline = None
     _click_state_ready = False
     _batch_warn_once = False
+    # 人工操作让路：_physwatch 是 Raw Input 旁路监听（懒启动），_gate 是让路闸门。
+    _physwatch = None
+    _gate = None
     # 像素基准/虚拟屏几何：每次点击前刷新，窗口移动/改分辨率/切全屏都要跟上。
     _screen = None
     _vx = 0
@@ -626,6 +704,45 @@ class Mouse:
         """
         if not self.__dict__.get("_click_state_ready"):
             self._init_click_perf()
+
+    def _ensure_physwatch(self):
+        """懒启动物理鼠标旁路监听（拿不到设备就不监听，不阻塞点击）。"""
+        if getattr(self, "_physwatch", None) is not None:
+            return self._physwatch
+        if getattr(self, "_gate", None) is None:
+            self._gate = UserGate()
+        ident = getattr(self, "_ident", None)
+        if not ident:
+            return None
+        m = re.search(r"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})",
+                      ident.get("hardware_id") or "")
+        vidpid = [f"{m.group(1).upper()}_{m.group(2).upper()}"] if m else None
+        try:
+            from .interception import physical_mouse_watch
+            self._physwatch = physical_mouse_watch(vidpid, self._gate.note)
+        except Exception as e:                               # noqa: BLE001
+            _LOG.warning("物理鼠标监听启动失败，让路功能降级：%s: %s",
+                         type(e).__name__, e)
+            self._physwatch = None
+        return self._physwatch
+
+    def _user_gate(self):
+        """注入前让路：有人工操作就等到静默期满。返回等待毫秒。"""
+        self._ensure_physwatch()
+        if getattr(self, "_gate", None) is None:
+            self._gate = UserGate()
+        return self._gate.gate()
+
+    def user_gate_stats(self):
+        gate = getattr(self, "_gate", None)
+        out = gate.stats() if gate is not None else {"samples": 0}
+        watch = getattr(self, "_physwatch", None)
+        if watch is not None:
+            out.update(watch_events=getattr(watch, "events", 0),
+                       injected_skipped=getattr(watch, "injected_skipped", 0),
+                       other_device=getattr(watch, "other_device", 0),
+                       watch_error=getattr(watch, "error", None))
+        return out
 
     def _settle_home_pending(self):
         """收口「回原点未确认」：超时后主动再设一次，不依赖下一击。
@@ -1025,31 +1142,59 @@ class Mouse:
             return False
 
         started = time.perf_counter()
+        # 长距离直接到位：>200px 不再逐点划过去 —— 逐点绝对移动正是肉眼看到
+        # 「光标飞过半个屏幕」的元凶。落点后只在 ±3px 内做 3 个小抖动，
+        # 保留一点轨迹感，但可见位移基本等于直线距离。
+        dist = ((pts[-1][0] - pts[0][0]) ** 2 + (pts[-1][1] - pts[0][1]) ** 2) ** 0.5
+        jump = dist > 200.0
         try:
             if self._mode == "legacy":
-                for (px, py), t in zip(pts, ts):
+                if jump:
                     self._legacy_place_cursor(
-                        int(round(self._origin_left + px)),
-                        int(round(self._origin_top + py)))
-                    gap = (started + t / 1000.0) - time.perf_counter()
-                    if gap > 0:
-                        time.sleep(gap)
+                        int(round(self._origin_left + pts[-1][0])),
+                        int(round(self._origin_top + pts[-1][1])))
+                else:
+                    for (px, py), t in zip(pts, ts):
+                        self._legacy_place_cursor(
+                            int(round(self._origin_left + px)),
+                            int(round(self._origin_top + py)))
+                        gap = (started + t / 1000.0) - time.perf_counter()
+                        if gap > 0:
+                            time.sleep(gap)
             else:
                 from .interception import (MOUSE_MOVE_ABSOLUTE,
                                            MOUSE_VIRTUAL_DESKTOP, shared)
                 drv = shared()
                 ident = drv.mouse_device()
                 flags = MOUSE_MOVE_ABSOLUTE | MOUSE_VIRTUAL_DESKTOP
-                for (px, py), t in zip(pts, ts):
-                    try:
-                        ax, ay = self._abs(px, py)
-                    except ValueError:
-                        break     # 出界的点直接停，后面交给正常点击/还原
+                if getattr(self, "_physwatch", None) is not None:
+                    self._physwatch.suppress(6)
+                if jump:
+                    tx, ty = pts[-1]
+                    ax, ay = self._abs(tx, ty)
                     drv.send_mouse(0, x=ax, y=ay, flags=flags,
                                    device=ident["device"])
-                    gap = (started + t / 1000.0) - time.perf_counter()
-                    if gap > 0:
-                        time.sleep(gap)
+                    for dx, dy in ((2, 1), (-2, -1)):
+                        try:
+                            jx, jy = self._abs(tx + dx, ty + dy)
+                        except ValueError:
+                            continue
+                        drv.send_mouse(0, x=jx, y=jy, flags=flags,
+                                       device=ident["device"])
+                    # 最后一条一定精确回到目标点：抖动只是观感，落点不能偏。
+                    drv.send_mouse(0, x=ax, y=ay, flags=flags,
+                                   device=ident["device"])
+                else:
+                    for (px, py), t in zip(pts, ts):
+                        try:
+                            ax, ay = self._abs(px, py)
+                        except ValueError:
+                            break     # 出界的点直接停，后面交给正常点击/还原
+                        drv.send_mouse(0, x=ax, y=ay, flags=flags,
+                                       device=ident["device"])
+                        gap = (started + t / 1000.0) - time.perf_counter()
+                        if gap > 0:
+                            time.sleep(gap)
         except Exception as e:                               # noqa: BLE001
             # 轨迹是观感层，不能因为它把整场抢购打断：记录降级，点击照常走
             self._last_path = {
@@ -1061,6 +1206,11 @@ class Mouse:
         self._last_path = {
             "used": True, "channel": self._mode, "points": len(pts),
             "ms": round(float(ts[-1]), 2), "at": time.time()}
+        if jump:
+            self._last_path.update({
+                "jump": True, "jump_px": round(dist, 1), "jitter_px": 3,
+                "points_sent": 5, "visible_px": round(dist + 7.0, 1),
+                "reason": "目标距离 >200px：单条绝对位移到位 + 落点 ±3px 三次小抖动"})
         return True
 
     def _emit_plan(self, path):
@@ -1561,6 +1711,12 @@ class Mouse:
             else:
                 self._home_pending = False     # 用户真的动了鼠标
         mark("origin")
+        # 人工操作让路：用户一动鼠标就等静默期满再注入，并把即将发出的
+        # 事件划进注入窗口（同一设备号，Raw Input 分不出来源）。
+        if self._user_gate():
+            mark("user_gate")
+        if getattr(self, "_physwatch", None) is not None:
+            self._physwatch.suppress(20)
         # ---- feature:mouse.human BEGIN ----
         # 必须在 origin 取好之后再走轨迹：走完再还原，才不会把光标留在按钮上。
         # 开火可能带一段 8~20ms 收尾短移（分段预热），零位移时 path 为 None。
@@ -1584,6 +1740,9 @@ class Mouse:
         else:
             watch = None
         mark("watch")
+        # 再划一次注入窗口：轨迹段可能已经吃掉上一段的 20ms。
+        if getattr(self, "_physwatch", None) is not None:
+            self._physwatch.suppress(12)
         t0 = time.perf_counter()
         t_down = t_up = t_mv = None
         # 投递层明细：每条事件「期望写入数 vs 驱动实际写入数」。这是把
@@ -2302,6 +2461,13 @@ class Keyboard:
         self._reason = decision.get("reason", "")
         self._fallback_policy = decision.get("policy")
 
+    # 让路闸门与鼠标共用一份实现：滚轮用的是 Keyboard.wheel，它也要让路。
+    _physwatch = None
+    _gate = None
+    _ensure_physwatch = Mouse._ensure_physwatch
+    _user_gate = Mouse._user_gate
+    user_gate_stats = Mouse.user_gate_stats
+
     @property
     def mode(self):
         return self._mode
@@ -2441,10 +2607,21 @@ class Keyboard:
                                    MOUSE_WHEEL, shared)
         drv = shared()
         ident = drv.mouse_device()
+        # 监听只用这只鼠的 vid/pid 过滤，别把键盘/其它设备的动作算成人工操作。
+        self._ident = ident
         flags = MOUSE_MOVE_ABSOLUTE | MOUSE_VIRTUAL_DESKTOP
         self._refresh_geometry()
+        self._ensure_physwatch()
+        if self._user_gate():
+            pass
         ax, ay = self._abs(x, y)
         home = _cursor_pos()
+        # 光标已经在目标区（|dx|,|dy| ≤ 8px）就不再绝对移动：轮询事件本来
+        # 就打在「OS 光标当前位置」，游戏按那个位置路由滚动。省掉这一挪，
+        # 滚列表时就不会看到光标跳进列表区再弹回来。
+        sx, sy = self._origin_left + x, self._origin_top + y
+        already = (home is not None
+                   and abs(home[0] - sx) <= 8 and abs(home[1] - sy) <= 8)
         hx = hy = None
         if home is not None:
             try:
@@ -2461,10 +2638,13 @@ class Keyboard:
         self._home = home
         self._home_target = (self._origin_left + x, self._origin_top + y)
         self._home_target_ts = time.perf_counter()
-        self._home_pending = home is not None
+        self._home_pending = home is not None and not already
         try:
-            drv.send_mouse(0, x=ax, y=ay, flags=flags, device=ident["device"])
-            time.sleep(0.05)
+            if getattr(self, "_physwatch", None) is not None:
+                self._physwatch.suppress(12)
+            if not already:
+                drv.send_mouse(0, x=ax, y=ay, flags=flags, device=ident["device"])
+                time.sleep(0.05)
             step = 120
             for _ in range(abs(int(notches))):
                 delta = step if int(notches) > 0 else -step
@@ -2476,7 +2656,9 @@ class Keyboard:
             return True
         finally:
             # 回原点也走驱动 stroke（最后一条位置事件），不发 SetCursorPos。
-            if hx is not None:
+            if already:
+                self._home_pending = False
+            elif hx is not None:
                 try:
                     drv.send_mouse(0, x=hx, y=hy, flags=flags,
                                    device=ident["device"])
