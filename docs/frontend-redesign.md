@@ -254,3 +254,17 @@
 pywebview 的 `Window` **没有截图 API**（只有 `evaluate_js` 等），
 所以顶栏截图是让页面用 `drawImage` + CSS 色值把关键区域重绘到 canvas 再落盘的。
 重绘只覆盖 canvas 能画的元素，HTML 按钮/pill 不会出现——那是重绘的局限。
+
+---
+
+## 六、迷你控制条（整窗收缩）
+
+形态已定稿：**屏顶单行胶囊 720×56**（1920×1080 / 100% DPI），沿用本文的深色令牌，
+不抢焦点（`WS_EX_NOACTIVATE` + `TOOLWINDOW` + `TOPMOST`），关闭 = 退出程序。
+
+- 界面实现：`web/index.html` 的 `#miniBar` 与 `body.mini`（同一 WebView2 内切视图，
+  不新建第二个 WebView2，避免 `DeleteAllCookies()` 清掉首屏令牌导致 403）
+- 窗口层实现：`desktop.py` 的 `_mini_enter / _mini_exit`
+- 与参考视频的差异：视频是浅色胶囊 + `⋮` 菜单，这里换成深色令牌 + 「展开」「关闭」两个独立入口
+- 完整实测（收缩/展开耗时、不抢焦点、状态同步、DPI 100/125/150 三档尺寸）
+  见 `docs/release_readiness.md` 第十节
