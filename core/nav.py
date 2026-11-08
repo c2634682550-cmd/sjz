@@ -38,6 +38,43 @@ from .nav_coords import (FORBIDDEN, NavError, TAB_CHARM, TAB_COLLECTION,
                          TAB_MANDEL, _scaled)
 from .nav_ons import NavOnsPanel
 
+# 点完之后整帧差异小于这个值，且页面判定没变 → 判「动作被抵消」。
+# 实测（2026-11-08，赛季下拉）：用双击配方点下拉 = 开→关，
+# diff = 0.026，OCR 一行没多。这不是注入失败（通道 accepted/processed
+# 都是 True），是两次点击把 UI 状态抵消回了原点。判成注入失败会导致
+# 上层重试 → 再抵消一次，越重试越乱。
+CANCEL_DIFF = 0.05
+RESPONSE_DIFF = 0.10
+
+
+def judge_click(diff, page_before=None, page_after=None, channel_error=None):
+    """点后归因，四选一：inject_failure / cancelled / no_response / ok。
+
+    · inject_failure：驱动层报错（没进游戏窗口），这时重试没有意义；
+    · cancelled：diff < CANCEL_DIFF 且页面没变 → **动作被抵消**（典型是
+      双击把下拉开→关），不是注入失败，别重放同一个动作；
+    · no_response：页面没变但 diff 在 0.05~0.10，多半是单击没被 UI 接住，
+      可以补一次；
+    · ok：页面变了，或 diff 足够大。
+    """
+    if channel_error:
+        return "inject_failure"
+    try:
+        d = None if diff is None else float(diff)
+    except (TypeError, ValueError):
+        d = None
+    same_page = (page_before is not None and page_before == page_after)
+    if d is not None and d < CANCEL_DIFF and same_page:
+        return "cancelled"
+    if page_before is not None and page_after is not None \
+            and page_before != page_after:
+        return "ok"
+    if d is None:
+        return "unknown"
+    if d >= RESPONSE_DIFF:
+        return "ok"
+    return "no_response"
+
 
 # ---------------------------------------------------------------- 页面识别
 #
@@ -442,6 +479,45 @@ class NavBase:
         raise NavError(f"{step or '当前步骤'}：期望页面 {wants}，实际 {page}"
                        f"（OCR：{text[:80]}）")
 
+    def _wait_page(self, want, cap=2.0, step=0.25, label="", activate=""):
+        """轮询到页面落到 want 就立刻返回；到 cap 仍未到就返回最近一次
+        **真实判定**，由调用方照旧报错（超时绝不当成功）。
+
+        用来替代「固定 sleep N 秒」：sleep 在快机器上白等、在慢机器上不够。
+        读一次 `where()` 要 0.9~1.3s，所以 step 只是两次判定之间的最小间隔，
+        实际节奏 = max(step, 一次 where)，不会空转。
+
+        - `label`：给了就地抛 NavError，文案与 `require` 完全一致。
+        - `activate`：给了就先做一次前台守卫（等同 require 在断言前的处理）。
+
+        失败路径保证「至少等满 cap 再下结论」——原来 sleep(cap) 之后那一次
+        读取不会因为轮询提前结束而丢掉，慢机器上不会被误判。
+        """
+        wants = (want,) if isinstance(want, str) else tuple(want)
+        if activate:
+            self._activate(activate)
+        t0 = time.perf_counter()
+        page, text = self.where()
+        while page not in wants:
+            left = cap - (time.perf_counter() - t0)
+            if left <= 0:
+                break
+            time.sleep(min(step, left))
+            page, text = self.where()
+        if page not in wants:
+            left = cap - (time.perf_counter() - t0)
+            if left > 0:
+                time.sleep(left)
+                page, text = self.where()
+        if page in wants:
+            if label:
+                self.say(f"  页面确认：{page}", "info")
+            return page
+        if label:
+            raise NavError(f"{label}：期望页面 {wants}，实际 {page}"
+                           f"（OCR：{text[:80]}）")
+        return page
+
 
     @staticmethod
     def _diff(a, b):
@@ -694,8 +770,17 @@ class NavBase:
             self.say(f"已经在 {name} 标签上", "info")
             return True
         self.click(table[name], f"标签 {name}", timeout=3.0)
-        time.sleep(settle)
+        # 固定 settle(1.2s) → 每 0.3s 读一次绿框像素（`tab_now` 是纯像素采样，
+        # 约 15ms），读到就立刻走。上限仍是 settle；到点仍不对，下面那道
+        # `tab_now()` 硬校验照旧抛 NavError，不静默继续。
+        t0 = time.perf_counter()
         got = self.tab_now()
+        while got != name:
+            left = settle - (time.perf_counter() - t0)
+            if left <= 0:
+                break
+            time.sleep(min(0.3, left))
+            got = self.tab_now()
         if got != name:
             raise NavError(f"点标签 {name} 没切过去（绿框现在在 {got}）——"
                            f"可能不在市场页")
@@ -749,18 +834,66 @@ class NavBase:
                 return page
         raise NavError("点「前往游玩」后没进到烽火地带大厅")
 
-    def recover(self, max_esc=5):
+    def _close_panel_once(self, why=""):
+        """关面板只发一次 ESC：必须先确认识别到面板，发完回读，没关掉就报错。
+
+        2026-11-08 用户反馈：恢复路径会反复按 ESC 抢操作。根因就是之前
+        「看不到面板也照按」+ 外层重试重放。这里把上限硬定成 1 次。
+        """
+        if not (self._panel_open() or self._ons_filter_open()):
+            return False
+        if self.keyboard is None:
+            raise NavError("没有 Keyboard，关不了面板")
+        tag = f"（{why}）" if why else ""
+        self.say(f"确认识别到面板{tag}，只按一次 ESC")
+        self.keyboard.tap("ESC")
+        time.sleep(0.9)
+        if self._panel_open() or self._ons_filter_open():
+            raise NavError("ESC 一次后面板仍在，停止（不重放按键）")
+        self.say("  面板已关闭")
+        return True
+
+    def recover_to_hall(self):
+        """确定路径回交易行：Tab → 确认大厅 → F4 → 确认 market。
+
+        2026-11-08 真机实测（tab_probe）：在次级界面按一次 Tab 回到特勤处
+        主页，OCR 出现「交易行/仓库/改枪台/特战干员」顶栏；再按 F4 进市场。
+        每一步都先判页面再按键，已在市场时零输入，Tab 后不在大厅就报错，
+        不连发。
+        """
+        if self.keyboard is None:
+            raise NavError("没有 Keyboard，没法恢复")
+        page, _ = self.where()
+        if page == "market":
+            self.say("已在市场，零输入")
+            return page
+        if page != "hall":
+            self.say(f"恢复：当前「{page}」→ 只按一次 Tab")
+            self.keyboard.tap("TAB")
+            time.sleep(1.2)
+            page, _ = self.where()
+            self.say(f"  Tab 后：{page}")
+            # 真机实测：从典藏外观这种次级页按 Tab 会直接回交易行（market），
+            # 不是大厅。既然已经到目标页，就别再要求必须落在 hall。
+            if page == "market":
+                return page
+            if page != "hall":
+                raise NavError(f"Tab 后不在大厅也不在交易行（现在 {page}），停止，不连发按键")
+        self.keyboard.tap("F4")
+        # 固定 2.0s → 轮询到 page 变成 market 即走；上限仍是 2.0s，
+        # 到点不是 market 就照旧抛（`_wait_page` 保证等满上限再下结论）。
+        page = self._wait_page("market", cap=2.0, step=0.25)
+        self.say(f"  F4 后：{page}")
+        if page != "market":
+            raise NavError(f"F4 后仍不在市场（现在 {page}）")
+        return page
+
+    def recover(self, max_esc=1):
         """从任意页面回到「市场」页，为后续步骤准备干净的起点。
 
-        用户点开始时可能停在任意位置：大厅、在售页、筛选面板开着、典藏外观页。
-        硬编码「从大厅按 F4」在那种情况下会失败 —— 实测踩过：起点在在售
-        页且筛选面板开着，F4 只开不关所以毫无反应。
-
-        分两种情况：
-          在大厅 → 按 F4 打开市场（ESC 在大厅会弹出退出菜单，不能按）
-          在市场内其它页 → 连按 ESC 逐层退出（ESC 只关面板/退页面，安全）
-
-        返回最终页面名。识别不出就抛 NavError，不盲试。
+        ESC 上限 1 次，而且只在「确认识别到该关的面板/浮层」时发；其余
+        情况一律走 recover_to_hall（Tab → 大厅 → F4 → market）。已在市场
+        时一步都不发。
         """
         if self.keyboard is None:
             raise NavError("没有 Keyboard，没法复位")
@@ -778,67 +911,27 @@ class NavBase:
         if page == "hall":
             # 大厅按 F4 进市场。F4 只开不关，所以按一次就够。
             self.keyboard.tap("F4")
-            time.sleep(2.0)
-            page, _ = self.where()
+            page = self._wait_page("market", cap=2.0, step=0.25)
             self.say(f"  F4 后：{page}")
             if page == "market":
                 return page
             raise NavError(f"大厅按 F4 后仍不在市场（现在 {page}）")
 
-        # 市场内的其它页（在售页/详情页/筛选面板）：ESC 逐层退出。
-        # 不按超过 max_esc 次 —— 退到大厅再按 ESC 会弹出退出菜单。
-        #
-        # 「unknown」不能当成「继续按 ESC」：实测从筛选面板连按两次会进到
-        # 一个认不出的画面（详情页残留 / 退出菜单过渡），再按就卡死。
-        # 所以 unknown 连续出现两次就改按 F4 重进市场 —— F4 只开不关，
-        # 已经在市场里时按它无副作用。
-        unknown = 0
-        for i in range(max_esc):
-            # 面板开着时 ESC 只关浮层/面板，页面名可能还停在
-            # filter_collection（面板里的词还在 OCR 结果里）。所以先看
-            # 面板在不在，关掉了就再按一次 ESC 退回市场页。
-            was_open = self._panel_open() or self._ons_filter_open()
-            self.keyboard.tap("ESC")
-            time.sleep(0.9)
-            still_open = self._panel_open() or self._ons_filter_open()
+        # 市场内的其它页（在售页/详情页/筛选面板）：只有确认面板在，才发一次 ESC。
+        if self._panel_open() or self._ons_filter_open():
+            self._close_panel_once("复位")
             page, _ = self.where()
-            self.say(f"  第 {i + 1} 次 ESC 后：{page}"
-                     f"（面板 {was_open}→{still_open}）")
-            if still_open:
-                # ESC 只关了浮层/一层面板 —— 再来一次
-                continue
+            self.say(f"  ESC 后：{page}")
             if page == "market":
                 return page
             if page == "hall":
-                # 退过头了，回到大厅 → 走统一入口回市场（F4 / 点图标 + 页面校验）
-                try:
-                    page = self.enter_market()
-                except NavError as e:
-                    self.say(f"  从大厅回市场失败：{e}", "warn")
-                    break
-                return page
-            if page == "modeselect":
-                page = self.enter_hall()
-                try:
-                    page = self.enter_market()
-                except NavError as e:
-                    self.say(f"  从模式选择页回市场失败：{e}", "warn")
-                    break
-                return page
-            if page == "unknown":
-                unknown += 1
-                if unknown >= 2:
-                    self.say("  连续认不出页面，按 F4 重进市场", "warn")
-                    self.keyboard.tap("F4")
-                    time.sleep(2.0)
-                    page, _ = self.where()
-                    self.say(f"  F4 后：{page}")
-                    if page == "market":
-                        return page
-                    break
-            else:
-                unknown = 0
-        raise NavError(f"复位失败，当前页面 {page}")
+                self.keyboard.tap("F4")
+                page = self._wait_page("market", cap=2.0, step=0.25)
+                if page == "market":
+                    return page
+                raise NavError(f"大厅按 F4 后仍不在市场（现在 {page}）")
+
+        return self.recover_to_hall()
 
     def ensure_public_filter(self, want="只显示公示期"):
         """在售页把「公示期」下拉设成只显示；已经在位就跳过（不重复点）。
@@ -865,7 +958,12 @@ class NavBase:
         opts = [w for w in ws2 if want in (w.get("text") or "")]
         if not opts:
             self.say(f"公示期下拉里没有「{want}」选项", "warn")
+            # 这个下拉是我们刚点开的，确认存在 → 允许 ESC 一次收掉，并回读确认
             self.keyboard.tap("ESC")
+            time.sleep(0.5)
+            ws4 = self._ocr_words(self.screen.grab())
+            if any(want in (w.get("text") or "") for w in ws4):
+                self.say("ESC 一次后下拉仍在，停止，不重放", "warn")
             return False
         o = opts[0]
         self.click_px((int(o["x"] + o["w"] // 2), int(o["y"] + o["h"] // 2)),

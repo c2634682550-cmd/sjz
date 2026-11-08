@@ -71,14 +71,63 @@ class NavColPanel:
                 time.sleep(0.8)
         raise NavError("点了「筛选」但面板没打开")
 
-    def col_filter_confirm(self):
-        """关掉典藏外观的筛选面板。"""
-        self.click(COL_CONFIRM, "筛选·确认")
-        time.sleep(0.8)
-        page, _ = self.where()
-        if page == "filter_collection":
-            raise NavError("点「确认」没关掉筛选面板")
-        return True
+    def col_filter_confirm(self, attempts=2):
+        """关掉典藏外观的筛选面板：双击 → 回读页面 → 仍开着才补一次。
+
+        真机实测（2026-11-08）：`确认` 偶尔第一发双击不响应，整帧 diff
+        只有 0.026，页面还在 filter_collection。早期这里点一次就抛错，
+        上层只能重跑整条定位流程。现在允许**最多 2 次**双击，每次都回读
+        `where()`；两次都没关掉就抛错，不重放、不无限重试。
+        """
+        last = None
+        for i in range(1, int(attempts) + 1):
+            self._double_click(COL_CONFIRM, "筛选·确认")
+            time.sleep(0.8)
+            page, _ = self.where()
+            last = page
+            if page != "filter_collection":
+                if i > 1:
+                    self.say(f"「确认」补点到第 {i} 次才关掉面板", "warn")
+                return True
+        raise NavError(f"「确认」点了 {attempts} 次面板仍在（page={last}），停止，不重放")
+
+    # ---------------- 下拉/选项的点击语义（别改成双击） ----------------
+    #
+    # 真机实测（2026-11-08，赛季下拉 793,334）：
+    #   单击 → 浮层展开；再单击 → 收起。这是**切换**语义。
+    #   用双击配方（hold 0.08 / gap 0.25）点一下 = 开→关互相抵消，
+    #   整帧 diff 只有 **0.026**，OCR 与点之前一模一样（26 行对 23 行都没多），
+    #   看起来像「注入失败」，其实是两次点击把状态抵消回去了。
+    #
+    # 所以下拉框、下拉选项一律**只发一次** mouse.click：不重试、不补第二下；
+    # 是否生效由调用方读浮层/下拉框文字判定，**不看 diff**。
+    # 品阶/枪种那类是复选框（累加），成色/稀有度是卡片字段，都不是切换语义，
+    # 不适用这条；将来加下拉（成色筛选之类）也必须走 `_click_once`。
+    def _click_once(self, point, label="", raw=False):
+        """下拉/选项专用：**只按一次**，绝不补第二下。"""
+        self._assert_safe(point, raw=raw)
+        x, y = (int(point[0]), int(point[1])) if raw else self.pt(point)
+        ok = self.mouse.click(x, y, verify=False)
+        if ok is False:
+            raise NavError(f"点「{label}」({x},{y}) 失败：鼠标点击没有生效")
+        self.say(f"单击「{label}」({x},{y})（下拉/选项：一击，不补点）", "info")
+        return x, y
+
+    def _double_click(self, point, label="", raw=False):
+        """按钮专用：两次单击，hold 0.08 / gap 0.25（真机试出来的配方）。
+
+        只给「确认 / 购买」这类**幂等按钮**用；下拉/选项用 `_click_once`。
+        """
+        self._assert_safe(point, raw=raw)
+        x, y = (int(point[0]), int(point[1])) if raw else self.pt(point)
+        for i in range(2):
+            if i:
+                time.sleep(0.25)
+            ok = self.mouse.click(x, y, hold=0.08, verify=False)
+            if ok is False:
+                raise NavError(f"点「{label}」({x},{y}) 失败：鼠标点击没有生效")
+        self.say(f"双击「{label}」({x},{y}) hold=0.08 gap=0.25", "info")
+        return x, y
 
     # ---------------- 典藏外观筛选：赛季下拉 ----------------
     #
@@ -207,6 +256,22 @@ class NavColPanel:
                      "电玩高手", "命运王牌", "气象感应", "悬赏令", "造物纪元",
                      "群星", "疾光魅影")
 
+    # OCR 字形纠错表（真机实测 2026-11-08 面板原始 OCR）：
+    #   「棱镜攻势S2」被读成「持镜攻热C2」—— 持/棱、热/势、C/S 三处同时错，
+    #   一行里只剩「镜」「攻」「2」三个字对得上；
+    #   另见「悬赏今」「命运王牒」「气獠感应」「难星」「疾光赃影」。
+    # 只做**当字替换 + 后缀归一**，不做模糊相似度 —— 调松阈值会让
+    # 「棱镜攻势」和「棱镜攻势S2」互相串（S1 那行会被判成 S2）。
+    _SERIES_OCR_FIX = {"持": "棱", "热": "势", "今": "令", "牒": "牌",
+                       "獠": "象", "赃": "魅", "难": "群"}
+
+    @classmethod
+    def _fix_series_ocr(cls, text):
+        """把 OCR 原文里已知的错字纠回来，并把 S2 后缀归一。"""
+        out = "".join(cls._SERIES_OCR_FIX.get(ch, ch) for ch in text)
+        # S2 的 S 常被读成 C / 5，2 被读成全角 ２
+        return re.sub(r"[CcSs5５][2２]$", "S2", out)
+
     @classmethod
     def _series_spans(cls, words, y0, by):
         """按**单字**把选项归组，返回 {赛季名: [该名各字的 y]}。
@@ -241,7 +306,7 @@ class NavColPanel:
             rows_src.setdefault(int(cy // 6), []).append((t, cy))
         out = {}
         for _key, chars in rows_src.items():
-            text = "".join(t for t, _ in chars)
+            text = cls._fix_series_ocr("".join(t for t, _ in chars))
             cands = []
             for name in cls._SERIES_WORDS:
                 n = sum(1 for ch in name if ch in text)
@@ -393,7 +458,7 @@ class NavColPanel:
             if self._dropdown_open_settled():
                 opened = True
                 break
-            self.click(COL_SEASON, "赛季下拉", expect_change=False)
+            self._click_once(COL_SEASON, "赛季下拉")
             t_open = time.perf_counter()
             while time.perf_counter() - t_open < 0.9:
                 if self._dropdown_open_settled(tries=1):
@@ -433,7 +498,7 @@ class NavColPanel:
                     if self._dropdown_open():
                         reopened = True
                         break
-                    self.mouse.click(*self.pt(COL_SEASON), verify=False)
+                    self._click_once(COL_SEASON, "赛季下拉·重开")
                     time.sleep(0.9)
                 time.sleep(0.5)
                 items = self._season_items_anywhere()
@@ -462,7 +527,7 @@ class NavColPanel:
                 for _ in range(4):
                     if self._dropdown_open():
                         break
-                    self.mouse.click(*self.pt(COL_SEASON), verify=False)
+                    self._click_once(COL_SEASON, "赛季下拉·重开")
                     time.sleep(0.9)
                 time.sleep(0.4)
                 continue
@@ -547,8 +612,8 @@ class NavColPanel:
         for off in self._SEASON_PICK_OFFSETS:
             # --- 1. 确保浮层展开 ---
             if self._dropdown_open():
-                # 先收起，回到确定状态
-                self.mouse.click(*self.pt(COL_SEASON), verify=False)
+                # 先收起，回到确定状态（单击切换，不能补第二下）
+                self._click_once(COL_SEASON, "赛季下拉·收")
                 time.sleep(0.8)
             if not self._panel_open():
                 self.say(f"  偏移 {off}：筛选面板已关闭，重开", "warn")
@@ -557,11 +622,11 @@ class NavColPanel:
                 if not self._panel_open():
                     return False
             if not self._dropdown_open():
-                self.mouse.click(*self.pt(COL_SEASON), verify=False)
+                self._click_once(COL_SEASON, "赛季下拉·开")
                 time.sleep(1.2)
             if not self._dropdown_open():
                 # 点一次没开就再点一次（真机上偶尔会漏掉第一下）
-                self.mouse.click(*self.pt(COL_SEASON), verify=False)
+                self._click_once(COL_SEASON, "赛季下拉·补开")
                 time.sleep(1.2)
             if not self._dropdown_open():
                 self.say(f"  偏移 {off}：下拉展不开，跳过", "warn")
@@ -598,7 +663,7 @@ class NavColPanel:
             # 浮层选项的 y 是 OCR 读到的**真实像素**，x 还是基准坐标：
             # 拆开换算，别把 x 再乘一遍缩放（review V02）。
             px = int(self.pt((COL_SEASON_ITEM_X, 0))[0])
-            self.mouse.click(px, ty, verify=False)
+            self._click_once((px, ty), "赛季选项·%s" % text, raw=True)
             time.sleep(1.0)
 
             # --- 4. 校验 ---
@@ -611,7 +676,7 @@ class NavColPanel:
                 self.say(f"点「{text}」y={ty}（偏移 {off}）选中了", "info")
                 if self._dropdown_open():
                     # 浮层还开着 → 点一下下拉框把它收掉
-                    self.mouse.click(*self.pt(COL_SEASON), verify=False)
+                    self._click_once(COL_SEASON, "赛季下拉·收")
                     time.sleep(0.6)
                 return True
             if not self._dropdown_open():
@@ -1027,10 +1092,8 @@ class NavColPanel:
         except Exception:
             pass
         if self._panel_open():
-            self.say("「确认」没关掉面板，按 ESC", "warn")
-            if self.keyboard is not None:
-                self.keyboard.tap("ESC")
-                time.sleep(0.8)
+            self.say("「确认」没关掉面板，按一次 ESC（确认过面板还在）", "warn")
+            self._close_panel_once("关筛选面板")
         return not self._panel_open()
 
     def goto_collection(self):
@@ -1047,32 +1110,22 @@ class NavColPanel:
         """
         self.close_filter_panel()
         page, _ = self.where()
-        # 退一级要循环：详情页 → 在售页 → 市场是**两层**，只按一次 ESC 停在
-        # 在售页，接着 F4 又无效（在售页 F4 不回典藏外观），最后 tab 切不动
-        # 直接 NavError（review V18）。
-        for _ in range(3):
-            if page not in ("onsale", "detail", "filter_onsale", "unknown"):
-                break
-            if self.keyboard is None:
-                break
-            self.say(f"当前在「{page}」，按 Esc 返回上一级", "info")
-            self.keyboard.tap("ESC")
-            time.sleep(0.9)
+        # 退回市场不再连按 ESC：走确定恢复链（Tab → 大厅 → F4 → market），
+        # 每一步内部都会先判页面；失败直接抛 NavError，不盲按。
+        if page not in ("market", "filter_collection"):
+            self.say(f"当前在「{page}」，走 Tab 恢复链回市场", "info")
+            self.recover_to_hall()
             page, _ = self.where()
         if page not in ("market", "filter_collection"):
-            self.say(f"当前在「{page}」，按 F4 进市场", "info")
-            self.open_market()
-            time.sleep(1.5)
+            raise NavError(f"恢复后仍不在市场（现在 {page}）")
         if self.tab_now() != "collection":
             try:
                 self.tab("collection")
             except NavError:
                 # 有弹窗挡着（最常见：「该商品已被购买」提示还没收）。
-                # 按 Esc 收掉再点一次，否则整个定位流程就死在这一步。
-                if self.keyboard is not None:
-                    self.say("标签点不动，先按 Esc 收掉挡着的弹窗", "warn")
-                    self.keyboard.tap("ESC")
-                    time.sleep(0.6)
+                # 用确定恢复链重来一次，不再盲按 ESC。
+                self.say("标签点不动，走 Tab 恢复链再来一次", "warn")
+                self.recover_to_hall()
                 self.tab("collection")
             time.sleep(0.8)
         return self.where()[0]
@@ -1310,6 +1363,8 @@ class NavColPanel:
             raise NavError("右侧看不到「购买」按钮（这个皮肤可能已经拥有了，"
                            "页面显示的是「售出」）—— 不点，先换一个皮肤")
         self.click(COL_BUY, "购买", timeout=6.0)
-        time.sleep(1.5)
-        self.require(("detail", "onsale"), "点购买")
+        # 固定 1.5s → 轮询到页面变成 detail/onsale 即走，上限 3s。
+        # 校验没删：到点仍不对就抛与 `require` 同文案的 NavError（不当成功）。
+        self._wait_page(("detail", "onsale"), cap=3.0, step=0.2,
+                        label="点购买", activate="点购买")
         return True
