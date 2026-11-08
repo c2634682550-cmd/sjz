@@ -305,7 +305,13 @@ def part_d():
     except NavError as e:
         ms = (time.perf_counter() - t) * 1000
         print(f"无响应 → NavError {ms:.0f}ms：{str(e)[:70]}")
-        assert ms < 2000, "早退后不该超过 2s"
+        # 4.5s 是这条失败路径的真实上限，不是拍脑袋：
+        #   settle 预算 1.2s（画面在动才等满，静止时 ~0.15s）
+        # + 3 次点击各等满 timeout：0.6 + 0.8 + 0.8 = 2.2s
+        # + 两次重试间隔 2×0.5s = 1.0s
+        # + 抓帧/中线开销 ~0.3s
+        #   → 理论 4.4~4.7s，取 4.5s；仍能抓住「退化成 3s 轮询」那档回归。
+        assert ms < 4500, f"失败路径 {ms:.0f}ms 超过 4.5s，早退可能失效"
 
     w = chain_bench.World()
     nv = build(w)
