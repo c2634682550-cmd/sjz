@@ -535,6 +535,24 @@ class NavBase:
         d = np.abs(a.astype(np.int16) - b.astype(np.int16)).max(axis=2)
         return float((d > 30).mean())
 
+    def _settle(self, budget=1.2, step=0.15, tol=0.005):
+        """等画面稳定：连续两帧差 ≤0.5% 就算稳，最多等 budget 秒。
+
+        真机实测：页面刚切换完（ESC 返回、点卡片重排）时按钮还在过渡，
+        这期间点下去会被 UI 吞掉 —— 同一坐标 1.6s 后再点是 62%，之前
+        连点两下都是 0.02%。所以点购买前先等画面不动。
+        返回 True 表示已稳定；超时没稳也返回 False，让调用方继续（不阻塞）。
+        """
+        prev = self._snap()
+        t0 = time.time()
+        while time.time() - t0 < budget:
+            time.sleep(step)
+            now = self._snap()
+            if self._diff(prev, now) <= tol:
+                return True
+            prev = now
+        return False
+
     def _assert_safe(self, point, raw=False):
         """拒绝点到禁用坐标附近。半径 40px —— 比按钮间距（73px）的一半稍大，
         宁可误报也不能漏报。

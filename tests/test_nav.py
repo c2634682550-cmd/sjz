@@ -114,6 +114,8 @@ def _nav(size=(1920, 1080), frames=None, ocr_text="",
     # 按钮坐标解析要真 OCR 整块右下面板，台架里换掉（锚点/回退另有专测）
     if stub_buy_point:
         n._buy_point = lambda: (COL_BUY, "固定坐标", False)
+    # 等画面稳定会多抓两帧，吃掉台架脚本里「点击那一帧才换页」的时序
+    n._settle = lambda *a, **k: True
     return n, screen, mouse, kb, logs
 
 
@@ -349,17 +351,17 @@ def test_buy_succeeds_when_page_is_detail():
 
 
 def test_buy_fails_fast_when_click_changes_nothing():
-    """hold=0.35 给足后画面仍 0 变化 → 立即报错，不再等满 3s。
+    """hold=0.35 给足、同点点满 3 次仍 0 变化 → 立即报错，不等满 3s。
 
-    真机失败路径原来是 6s（click）+ 3s（等页面）= 9s；早退后只花
-    hold 0.35s + 两次 0.2s 采样。
+    真机失败路径原来是 6s（click）+ 3s（等页面）= 9s；早退后是三次
+    短 click（0.6s + 0.8s×2 上限 + 两次 0.5s 间隔）。
     """
     n, _, mouse, _, _ = _nav(frames=[_blank()] * 60, ocr_text=MARKET_TEXT)
     t0 = time.perf_counter()
     with pytest.raises(NavError, match="仍无变化"):
         n.buy()
-    assert time.perf_counter() - t0 < 1.6
-    assert len(mouse.clicks) == 1
+    assert time.perf_counter() - t0 < 5.0
+    assert len(mouse.clicks) == 3
 
 
 def test_buy_keeps_validating_when_click_responds():

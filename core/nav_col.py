@@ -1351,13 +1351,33 @@ class NavColPanel:
     # 购买按钮锚点搜索区：右下面板（1920x1080 基准）。只在这一块读倒计时行，
     # 不整屏 OCR —— 整屏一次 700ms，这块只占 12% 面积，约 100ms。
     _BUY_ANCHOR_BOX = (1150, 620, 770, 460)
+    # 「购买」二字的 ROI（基准坐标），跟 _buy_button_visible 同一块
+    _BUY_TEXT_BOX = (1600, 850, 180, 65)
+
+    def _buy_text_box(self):
+        """OCR 读「购买」二字的屏幕 bbox，返回 (x0,y0,x1,y1)；读不到给 None。"""
+        x0, y0, w, h = self.px_box(self._BUY_TEXT_BOX)
+        crop = self._snap()[y0:y0 + h, x0:x0 + w]
+        if getattr(crop, "size", 0) == 0:
+            return None
+        scale = 2
+        words = _words(self, vision.upscale(crop, scale), strict=True)
+        for wd in words:
+            if "购买" in wd.get("text", ""):
+                bx = wd["x"] / scale + x0
+                by = wd["y"] / scale + y0
+                return (int(bx), int(by),
+                        int(bx + wd["w"] / scale), int(by + wd["h"] / scale))
+        return None
 
     def _buy_point(self):
-        """购买按钮点哪儿：优先倒计时锚点现算，算不出来退回固定 COL_BUY。
+        """购买按钮点哪儿：倒计时锚点 → 「购买」文字右侧 → 固定 COL_BUY。
 
-        倒计时行（「剩余：X小时Y分」）跟着版本/分辨率跑，固定坐标会过期
-        （真机 3/3 点空）。`autocalib.find_buy_by_countdown` 从当前帧现算
-        按钮矩形，拿不到就退回 COL_BUY —— 两条路径都返回，绝不盲点。
+        真机实测（2026-11-08）：固定 (1700,885) 落点 0.01%（死点），
+        同一行 (1716,876) 才是活点 —— 按钮热区比文字框窄，贴着文字右缘
+        往外 15px 才进得去。所以文字框读到了就按它的右缘算，比固定表稳。
+        倒计时行（「剩余：X」）在挂单页才有，有就用 `find_buy_by_countdown`
+        现算的按钮中心（raw 真实像素）。
 
         返回 `(point, how, raw)`；raw=True 表示 point 已是真实屏幕像素。
         """
@@ -1388,7 +1408,7 @@ class NavColPanel:
                 {"calibration": {"buy_anchor": local}})
         except Exception as e:                   # noqa: BLE001
             self.say(f"倒计时锚点读取失败：{e}，退回固定坐标 COL_BUY", "warn")
-            return COL_BUY, "固定坐标", False
+            hit = None
         if hit and hit.get("ok"):
             cx, cy = hit["center"]
             point = (int(round(cx + x0)), int(round(cy + y0)))
@@ -1400,16 +1420,25 @@ class NavColPanel:
                     or abs(point[1] - fix[1]) > 120.0 * H / 1080.0):
                 self.say(f"倒计时锚点 {point} 离固定坐标 {fix} 太远，"
                          f"不采用，退回固定坐标", "warn")
-                return COL_BUY, "固定坐标", False
-            self.say(f"购买按钮用倒计时锚点：{hit.get('text')!r} "
-                     f"rect={hit['rect']} 整屏点={point}", "info")
-            return point, f"倒计时锚点（{hit.get('text')}）", True
-        if hit:
-            self.say(f"找到倒计时行但按钮区不像按钮：{hit['check']['why']}，"
-                     f"退回固定坐标 COL_BUY", "warn")
-        else:
-            self.say("没找到倒计时行（这页没有剩余倒计时），用固定坐标 COL_BUY",
+                hit = None
+            else:
+                self.say(f"购买按钮用倒计时锚点：{hit.get('text')!r} "
+                         f"rect={hit['rect']} 整屏点={point}", "info")
+                return point, f"倒计时锚点（{hit.get('text')}）", True
+        try:
+            box = self._buy_text_box()
+        except Exception:                        # noqa: BLE001
+            box = None
+        if box:
+            # 真机实测活点 (1716,876)，文字框 (1657,870)-(1707,901)：
+            # 右缘 +8、上缘 +6 正好落在这个活点上（+15/+2 会偏到 1722,872）
+            dx = self.pt((8, 0))[0]
+            dy = self.pt((0, 6))[1]
+            point = (box[2] + dx, box[1] + dy)
+            self.say(f"购买按钮按「购买」文字右缘算点：文字框 {box} → {point}",
                      "info")
+            return point, "购买文字右缘", False
+        self.say("没读到「购买」文字框，用固定坐标 COL_BUY", "warn")
         return COL_BUY, "固定坐标", False
 
     def buy(self):
@@ -1427,16 +1456,32 @@ class NavColPanel:
             raise NavError("右侧看不到「购买」按钮（这个皮肤可能已经拥有了，"
                            "页面显示的是「售出」）—— 不点，先换一个皮肤")
         point, how, raw = self._buy_point()
+        # 页面刚切换完时按钮还在过渡，这段时间的点会被 UI 吞掉。先等画面
+        # 稳定（正常已静止的页面只多花 0.15s+两次抓帧）。
+        if not self._settle():
+            self.say("画面一直在动（超 1.2s 没稳），照点，失败会早退", "warn")
         # hold=0.35：真机实测这个按钮**按住才生效**。短单击、hold=0.08 都
         # 毫无反应（按钮局部 diff 0.00%，page 一直是 market），hold=0.35 才
-        # 跳挂单页（diff 42.09%，page=onsale）。之前 3 次重试全白跑。
+        # 跳挂单页（diff 42.09%，page=onsale）。
+        # 同点最多点 3 次：真机实测这个按钮的按下判定很不稳 —— 同一坐标
+        # 有时第 1 下就成（62%），有时连点 2 下都是 0.02%，隔 0.5s 再来
+        # 一次才进。所以「无响应」先归到「这一下被吞了」，点满 3 次还不动
+        # 才报错（点的是同一个点，不会碰到旁边的「售出」）。
         hold = 0.35
         self.say(f"购买按钮 {point}（{how}），hold={hold}s", "info")
-        d = self.click(point, "购买", timeout=0.6, raw=raw, hold=hold)
-        # 失败早退：hold 已经给足，画面还是 0 变化 → 是坐标过期/不在前台，
-        # 不是「时间不够」。原来这里白等 6s + 3s 才报错。
+        d = 0.0
+        for i in range(3):
+            if i:
+                time.sleep(0.5)
+            d = self.click(point, "购买", timeout=0.6 if i == 0 else 0.8,
+                           raw=raw, hold=hold)
+            if d > 0.005:
+                break
+            self.say(f"第 {i + 1} 下被吞了（{d * 100:.2f}%），同点再来", "warn")
+        # 失败早退：hold 给足、同点点了 3 次，画面还是 0 变化 → 坐标过期
+        # 或不在前台。原来这里白等 6s + 3s 才报错。
         if d <= 0.005:
-            raise NavError(f"点购买：hold={hold}s 之后画面仍无变化"
+            raise NavError(f"点购买：hold={hold}s 同点连点 3 次画面仍无变化"
                            f"（{d * 100:.2f}%）—— 坐标 {point}（{how}）"
                            f"可能过期，或游戏不在前台")
         # 固定 1.5s → 轮询到页面变成 detail/onsale 即走，上限 3s。
