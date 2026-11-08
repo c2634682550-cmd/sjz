@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import csv
 import hashlib
 import os
 import re
@@ -436,8 +435,3 @@ def scan_template_dirs(root):
         out.append({"task_id": n, "files": files,
                     "mtime_ms": mtime_ms(os.path.join(d, files[0]))})
     return out
-
-
-def read_csv_rows(path):
-    with open(path, "r", encoding="utf-8", errors="replace", newline="") as f:
-        yield from csv.DictReader(f)

@@ -1214,13 +1214,3 @@ def wait_until(now, target, mode="hybrid", spin_window=0.0015,
         t = now()
         if t >= target:
             return t
-
-
-def enable_timer_resolution():
-    """把系统定时器精度提到 1ms（只影响 sleep，不影响自旋）。"""
-    try:
-        import ctypes
-        winmm = ctypes.WinDLL("winmm")
-        return bool(winmm.timeBeginPeriod(1))
-    except Exception:                       # noqa: BLE001
-        return False

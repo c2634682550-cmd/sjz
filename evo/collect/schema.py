@@ -137,13 +137,3 @@ def validate(ev):
         out.append("time_src 不是对象")
     return out
 
-
-def stage_names(ev):
-    """这一行触及了哪几段（供覆盖率统计）。"""
-    touched = []
-    for i, (st, key) in enumerate(zip(STAGES, ("first_seen_ms", "click_at_ms",
-                                                "pool_joined_at_ms", "roll_at_ms",
-                                                "deal_at_ms")), start=1):
-        if ev.get(key) is not None:
-            touched.append(st)
-    return touched

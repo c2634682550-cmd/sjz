@@ -531,27 +531,6 @@ def rapid_error():
     return getattr(rp, "last_error", "") or _last_err or ""
 
 
-# ---------------- 数字 ----------------
-
-def digit_runs(text):
-    """文本里的数字串，按出现顺序返回。
-
-    千位逗号先去掉：OCR 会把 `15,000` 认成 `15` + `囤` + `00`，
-    逗号认成汉字的情况也见过，所以 `,` 和 `，` 都去掉再切。
-    """
-    return re.findall(r"\d+", (text or "").replace(",", "").replace("，", ""))
-
-
-def digits_only(text, strip_zeros=True):
-    """文本里所有的数字位拼成一个串（其它字符全丢）。
-
-    strip_zeros=True 会去掉前导零：价格块里金币图标常被认成 0，
-    `025,000` 不去掉就是 25000 变 25。
-    """
-    d = re.sub(r"[^\d]", "", text or "")
-    return d.lstrip("0") if strip_zeros else d
-
-
 # ---------------- 行 / 词组 ----------------
 
 def _group_by_y(words, tol_of, join_ok=None):

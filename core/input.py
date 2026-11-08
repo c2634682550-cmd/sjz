@@ -162,10 +162,6 @@ def channel_events():
     return LEDGER.events()
 
 
-def channel_last_event():
-    return LEDGER.last()
-
-
 def _config_value(key, default):
     """读配置项；配置不可用时给默认值（老配置文件永远能读）。"""
     try:
@@ -977,17 +973,6 @@ class Mouse:
     def attach_trajectory(self, traj):
         """挂上轨迹决策器（引擎在 `_run` 里构造）。不挂 = 行为与改动前一致。"""
         self._traj = traj
-
-    def trajectory_status(self):
-        """这条通道下轨迹到底算不算数 + 上一次实际走了什么。"""
-        traj = getattr(self, "_traj", None)
-        if traj is None:
-            return {"effective": "off", "active": False,
-                    "reason": "未挂载轨迹决策器（本次点击不做拟人移动）",
-                    "channel": self._mode, "last": dict(self._last_path or {})}
-        st = traj.status()
-        st["last_path"] = dict(self._last_path or {})
-        return st
 
     def _plan_path(self, x, y):
         """给这一次点击算一条路径。返回 (points, total_ms) 或 None。"""

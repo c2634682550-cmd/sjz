@@ -97,10 +97,6 @@ def set_control_token(token):
     return _ctrl_token
 
 
-def control_token():
-    return _ctrl_token
-
-
 def _host_is_loopback(host_header):
     """Host 头里的主机名必须是回环名（DNS rebinding 防御）。"""
     host = (host_header or "").strip().lower()
@@ -146,11 +142,6 @@ def touch():
     """记一次请求。每个 HTTP 请求都会调它。"""
     global _last_hit
     _last_hit = time.time()
-
-
-def idle_seconds():
-    """多久没有页面连过来了。"""
-    return time.time() - _last_hit
 
 
 def busy():

@@ -11,7 +11,6 @@ import os
 import sys
 import time
 
-APP_NAME = "SJZ-Control"
 # WebView2 Runtime 的 EdgeUpdate 客户端 GUID（微软固定值）
 WEBVIEW2_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 # UI 必需的字体：微软雅黑（中文正文）。`segmdl2.ttf`（Segoe MDL2 图标）

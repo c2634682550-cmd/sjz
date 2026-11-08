@@ -68,7 +68,6 @@ __all__ = [
 # 在任何非 REALTIME 类别里都表示「该类别下的最高」。
 THREAD_PRIORITY_TIME_CRITICAL = 15
 THREAD_PRIORITY_HIGHEST = 2
-THREAD_PRIORITY_NORMAL = 0
 
 # 默认值来自实测（见 tests/test_precision.py 与 tools/bench_precision.py）：
 # Sleep 超时 p95≈0.56ms，自旋阈值留 3ms 足够覆盖；阈值再大只会白白占核。
@@ -360,11 +359,6 @@ class Shot:
         """回调入口 - target（微秒）。"""
         d = self.call_latency_from_target_ticks
         return None if d is None else d / _FREQ * 1e6
-
-    @property
-    def action_s(self):
-        """回调耗时（秒）。"""
-        return None if self.action_ticks is None else self.action_ticks / _FREQ
 
     def done(self):
         return self._done.is_set()

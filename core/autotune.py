@@ -57,13 +57,6 @@ GRADE_LABEL = {
 }
 
 ATTEMPT_RESULTS = ("hit", "miss", "skip", "no_money", "over_budget", "aborted")
-SUCCESS_RESULTS = ("hit",)
-FAIL_RESULTS = ("miss",)
-
-RESULT_LABEL = {
-    "hit": "成交", "miss": "未中", "skip": "跳过",
-    "no_money": "余额不足", "over_budget": "超预算", "aborted": "中止",
-}
 
 # ---------------------------------------------------------------- 调优对象
 

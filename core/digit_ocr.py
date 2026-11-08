@@ -187,15 +187,6 @@ def load_templates(asset_dir: str = _ASSET_DIR) -> List[Tuple[str, np.ndarray, f
         return out
 
 
-def reset_template_cache() -> None:
-    global _TEMPLATES
-    with _TEMPLATE_LOCK:
-        _TEMPLATES = None
-        _REAL_INDEX.clear()
-        _INDEX_CACHE.clear()
-        _ADAPTIVE.clear()
-
-
 # ---------------------------------------------------------------- 预处理
 
 def to_gray(img: np.ndarray) -> np.ndarray:
@@ -447,12 +438,6 @@ def match_char_detail(
     return best_ch, max(0.0, min(1.0, best_score)), max(0.0, best_score - second)
 
 
-def match_char(patch: np.ndarray, templates: List[Tuple[str, np.ndarray, float]]) -> Tuple[str, float]:
-    """归一化匹配，返回 (字符, 置信度 0~1)。"""
-    ch, score, _margin = match_char_detail(patch, templates)
-    return ch, score
-
-
 # ---------------------------------------------------------------- 数字解析
 
 def _parse_token(token: str) -> Optional[int]:
@@ -616,43 +601,6 @@ def read_detail(
     return fallback
 
 
-def read_detail_ex(
-    img: np.ndarray,
-    box: Optional[Tuple[int, int, int, int]] = None,
-    min_conf: float = DEFAULT_MIN_CONF,
-    templates: Optional[List[Tuple[str, np.ndarray, float]]] = None,
-    min_margin: float = DEFAULT_MIN_MARGIN,
-    thr_map: Optional[Dict[str, float]] = None,
-    norm: bool = True,
-) -> Tuple[Optional[int], str, float, List[Tuple[str, float, float]]]:
-    """同 read_detail，额外返回逐字形 [(char, score, margin)]（评估/标定用）。"""
-    empty: Tuple[Optional[int], str, float, List[Tuple[str, float, float]]] = (None, "", 0.0, [])
-    if img is None or getattr(img, "size", 0) == 0:
-        return empty
-    roi = img
-    if box is not None:
-        l, t, r, b = [int(v) for v in box]
-        h, w = img.shape[:2]
-        l, r = max(0, min(l, w)), max(0, min(r, w))
-        t, b = max(0, min(t, h)), max(0, min(b, h))
-        if r <= l or b <= t:
-            return empty
-        roi = img[t:b, l:r]
-    tpl = templates if templates is not None else load_templates()
-    thr = thr_map if thr_map is not None else _ADAPTIVE.get(id(tpl), {})
-    gray = to_gray(roi)
-    best = empty
-    variants = (gray, _flatten(gray)) if norm else (gray,)
-    for g in variants:
-        glyphs: List[Tuple[str, float, float]] = []
-        value, token, score = _read_binary(binarize(g), tpl, min_conf, min_margin, thr, glyphs)
-        if token and value is not None:
-            return value, token, score, glyphs
-        if score > best[2]:
-            best = (value, token, score, glyphs)
-    return best
-
-
 def read_number(
     img: np.ndarray,
     box: Optional[Tuple[int, int, int, int]] = None,
@@ -702,8 +650,3 @@ class DigitReader:
             min_conf=self.min_conf if min_conf is None else min_conf,
             templates=self.templates,
         )
-
-
-def read_digits(img: np.ndarray, box: Optional[Tuple[int, int, int, int]] = None, min_conf: float = DEFAULT_MIN_CONF) -> Optional[int]:
-    """模块级快路径入口。"""
-    return read_number(img, box=box, min_conf=min_conf)
