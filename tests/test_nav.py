@@ -97,7 +97,7 @@ class FakeKeyboard:
 
 
 def _nav(size=(1920, 1080), frames=None, ocr_text="",
-         logs=None, buy_visible=True, stub_buy_point=True):
+         logs=None, buy_visible=True, stub_buy_point=True, opts=None):
     screen = FakeScreen(size, frames)
     mouse = FakeMouse()
     kb = FakeKeyboard()
@@ -108,7 +108,7 @@ def _nav(size=(1920, 1080), frames=None, ocr_text="",
 
     n = Navigator(screen, mouse, kb, snap=screen.grab,
                   log=lambda m, level="info": logs.append((level, m)),
-                  ocr_read=fake_ocr)
+                  ocr_read=fake_ocr, opts=opts)
     # buy() 点之前会先确认右侧真的是「购买」；假屏幕读不出字，这里直接给定
     n._buy_button_visible = lambda: buy_visible
     # 按钮坐标解析要真 OCR 整块右下面板，台架里换掉（锚点/回退另有专测）
@@ -766,3 +766,123 @@ def test_buy_refuses_to_click_when_the_button_is_not_there():
         n.buy()
     assert "购买" in str(ei.value)
     assert mouse.clicks == [], f"点了 {mouse.clicks}"
+
+
+# ---------------------------------------------------------------- 两段式判页
+#
+# 局部快判的 ROI 分三块（顶部锚点带 1920×260 / 页码条 540×60 / 弹窗守卫
+# 480×130），桩 OCR 按裁剪形状分发文字，模拟「局部 ≠ 整屏」。
+
+def _fast_nav(full_text, local_text, guard_text="", opts=None):
+    n, _, _, _, logs = _nav(frames=[_blank()], ocr_text=full_text, opts=opts)
+    n._fast_det = True
+    calls = {"full": 0, "local": 0, "guard": 0}
+
+    def fake(img):
+        h, w = getattr(img, "shape", (0, 0, 0))[:2]
+        key = "full" if (h, w) == (1080, 1920) else (
+            "guard" if (h, w) == (130, 480) else "local")
+        calls[key] += 1
+        txt = {"full": full_text, "guard": guard_text,
+               "local": local_text}[key]
+        if not txt:
+            return []
+        return [{"text": txt, "x": 0, "y": 0, "w": 10, "h": 10}]
+
+    n._ocr_read = fake
+    return n, calls, logs
+
+
+def test_where_fast_path_accepts_market_without_full_screen():
+    """market 在放行名单里：局部命中就直接返回，整屏一次都不读。"""
+    n, calls, logs = _fast_nav(MARKET_TEXT, MARKET_TEXT)
+    page, _ = n.where()
+    assert page == "market"
+    assert calls["full"] == 0, f"仍然读了整屏：{calls}"
+    assert n.page_stats["fast"] == 1
+    assert n.page_stats["fallback"] == 0
+    assert any("局部 ROI" in m for _, m in logs)
+
+
+def test_where_fast_path_onsale_guard_runs_once():
+    """onsale 放行后必须读弹窗守卫（主链每判多一块小 ROI）。"""
+    n, calls, _ = _fast_nav(ONSALE_TEXT, ONSALE_TEXT)
+    assert n.where()[0] == "onsale"
+    assert calls["guard"] == 1
+    assert calls["full"] == 0
+
+
+def test_where_fast_path_detail_is_forced_to_full_screen():
+    """detail 未验证 → 不走局部，降级整屏并由整屏给结论。"""
+    n, calls, logs = _fast_nav(DETAIL_TEXT, DETAIL_TEXT)
+    assert n.where()[0] == "detail"
+    assert calls["full"] == 1
+    assert n.page_stats["fallback"] == 1
+    assert n.page_stats["conflict"] == 0      # 结论一致，只是不放行
+    assert any("detail 未放行" in m for _, m in logs)
+
+
+def test_where_fast_path_unknown_anchor_falls_back():
+    """局部 ROI 锚点一个都没读到 → 降级整屏，不算冲突。"""
+    n, calls, logs = _fast_nav(MARKET_TEXT, "CNUIO:1巳巳9177")
+    assert n.where()[0] == "market"
+    assert calls["full"] == 1
+    assert n.page_stats["fallback"] == 1
+    assert n.page_stats["conflict"] == 0
+    assert any("锚点未命中" in m for _, m in logs)
+
+
+def test_where_fast_path_conflict_believes_full_screen():
+    """局部说 detail（未放行）、整屏说 onsale：以整屏为准，冲突计数 + 日志。
+
+    注：局部结论在放行名单里时不会再读整屏（那正是快判的收益），所以
+    冲突只可能出现在降级路径上 —— 这里用 detail 触发降级来验证机制。
+    """
+    n, calls, logs = _fast_nav(ONSALE_TEXT, DETAIL_TEXT)
+    assert n.where()[0] == "onsale"
+    assert calls["full"] == 1
+    assert n.page_stats["conflict"] == 1
+    assert any("以整屏为准" in m and "detail" in m and "onsale" in m
+               for _, m in logs)
+
+
+def test_where_fast_path_popup_guard_forces_full_screen():
+    """余额不足弹窗盖在在售页：守卫命中 → 整屏 → popup，不能认成 onsale。"""
+    n, calls, logs = _fast_nav(ONSALE_TEXT + "您当前的三角币不足，是否前往充值？",
+                               ONSALE_TEXT, guard_text="三角币不足，缺少")
+    assert n.where()[0] == "popup"
+    assert calls["full"] == 1
+    assert n.page_stats["guard"] == 1
+    assert n.page_stats["conflict"] == 1      # 局部 onsale ≠ 整屏 popup
+    assert any("弹窗守卫命中" in m for _, m in logs)
+
+
+def test_where_fast_assumption_popup_outside_guard_roi_would_misjudge():
+    """反证：如果弹窗正文没有落进守卫 ROI (720,410)-(1200,540)，会看到
+    弹窗盖在在售页却返回 "onsale"，且整屏一次都不读。
+
+    实测：本用例用桩 OCR 复现该失效路径；真机上弹窗正文 bbox 见
+    docs/auto-buy-design.md §4.6（y437-457 / y496-516，在守卫 ROI 内），
+    但这条假设必须在真机弹窗帧上核对，核对前守卫不能省。
+    """
+    n, calls, _ = _fast_nav(ONSALE_TEXT + "三角币不足", ONSALE_TEXT)
+    assert n.where()[0] == "onsale"           # 错误结论正是这条假设的失效现象
+    assert calls["full"] == 0
+    assert n.page_stats["conflict"] == 0
+
+
+def test_where_fast_pages_mapping_is_honored():
+    """放行名单是显式映射：把 onsale 关掉，同一个页面就降级整屏。"""
+    n, _, logs = _fast_nav(ONSALE_TEXT, ONSALE_TEXT,
+                           opts={"fast_det_pages": {"market": True,
+                                                    "onsale": False}})
+    assert n.where()[0] == "onsale"
+    assert n.page_stats["fallback"] == 1
+    assert any("onsale 未放行" in m for _, m in logs)
+
+
+def test_where_fast_disabled_for_injected_ocr():
+    """注入 OCR 默认退回整屏（桩无法模拟分块文字），保证原用例语义。"""
+    n = _nav(frames=[_blank()], ocr_text=ONSALE_TEXT)[0]
+    assert n._fast_det is False
+    assert n.where()[0] == "onsale"

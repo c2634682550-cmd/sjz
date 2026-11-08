@@ -101,6 +101,11 @@ NAV_DEFAULTS = {
     # 入口尝试轮数固定 1：一轮 = F4 一次 + 图标一次，总共最多 1 按 + 1 点。
     # 以前默认 2 轮会在两个入口都失败后再各重试一遍，对游戏连发 2 按 2 点。
     "market_rounds": 1,
+    # 两段式判页的放行名单：页型 → 是否允许采用局部 ROI 的结论。
+    # market / onsale 有真机帧验证（2026-11-08，35 帧，逐帧与整屏一致）；
+    # detail 还没有该页型的真实帧，强制整屏 —— 补帧验证前不许放开。
+    # 表里没有的页型（含 unknown/popup/筛选面板）一律降级整屏。
+    "fast_det_pages": {"market": True, "onsale": True, "detail": False},
 }
 
 # 「已经在交易行里」的页面集合：市场主标签页 + 在售 / 详情 / 两个筛选面板。
@@ -239,6 +244,28 @@ def classify(text):
 # 绿框在 x127-257，选中「典藏外观」时在 x257-387，位置本身就是答案。
 _TAB_SAMPLE_Y = 53
 _PAGE_NO_BOX = (470, 915, 540, 60)   # 「第 N 页」ROI（基准坐标）
+
+# ---------------------------------------------------------------- 两段式判页
+#
+# 2026-11-08 真机 35 帧实测（market 20 / onsale 5 / filter_collection 10）：
+# 整屏判 p50 889ms。B 组 ROI（顶部锚点带 + 页码条，25.6% 面积）局部判
+# p50 244ms，与整屏逐帧一致 25/35，不一致全部来自筛选面板（主链
+# market/onsale 降级 0%）。严格 1/6（16.7%）降级 43% 不达标；再加右侧
+# 面板（40.7%）一致率零提升。故采用 B 组，放行名单见 NAV_DEFAULTS
+# ["fast_det_pages"]。
+# ROI 都是基准坐标 (x, y, w, h)，裁剪走 crop_box 自动换算分辨率。
+_ROI_FAST_TOP = (0, 40, 1920, 260)      # 顶部页签带+页面锚点带：24.1%
+# 实测 bbox 依据：market「典藏外观」(286,65,72,24)「交易」(166,121,54,22)
+# 「筛选中」(214,194,82,26)「当前市场流通量」(466,237,182,23)；onsale
+# 判据落在「第1页」(718,936,49,22) 与顶部「推荐」。
+_ROI_FAST_PAGENO = (470, 915, 540, 60)  # 「第 N 页」：1.6%
+# 余额不足弹窗正文带：docs/auto-buy-design.md §4.6 实测正文 y437-457
+# (x782-1127)、明细 y496-516 (x759-1160)，这里外扩留余量。两段式 ROI
+# 看不到这块，必须单独守卫 —— 否则「弹窗盖在在售页」会被快判成 onsale
+# （真机踩过：入口据此认为已在交易行，点全落在弹窗上）。：3.0%
+_ROI_FAST_POPUP = (720, 410, 480, 130)
+# 三块合计 (499200 + 32400 + 62400) / (1920×1080) ≈ 28.6%
+_FAST_AREA_PCT = "28.6%"
 _TAB_CENTERS = (192, 322, 454)   # 曼德尔砖 / 典藏外观 / 典藏挂饰
 _TAB_NAMES = ("mandel", "collection", "charm")
 
@@ -314,6 +341,12 @@ class NavBase:
         self.opts = dict(opts or {})
         # 测试注入的 OCR 只认固定文本，不能再叠真 OCR 的读数
         self._ocr_injected = ocr_read is not None
+        # 两段式判页计数（复测统计用）：fast=局部采用 / fallback=降级整屏 /
+        # guard=弹窗守卫命中 / conflict=局部与整屏结论冲突（以整屏为准）。
+        self.page_stats = {"fast": 0, "fallback": 0, "guard": 0, "conflict": 0}
+        # 注入的 OCR 桩对所有裁剪返回同一段文字，模拟不出「局部 ≠ 整屏」；
+        # 注入模式退回整屏，保持原用例语义。台架专测里显式打开。
+        self._fast_det = ocr_read is None
         w, h = screen.size
         self.size = (w, h)
 
@@ -436,11 +469,86 @@ class NavBase:
             text += self._read_page_no(img)
         return text
 
+    def _read_fast(self, img):
+        """读 B 组 ROI（顶部锚点带 + 页码条）并拼串；裁不出返回 None。"""
+        words = []
+        for box in (_ROI_FAST_TOP, _ROI_FAST_PAGENO):
+            crop = self.crop_box(img, box)
+            if crop is None or getattr(crop, "size", 0) == 0:
+                return None
+            words += self._ocr_words(crop)
+        return "".join(str(w.get("text", "")) for w in words)
+
+    def _read_roi_text(self, img, box):
+        """裁一块 ROI 读拼串；裁不出返回 None。"""
+        crop = self.crop_box(img, box)
+        if crop is None or getattr(crop, "size", 0) == 0:
+            return None
+        return "".join(str(w.get("text", ""))
+                       for w in self._ocr_words(crop))
+
+    @staticmethod
+    def _popup_like(text):
+        """局部守卫 ROI 里是否有余额不足弹窗的文字特征。
+
+        宽判据即可：命中的代价只是多读一次整屏（结论仍由 classify 给），
+        漏判才是「弹窗盖在在售页被认成 onsale」的真错。
+        """
+        flat = "".join((text or "").split())
+        return (any(w in flat for w in ("三角币不足", "余额不足"))
+                or ("缺少" in flat and "三角币" in flat)
+                or ("推荐充值" in flat and "档位" in flat))
+
+    def _fast_allowed(self, page):
+        table = self._nav_opt("fast_det_pages") or {}
+        return bool(table.get(page))
+
+    def _bump(self, key):
+        self.page_stats[key] = self.page_stats.get(key, 0) + 1
+
     def where(self):
-        """当前在哪一页。返回 (页面名, 拼串)。页面名认不出是 "unknown"。"""
+        """当前在哪一页。返回 (页面名, 拼串)。页面名认不出是 "unknown"。
+
+        两段式：先用 B 组 ROI（28.6% 面积）快判；结论只在
+        `nav.fast_det_pages` 放行名单里（market / onsale）才采用，其余
+        一律降级整屏。采用与否、降级原因、冲突都以日志逐次记录，并计数
+        在 `page_stats`（fast / fallback / guard / conflict），供复测统计。
+        """
         img = self._snap()
+        if not self._fast_det:
+            text = self._read_text(img)
+            return classify(text), text
+        local = self._read_fast(img)
+        if local is None:
+            # ROI 裁不出来（分辨率异常）：退回整屏，不猜。
+            text = self._read_text(img)
+            return classify(text), text
+        local_page = classify(local)
+        reason = None
+        if local_page == "unknown":
+            reason = "锚点未命中"
+        elif not self._fast_allowed(local_page):
+            reason = f"{local_page} 未放行"
+        if reason is None:
+            # 放行候选才读弹窗守卫（主链每次多 ~40ms，但守住误判）
+            if self._popup_like(self._read_roi_text(img, _ROI_FAST_POPUP)):
+                reason = "弹窗守卫命中"
+                self._bump("guard")
+            else:
+                self._bump("fast")
+                self.say(f"判页：局部 ROI（{_FAST_AREA_PCT}）→ {local_page}")
+                return local_page, local
         text = self._read_text(img)
-        return classify(text), text
+        page = classify(text)
+        self._bump("fallback")
+        if local_page not in ("unknown", page):
+            # 局部与整屏两个明确结论不一致：以整屏为准，冲突计数
+            self._bump("conflict")
+            self.say(f"判页冲突：局部「{local_page}」≠ 整屏「{page}」，"
+                     f"以整屏为准（累计 {self.page_stats['conflict']}）",
+                     "warn")
+        self.say(f"判页：降级整屏（{reason}）→ {page}")
+        return page, text
 
     def tab_now(self):
         """当前选中的顶部标签（靠绿色选中框的像素位置判断）。
