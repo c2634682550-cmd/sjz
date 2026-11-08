@@ -64,8 +64,17 @@ def test_engine_task_carries_the_quota_and_the_budget():
     assert got["max_price"] == 3000 and got["name"] == "AKM"
 
 
-def test_engine_task_defaults_are_safe_for_old_tasks():
-    """老任务没有这两个字段：默认抢 1 件、不封预算，不能变成 0 件。"""
+def test_engine_task_defaults_are_safe_for_old_tasks(monkeypatch):
+    """老任务没有这两个字段：默认抢 1 件、不封预算，不能变成 0 件。
+
+    断言的是「**全局开关也没设**时的兜底值」，所以必须把 Config.load()
+    钉成空配置：`_engine_task` 的设计就是任务没写时退回全局 console 值，
+    本机 config.json 里 console.quota=4 时这条会读到 4 —— 那是配置生效，
+    不是代码回归。不钉住 Config.load() 的话这条依赖本机状态，换台机器
+    结果就不一样。
+    """
+    monkeypatch.setattr(sch, "Config",
+                        types.SimpleNamespace(load=lambda: {"queue": []}))
     got = sch.Scheduler._engine_task({"name": "老任务"})
     assert got["quota"] == 1
     assert got["budget"] == 0

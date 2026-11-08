@@ -30,6 +30,7 @@ _RUNTIME_TOOLS = [
 datas = [
     (os.path.join(ROOT, "web"), "web"),
     (os.path.join(ROOT, "core", "bricks.json"), "core"),
+    (os.path.join(ROOT, "core", "skins_lib.json"), "core"),
     (os.path.join(ROOT, "core", "skins_raw.csv"), "core"),
     (os.path.join(ROOT, "core", "assets"), os.path.join("core", "assets")),
     (os.path.join(ROOT, "core", "assets", "interception.dll"),

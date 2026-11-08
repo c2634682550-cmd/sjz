@@ -59,6 +59,9 @@ datas = [
     (os.path.join(ROOT, "web"), "web"),
     # 砖皮知识库：core/bricks.py 用 __file__ 找同目录的 bricks.json
     (os.path.join(ROOT, "core", "bricks.json"), "core"),
+    # 目标库（自查库 252 条）：core/bricks.py 的 load_skin_lib() 用 __file__
+    # 找同目录的 skins_lib.json；漏收 → server._skins() 读不到，前端自查库为空
+    (os.path.join(ROOT, "core", "skins_lib.json"), "core"),
     # 筛选表：core/skinfilter.py 用 __file__ 找同目录的 skins_raw.csv
     (os.path.join(ROOT, "core", "skins_raw.csv"), "core"),
     # 字形模板 + OCR 模型 + interception.dll（core/assets 整目录）
