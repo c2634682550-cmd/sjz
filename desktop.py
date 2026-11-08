@@ -759,6 +759,13 @@ class WinCtl:
             _log(f"!! win_minimize 失败：{type(e).__name__}: {e}")
             return False
 
+    # ---- 整窗收缩为迷你控制条（同一个 WebView2，只 resize + 页面切视图）
+    def win_mini_enter(self):
+        return _mini_enter(self)
+
+    def win_mini_exit(self):
+        return _mini_exit(self)
+
     def win_maximize(self):
         """切换最大化/还原。pywebview 没有「是否最大化」的读接口，自己记状态。"""
         try:
@@ -980,6 +987,11 @@ def _u32():
         lib.GetForegroundWindow.argtypes = []
         lib.SetForegroundWindow.restype = ctypes.c_int
         lib.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+        lib.GetWindowRect.argtypes = [ctypes.c_void_p,
+                                      ctypes.POINTER(wintypes.RECT)]
+        lib.GetWindowRect.restype = ctypes.c_int
+        lib.GetDpiForWindow.argtypes = [ctypes.c_void_p]
+        lib.GetDpiForWindow.restype = ctypes.c_uint
         _U32["lib"] = lib
     return _U32["lib"]
 
@@ -1071,6 +1083,225 @@ def _show_overlay_noactivate(ov=None):
     except Exception as e:                    # noqa: BLE001
         _log(f"!! 悬浮窗显示失败：{type(e).__name__}: {e}")
         return False
+
+
+# ---------------------------------------------------------------- 迷你控制条
+# 整窗收缩：同一个 pywebview 窗口 / 同一个 WebView2，只 resize + 页面切视图。
+# 不能新建第二个 WebView2（private_mode 下会 DeleteAllCookies，见文件头注释）。
+#
+# 形态参考用户给的录屏：960 宽的录屏里那条横条约 340px 宽（≈35% 屏宽）、
+# 22px 高；换算到 1080p 约 680×44。这里取 720×56 逻辑像素，多出的宽度是
+# 给「展开 / 关闭」两个按钮和中文标签留的，高度是给「标签在上、值在下」
+# 的两行排布留的（录屏里也是这个排布）。
+MINI_W = 720
+MINI_H = 56
+MINI_MARGIN = 8
+_HWND_NOTOPMOST = -2
+_SWP_FRAMECHANGED = 0x0020
+_SWP_NOZORDER = 0x0004
+_SWP_SHOWWINDOW = 0x0040
+
+_MINI_LOCK = threading.Lock()
+_MINI = {"active": False, "hwnd": 0, "rect": None, "scale": 1.0,
+         "stop": None, "was_max": False}
+
+
+def _window_rect(hwnd):
+    """窗口物理像素矩形（含 DWM 阴影边）。"""
+    if not hwnd:
+        return None
+    try:
+        r = wintypes.RECT()
+        if _u32().GetWindowRect(ctypes.c_void_p(int(hwnd)), ctypes.byref(r)):
+            return {"x": int(r.left), "y": int(r.top),
+                    "w": int(r.right - r.left), "h": int(r.bottom - r.top)}
+    except Exception as e:                    # noqa: BLE001
+        _log(f"!! 读窗口矩形失败：{type(e).__name__}: {e}")
+    return None
+
+
+def _dpi_scale(hwnd):
+    """当前窗口所在屏的 DPI 缩放（100% = 1.0，150% = 1.5）。"""
+    try:
+        dpi = int(_u32().GetDpiForWindow(ctypes.c_void_p(int(hwnd)) or 0) or 96)
+        if dpi > 0:
+            return dpi / 96.0
+    except Exception:                         # noqa: BLE001
+        pass
+    return 1.0
+
+
+def _update_ex_style(hwnd, add=0, remove=0):
+    """改扩展样式。NOACTIVATE/TOOLWINDOW 必须配合 SWP_FRAMECHANGED 才即时生效。"""
+    u = _u32()
+    h = ctypes.c_void_p(int(hwnd))
+    cur = int(u.GetWindowLongW(h, _GWL_EXSTYLE) or 0)
+    new = (cur | int(add)) & ~int(remove)
+    u.SetWindowLongW(h, _GWL_EXSTYLE, new)
+    return cur, new
+
+
+def _mini_focus_guard(hwnd, stop):
+    """迷你态兜底：万一 WebView2 里某次点击仍把主窗激活，把前台还给上一个外部窗口。
+
+    正常情况下 WS_EX_NOACTIVATE 已经保证点按钮不激活；这条只是保险，
+    外部窗口句柄取「最近一个不是自己的前台」，没有就什么都不做。
+    """
+    last_ext = 0
+    while not stop.is_set():
+        try:
+            fg = _get_foreground()
+            if fg and fg != hwnd:
+                last_ext = fg
+            elif fg == hwnd and last_ext:
+                _u32().SetForegroundWindow(ctypes.c_void_p(last_ext))
+        except Exception:                     # noqa: BLE001
+            return
+        if stop.wait(0.15):
+            return
+
+
+def _mini_enter(ctl):
+    """把主窗收缩成顶部居中的迷你控制条（置顶、不抢焦点、不进任务栏）。"""
+    t0 = time.perf_counter()
+    with _MINI_LOCK:
+        if _MINI["active"]:
+            return {"ok": True, "mini": _window_rect(_MINI["hwnd"]),
+                    "restore": _MINI["rect"], "scale": _MINI["scale"],
+                    "ms": 0.0, "already": True}
+        win = getattr(ctl, "_win", None)
+        if win is None:
+            return {"ok": False, "msg": "窗口还没建好"}
+        hwnd = _find_hwnd(WINDOW_TITLE, tries=40, delay=0.02)
+        if not hwnd:
+            return {"ok": False, "msg": "找不到主窗口句柄"}
+
+        # 最大化时 SetWindowPos 改不了实际尺寸：先还原，展开时再最大化回去
+        was_max = bool(getattr(ctl, "_maxed", False))
+        if was_max:
+            try:
+                win.restore()
+                ctl._maxed = False
+                time.sleep(0.06)
+            except Exception as e:            # noqa: BLE001
+                _log(f"!! 收缩前还原最大化失败：{type(e).__name__}: {e}")
+
+        rect = _window_rect(hwnd)
+        if not rect:
+            return {"ok": False, "msg": "读不到窗口位置"}
+        scale = _dpi_scale(hwnd)
+        mw = max(360, int(round(MINI_W * scale)))
+        mh = max(40, int(round(MINI_H * scale)))
+        wx, wy, ww, wh = _work_area()
+        x = wx + max(0, (ww - mw) // 2)
+        y = wy + int(round(MINI_MARGIN * scale))
+        # 主窗 min_size（默认 900×620）会被 WM_GETMINMAXINFO 用作下限，
+        # 直接把 SetWindowPos 的 720×56 夹成 900×620。收缩期间临时放开，
+        # 展开时按备份恢复；拿不到 native 就照旧（尺寸会被夹住但不崩）。
+        min_backup = None
+        native = getattr(win, "native", None)
+        if native is not None:
+            try:
+                min_backup = native.MinimumSize
+                native.MinimumSize = type(min_backup)(0, 0)
+            except Exception as e:            # noqa: BLE001
+                _log(f"!! 放开最小尺寸失败：{type(e).__name__}: {e}")
+                min_backup = None
+        try:
+            u = _u32()
+            h = ctypes.c_void_p(hwnd)
+            _update_ex_style(hwnd, add=_WS_EX_NOACTIVATE | _WS_EX_TOOLWINDOW)
+            ok = u.SetWindowPos(
+                h, ctypes.c_void_p(_HWND_TOPMOST),
+                int(x), int(y), mw, mh,
+                _SWP_NOACTIVATE | _SWP_SHOWWINDOW | _SWP_FRAMECHANGED)
+            if not ok:
+                if native is not None and min_backup is not None:
+                    try:
+                        native.MinimumSize = min_backup
+                    except Exception:         # noqa: BLE001
+                        pass
+                return {"ok": False, "msg": "SetWindowPos 返回 0"}
+        except Exception as e:                # noqa: BLE001
+            _log(f"!! 收缩成迷你窗失败：{type(e).__name__}: {e}")
+            return {"ok": False, "msg": f"{type(e).__name__}: {e}"}
+
+        old_stop = _MINI.get("stop")
+        if old_stop is not None:
+            old_stop.set()
+        stop = threading.Event()
+        _MINI.update(active=True, hwnd=hwnd, rect=rect, scale=scale,
+                     stop=stop, was_max=was_max)
+        try:
+            ctl._mini_min_size = min_backup
+        except Exception:                     # noqa: BLE001
+            pass
+        threading.Thread(target=_mini_focus_guard, args=(hwnd, stop),
+                         name="mini-focus-guard", daemon=True).start()
+
+        after = _window_rect(hwnd) or rect
+        ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        _log(f"mini-enter {rect} -> {after} scale={scale} {ms}ms")
+        return {"ok": True, "mini": after, "restore": rect,
+                "scale": scale, "ms": ms}
+
+
+def _mini_exit(ctl):
+    """展开：恢复原尺寸/位置，去掉置顶与 NOACTIVATE，回到任务栏。"""
+    t0 = time.perf_counter()
+    with _MINI_LOCK:
+        if not _MINI["active"]:
+            return {"ok": True, "mini": False, "ms": 0.0, "already": True}
+        hwnd = int(_MINI["hwnd"] or 0)
+        rect = _MINI["rect"]
+        scale = _MINI["scale"]
+        was_max = bool(_MINI["was_max"])
+        stop = _MINI.get("stop")
+        if stop is not None:
+            stop.set()
+        after = None
+        native = getattr(getattr(ctl, "_win", None), "native", None)
+        bak = getattr(ctl, "_mini_min_size", None)
+        try:
+            u = _u32()
+            h = ctypes.c_void_p(hwnd)
+            _update_ex_style(hwnd, remove=_WS_EX_NOACTIVATE | _WS_EX_TOOLWINDOW)
+            if rect:
+                u.SetWindowPos(
+                    h, ctypes.c_void_p(_HWND_NOTOPMOST),
+                    int(rect["x"]), int(rect["y"]),
+                    int(rect["w"]), int(rect["h"]),
+                    _SWP_NOACTIVATE | _SWP_SHOWWINDOW)
+            u.SetWindowPos(
+                h, ctypes.c_void_p(_HWND_NOTOPMOST),
+                0, 0, 0, 0,
+                _SWP_NOSIZE | _SWP_NOMOVE
+                | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
+        except Exception as e:                # noqa: BLE001
+            _log(f"!! 展开主窗失败：{type(e).__name__}: {e}")
+        # 尺寸先恢复成大窗，再把最小尺寸还回去。反过来会在非 UI 线程上
+        # 触发 WinForms 的同步 resize（720×56 -> 900×620），实测会卡死。
+        if native is not None and bak is not None:
+            try:
+                native.MinimumSize = bak
+            except Exception as e:            # noqa: BLE001
+                _log(f"!! 恢复最小尺寸失败：{type(e).__name__}: {e}")
+        try:
+            ctl._mini_min_size = None
+        except Exception:                     # noqa: BLE001
+            pass
+        _MINI.update(active=False, hwnd=0, rect=None, stop=None, was_max=False)
+        if was_max:
+            try:
+                ctl._win.maximize()
+                ctl._maxed = True
+            except Exception as e:            # noqa: BLE001
+                _log(f"!! 展开后恢复最大化失败：{type(e).__name__}: {e}")
+        after = _window_rect(hwnd) or rect
+        ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        _log(f"mini-exit -> {after} {ms}ms")
+        return {"ok": True, "mini": after, "restore": rect,
+                "scale": scale, "ms": ms}
 
 
 def _overlay_page_path():

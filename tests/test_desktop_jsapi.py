@@ -35,6 +35,7 @@ import desktop  # noqa: E402
 ALLOWED_PUBLIC = {
     "minimize", "destroy",
     "win_minimize", "win_maximize", "win_close",
+    "win_mini_enter", "win_mini_exit",
     "purchase_start", "purchase_stop",
     "overlay_toggle", "get_overlay_state", "overlay_size",
     "restart_elevated",

@@ -788,8 +788,111 @@
   .region-row.dis{opacity:.45}
   .region-row.sel .rn{color:var(--accent)}
 </style>
+<style>
+/* ---------- 迷你控制条：整窗收缩态（同一个 WebView2，只切视图 + resize） ---------- */
+body.mini{background:var(--surface-2);overflow:hidden;user-select:none}
+body.mini > *:not(#miniBar){display:none!important}
+#miniBar{display:none}
+body.mini #miniBar{
+  display:flex;position:fixed;inset:0;align-items:center;gap:8px;padding:0 10px;
+  background:linear-gradient(180deg,var(--surface-3),var(--surface));
+  border:1px solid var(--line-2);border-radius:var(--r-md);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  font-size:12px;animation:miniIn .16s ease-out both;
+}
+@keyframes miniIn{from{opacity:.4;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.mb-drag{display:flex;align-items:center;gap:7px;flex:0 0 auto;min-width:88px}
+.mb-grip{width:3px;height:22px;border-radius:2px;background:linear-gradient(180deg,var(--line-3),transparent)}
+.mb-dot{width:7px;height:7px;border-radius:50%;background:var(--text-3);flex:0 0 auto;
+  transition:background var(--dur),box-shadow var(--dur)}
+#miniBar[data-s="scanning"] .mb-dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+#miniBar[data-s="firing"] .mb-dot{background:var(--gold);box-shadow:0 0 0 3px rgba(230,180,92,.16)}
+#miniBar[data-s="paused"] .mb-dot{background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}
+#miniBar[data-s="error"] .mb-dot{background:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.mb-state{font-weight:600;white-space:nowrap;letter-spacing:.2px}
+.mb-wave{display:inline-flex;align-items:flex-end;gap:2px;height:12px;width:14px;flex:0 0 auto}
+.mb-wave i{display:block;width:2px;height:4px;border-radius:1px;background:var(--line-3)}
+#miniBar[data-s="scanning"] .mb-wave i,#miniBar[data-s="firing"] .mb-wave i{
+  background:var(--accent);animation:mbWave .9s ease-in-out infinite}
+.mb-wave i:nth-child(2){animation-delay:.15s}
+.mb-wave i:nth-child(3){animation-delay:.3s}
+@keyframes mbWave{0%,100%{height:4px}50%{height:11px}}
+.mb-cell{display:flex;flex-direction:column;justify-content:center;flex:0 0 auto;padding:0 1px}
+.mb-lab{font-size:10px;line-height:12px;color:var(--text-3);white-space:nowrap}
+.mb-val{display:flex;align-items:center;gap:3px;height:20px;white-space:nowrap;
+  font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.mb-val b{font-weight:600;color:var(--text);font-size:12px}
+.mb-sub{color:var(--text-3);font-size:10.5px;font-family:var(--font-ui)}
+.mb-step{width:18px;height:18px;border-radius:4px;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--text-2);font:11px/1 var(--font-num);
+  display:grid;place-items:center;transition:border-color var(--dur),color var(--dur)}
+.mb-step:hover{border-color:var(--line-3);color:var(--text)}
+.mb-step:active{background:var(--surface-3)}
+.mb-mode{height:20px;padding:0 8px;border-radius:5px;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--accent-2);font-size:11px;font-weight:600;
+  transition:border-color var(--dur),color var(--dur)}
+.mb-mode[data-semi="1"]{border-color:rgba(230,180,92,.55);color:var(--gold)}
+.mb-sep{flex:1 1 auto;min-width:4px}
+.mb-btn{height:30px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--line);
+  background:var(--surface-2);color:var(--text);font-size:12px;font-weight:600;white-space:nowrap;
+  transition:background var(--dur),border-color var(--dur),color var(--dur)}
+.mb-run[data-running="0"]{background:var(--ok-soft);border-color:rgba(62,207,142,.55);color:var(--ok)}
+.mb-run[data-running="1"]{background:var(--bad-soft);border-color:rgba(240,96,106,.55);color:var(--bad)}
+.mb-run:hover{filter:brightness(1.12)}
+.mb-ico{width:26px;height:30px;display:grid;place-items:center;border-radius:var(--r-sm);
+  border:1px solid transparent;color:var(--text-3);transition:background var(--dur),color var(--dur)}
+.mb-ico:hover{background:var(--surface-3);border-color:var(--line);color:var(--text)}
+.mb-close:hover{color:var(--bad);border-color:rgba(240,96,106,.5)}
+.mb-ico svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+</style>
 </head>
 <body>
+<!-- 迷你控制条：整窗收缩后只剩这一条（同一 WebView2，body.mini 时只显示它） -->
+<div id="miniBar" data-s="idle" role="group" aria-label="迷你控制条">
+  <div class="mb-drag pywebview-drag-region" title="按住这里拖动">
+    <i class="mb-grip"></i>
+    <i class="mb-dot" id="mbDot"></i>
+    <span class="mb-state" id="mbState">待命</span>
+    <span class="mb-wave" aria-hidden="true"><i></i><i></i><i></i></span>
+  </div>
+  <div class="mb-cell" style="min-width:84px">
+    <span class="mb-lab">已抢 / 目标</span>
+    <span class="mb-val"><b id="mbBought">0</b><span class="mb-sub">/</span><b id="mbTarget">1</b></span>
+  </div>
+  <div class="mb-cell" style="min-width:38px">
+    <span class="mb-lab">尝试</span>
+    <span class="mb-val"><b id="mbAttempts">0</b></span>
+  </div>
+  <div class="mb-cell" style="min-width:104px">
+    <span class="mb-lab">最高价 <span class="mb-sub">0=不限</span></span>
+    <span class="mb-val">
+      <button class="mb-step" id="mbPriceDown" title="最高价 -500" aria-label="最高价减">−</button>
+      <b id="mbPrice">不限</b>
+      <button class="mb-step" id="mbPriceUp" title="最高价 +500" aria-label="最高价加">+</button>
+    </span>
+  </div>
+  <div class="mb-cell" style="min-width:66px">
+    <span class="mb-lab">数量</span>
+    <span class="mb-val">
+      <button class="mb-step" id="mbQtyDown" title="数量 -1" aria-label="数量减">−</button>
+      <b id="mbQty">1</b>
+      <button class="mb-step" id="mbQtyUp" title="数量 +1" aria-label="数量加">+</button>
+    </span>
+  </div>
+  <div class="mb-cell" style="min-width:56px">
+    <span class="mb-lab">模式</span>
+    <button class="mb-mode" id="mbMode" data-semi="0" title="点击切换 自动 / 半自动">自动</button>
+  </div>
+  <span class="mb-sep"></span>
+  <button class="mb-btn mb-run" id="mbRun" data-running="0">启动</button>
+  <button class="mb-ico" id="mbExpand" title="展开主界面" aria-label="展开主界面">
+    <svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M15 20h5v-5M9 20H4v-5"/></svg>
+  </button>
+  <button class="mb-ico mb-close" id="mbClose" title="退出程序" aria-label="退出程序">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</div>
 <header class="topbar pywebview-drag-region">
   <div class="brand">
     <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 9V6.5A2.5 2.5 0 0 1 6.5 4H9M15 4h2.5A2.5 2.5 0 0 1 20 6.5V9M20 15v2.5a2.5 2.5 0 0 1-2.5 2.5H15M9 20H6.5A2.5 2.5 0 0 1 4 17.5V15"/><circle cx="12" cy="12" r="3"/></svg></div>
@@ -1923,6 +2026,12 @@ try { setDensity(localStorage.getItem('dafors.density') === 'compact', false); }
 
 /* 窗口控制：优先走宿主新 bridge，宿主还没上时退回旧的 minimize/destroy */
 function winBridge() { return (window.pywebview && window.pywebview.api) || null; }
+/* pywebview 注入 api 和页面脚本执行有竞态：api 晚到时 has-wv 会一直缺席，
+   顶部窗口按钮（含「收起」）就永远不显示。这里做一次兜底补齐。 */
+function markHasWv() {
+  if (!winBridge() || document.body.classList.contains('has-wv')) return;
+  document.body.classList.add('has-wv');
+}
 async function callWinMethod(primary, legacy, label) {
   const bridge = winBridge();
   const fn = bridge && (typeof bridge[primary] === 'function' ? bridge[primary]
@@ -1940,7 +2049,7 @@ async function callWinMethod(primary, legacy, label) {
     return false;
   }
 }
-$('#btnMin').addEventListener('click', () => { callWinMethod('win_minimize', 'minimize', '最小化'); });
+$('#btnMin').addEventListener('click', () => { enterMini(); });
 $('#btnMax').addEventListener('click', () => { callWinMethod('win_maximize', null, '最大化 / 还原'); });
 $('#btnClose').addEventListener('click', async () => {
   const yes = await ask({ title: '退出程序', body: '正在跑的抢购会立刻停下，没保存的界面改动会丢失。确定现在退出？', okText: '退出程序' });
@@ -1959,6 +2068,164 @@ $('#btnClose').addEventListener('click', async () => {
   });
   if (winBridge()) document.body.classList.add('has-wv');
 })();
+
+/* ---------- 迷你控制条：整窗收缩（同一个 WebView2，只切视图 + resize） ---------- */
+const MINI = { on: false, busy: false, timer: 0, snap: null, note: null };
+const MINI_LABEL = { idle: '待命', scanning: '搜索中', firing: '抢购中', paused: '已暂停', error: '错误' };
+
+function miniNote(text, bad) { MINI.note = { text, bad: !!bad, at: Date.now() }; }
+
+function miniRender(snap) {
+  const bar = $('#miniBar');
+  if (!bar) return;
+  const st = snap || {};
+  let state = MINI_LABEL[st.state] ? st.state : 'idle';
+  const noteOn = MINI.note && Date.now() - MINI.note.at < 1600;
+  if (noteOn && MINI.note.bad) state = 'error';
+  bar.dataset.s = state;
+  $('#mbState').textContent = noteOn ? MINI.note.text : MINI_LABEL[state];
+
+  const settings = st.settings || {};
+  $('#mbBought').textContent = String(Math.max(0, Number(st.bought) || 0));
+  $('#mbTarget').textContent = String(Math.max(1, Number(st.target) || 1));
+  $('#mbAttempts').textContent = String(Math.max(0, Number(st.attempts) || 0));
+  const maxPrice = Math.max(0, Number(settings.max_price) || 0);
+  $('#mbPrice').textContent = maxPrice > 0 ? String(maxPrice) : '不限';
+  $('#mbQty').textContent = String(Math.max(1, Number(settings.quota) || 1));
+  const semi = !!settings.semi;
+  $('#mbMode').textContent = semi ? '半自动' : '自动';
+  $('#mbMode').dataset.semi = semi ? '1' : '0';
+  const running = !!st.running;
+  $('#mbRun').textContent = running ? '停止' : '启动';
+  $('#mbRun').dataset.running = running ? '1' : '0';
+}
+
+async function refreshMiniState() {
+  const bridge = winBridge();
+  if (!bridge || typeof bridge.get_overlay_state !== 'function') return;
+  try {
+    const snap = await bridge.get_overlay_state();
+    MINI.snap = snap;
+    if (MINI.on) miniRender(snap);
+  } catch (e) { /* 迷你态静默重试，下一次轮询再取 */ }
+}
+
+function startMiniPoll() {
+  stopMiniPoll();
+  MINI.timer = setInterval(() => { if (!MINI.busy) refreshMiniState(); }, 500);
+}
+function stopMiniPoll() {
+  if (MINI.timer) { clearInterval(MINI.timer); MINI.timer = 0; }
+}
+
+async function enterMini() {
+  if (MINI.on || MINI.busy) return;
+  const bridge = winBridge();
+  if (!bridge || typeof bridge.win_mini_enter !== 'function') {
+    // 宿主还没上新接口时退回系统最小化，至少按钮不是死的
+    callWinMethod('win_minimize', 'minimize', '最小化');
+    return;
+  }
+  MINI.busy = true;
+  document.body.classList.add('mini');
+  try {
+    const r = await bridge.win_mini_enter();
+    if (r && r.ok === false) throw new Error((r && r.msg) || '宿主返回失败');
+    MINI.on = true;
+    miniRender(MINI.snap);
+    startMiniPoll();
+    refreshMiniState();
+  } catch (e) {
+    document.body.classList.remove('mini');
+    MINI.on = false;
+    toast('收缩成迷你窗失败：' + humanize(e), 'err');
+  } finally {
+    MINI.busy = false;
+  }
+}
+
+async function exitMini() {
+  if (MINI.busy) return;
+  const bridge = winBridge();
+  MINI.busy = true;
+  stopMiniPoll();
+  try {
+    if (bridge && typeof bridge.win_mini_exit === 'function') {
+      const r = await bridge.win_mini_exit();
+      if (r && r.ok === false) throw new Error((r && r.msg) || '宿主返回失败');
+    }
+  } catch (e) {
+    toast('展开主窗失败：' + humanize(e), 'err');
+  } finally {
+    document.body.classList.remove('mini');
+    MINI.on = false;
+    MINI.busy = false;
+  }
+}
+
+function miniApplySwitch(key, value) {
+  if (MINI.busy) return;
+  MINI.busy = true;
+  miniNote('保存中…', false);
+  miniRender(MINI.snap);
+  api('/api/switches', { values: { [key]: value } }).then(() => {
+    if (MINI.snap) {
+      const st = Object.assign({}, MINI.snap.settings || {});
+      if (key === 'price.max') st.max_price = value;
+      if (key === 'price.quota') st.quota = value;
+      if (key === 'run.semi') st.semi = !!value;
+      MINI.snap = Object.assign({}, MINI.snap, { settings: st });
+    }
+    miniNote('已生效', false);
+    miniRender(MINI.snap);
+  }).catch((e) => {
+    miniNote(humanize(e), true);
+    miniRender(MINI.snap);
+  }).finally(() => { MINI.busy = false; });
+}
+
+async function miniToggleRun() {
+  if (MINI.busy) return;
+  const running = !!(MINI.snap && MINI.snap.running);
+  MINI.busy = true;
+  miniNote(running ? '正在停止…' : '正在启动…', false);
+  miniRender(MINI.snap);
+  try {
+    await api(running ? '/api/scheduler/stop' : '/api/scheduler/start', {});
+    miniNote(running ? '已停止' : '已启动', false);
+  } catch (e) {
+    miniNote(humanize(e), true);
+  } finally {
+    MINI.busy = false;
+    miniRender(MINI.snap);
+    setTimeout(refreshMiniState, 250);
+  }
+}
+
+$('#mbExpand').addEventListener('click', exitMini);
+$('#mbClose').addEventListener('click', () => { doQuit(); });
+$('#mbRun').addEventListener('click', miniToggleRun);
+$('#mbPriceDown').addEventListener('click', () => {
+  const cur = Math.max(0, Number(((MINI.snap || {}).settings || {}).max_price) || 0);
+  miniApplySwitch('price.max', cur <= 0 ? 0 : Math.max(0, cur - 500));
+});
+$('#mbPriceUp').addEventListener('click', () => {
+  const cur = Math.max(0, Number(((MINI.snap || {}).settings || {}).max_price) || 0);
+  miniApplySwitch('price.max', Math.min(99999999, cur + 500));
+});
+$('#mbQtyDown').addEventListener('click', () => {
+  const cur = Math.max(1, Number(((MINI.snap || {}).settings || {}).quota) || 1);
+  miniApplySwitch('price.quota', Math.max(1, cur - 1));
+});
+$('#mbQtyUp').addEventListener('click', () => {
+  const cur = Math.max(1, Number(((MINI.snap || {}).settings || {}).quota) || 1);
+  miniApplySwitch('price.quota', Math.min(99, cur + 1));
+});
+$('#mbMode').addEventListener('click', () => {
+  const semi = !!(((MINI.snap || {}).settings || {}).semi);
+  miniApplySwitch('run.semi', !semi);
+});
+
 document.addEventListener('pywebviewready', () => {
   document.body.classList.add('has-wv');
   refreshOverlayHotkey();
@@ -1994,6 +2261,15 @@ async function boot() {
   // 卡到 30s 超时（见 _frontend_rollback_flake.md）。
   const navToken = S.navToken;
   bootProgress();
+  markHasWv();
+  if (!document.body.classList.contains('has-wv')) {
+    /* 宿主 api 还没注入：短轮询补齐，别让窗口按钮一直隐身 */
+    let n = 0;
+    const t = setInterval(() => {
+      markHasWv();
+      if (document.body.classList.contains('has-wv') || ++n > 240) clearInterval(t);
+    }, 50);
+  }
   try {
     const [cfg, st, gs] = await Promise.all([
       api('/api/config').catch(() => null),
