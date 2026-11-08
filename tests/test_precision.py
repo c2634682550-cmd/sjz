@@ -447,6 +447,15 @@ def test_external_thread_observes_each_firing():
     def observer():
         seen = 0
         while not stop.is_set():
+            # 每轮先让出 GIL：这个线程只是「测量仪器」，不能反过来拖慢被测线程。
+            # 实测（2026-11-08，Windows 11 / CPython 3.11）不给让出时，
+            # 被测线程连线程体启动都要等一个系统计时器刻度：t_fire→setup 的
+            # p50 = 15.4ms（take_gil 的超时按 15.6ms 取整），于是偏差 p50 32ms、
+            # max 50~88ms；同机对照：观测线程改成 time.sleep(0) 让出后启动
+            # 115us、偏差 max <100us；switchinterval 压到 0.1ms 也能降到 250us。
+            # 所以这是观测线程自己抢 GIL 造成的测量伪影，不是触发内核退化 ——
+            # 修法是让仪器不扰动被测对象，不是放松下面 50ms 的断言。
+            time.sleep(0)
             seq = flag[0]
             if seq > seen:
                 # 记录当前可见序号；旧写法要求 seq-seen==1，一旦被调度
@@ -490,10 +499,10 @@ def test_external_thread_observes_each_firing():
     s_dev = _stats([s.deviation_us for s in hits])
     print(f"\n[外部采样 M3] 观测延迟（外部线程看见 - 内核触发）{_fmt(st)}")
     print(f"[外部采样 M3] 同时的内核偏差（有外部线程争抢 GIL）{_fmt(s_dev)}")
-    print("[外部采样 M3] 受 GIL 切换间隔 1ms 限制，尾延迟在毫秒级；"
-          "与 M1 的 us 级偏差不可比，仅证明触发确实发生在目标时刻附近。"
-          "注意：外部采样线程本身会把内核偏差从 sub-us 抬到 ms 级 —— "
-          "这正是「同进程其他 Python 线程会抢占」的实证。")
+    print("[外部采样 M3] 观测线程每轮 time.sleep(0) 让出 GIL：尾延迟回到亚毫秒级，"
+          "与 M1 的 us 级内核偏差同量纲可比。若观测线程忙轮询不让出，"
+          "会把被测线程的线程体启动拖慢一个系统计时器刻度（p50 15.4ms），"
+          "伪造出 30ms+ 的偏差 —— 见 observer() 里的实测注记。")
 
     assert st["p50"] < 10_000, f"外部观测延迟 p50={st['p50']:.0f}us，线程被饿死"
     # 被外部线程干扰后偏差会到毫秒级，但不应到几十毫秒
