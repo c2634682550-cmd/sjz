@@ -279,7 +279,46 @@ def part_c():
                   f"{p95(ad):10.0f} {sv:+7.0f} {ap[0]:>11}")
 
 
+# ------------------------------------------------- D. buy 失败路径早退
+
+def part_d():
+    """hold=0.35 给足后仍 0 变化 → 立即报错；正常路径照旧进 detail。"""
+    print("\n== D. buy 失败路径早退 / 正常路径 ==")
+    chain_bench.configure(True, True)
+
+    class DeadMouse(chain_bench.FakeMouse):
+        """点下去没有任何反应（模拟坐标过期 / 不在前台）。"""
+
+        def click(self, *a, **kw):
+            return True
+
+    w = chain_bench.World()
+    nv = build(w)
+    nv._buy_button_visible = lambda: True
+    nv._buy_point = lambda: ((1700, 885), "固定坐标", False)
+    nv.mouse = DeadMouse(w)
+    w.set("collection_sel")
+    t = time.perf_counter()
+    try:
+        nv.buy()
+        raise AssertionError("应该抛 NavError")
+    except NavError as e:
+        ms = (time.perf_counter() - t) * 1000
+        print(f"无响应 → NavError {ms:.0f}ms：{str(e)[:70]}")
+        assert ms < 2000, "早退后不该超过 2s"
+
+    w = chain_bench.World()
+    nv = build(w)
+    nv._buy_button_visible = lambda: True
+    nv._buy_point = lambda: ((1700, 885), "固定坐标", False)
+    w.set("collection_sel")
+    t = time.perf_counter()
+    assert nv.buy() is True
+    print(f"正常路径 → 落地 {nv.where()[0]}，{(time.perf_counter() - t) * 1000:.0f}ms")
+
+
 if __name__ == "__main__":
     part_a()
     part_b()
     part_c()
+    part_d()

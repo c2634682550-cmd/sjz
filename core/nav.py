@@ -548,25 +548,33 @@ class NavBase:
             if abs(x - bx) <= 40 and abs(y - by) <= 40:
                 raise NavError(f"拒绝点击 ({x},{y})：太接近「{name}」({bx},{by})")
 
-    def click(self, point, label="", expect_change=True, timeout=4.0, raw=False):
+    def click(self, point, label="", expect_change=True, timeout=4.0, raw=False,
+              hold=None):
         """点一个标定好的点（**基准坐标**），等画面变化。
 
         raw=True 时 point 已经是真实屏幕像素，直接按原值点。坐标口径只有
         一处缩放：基准坐标 → 实际分辨率。以前 OCR 像素又被 pt() 乘一次缩放
         系数，2560x1440 下 y=345 的卡片点到了 460（下一张卡）—— 买错货的
         直接原因（review V02）。
+
+        hold：按住时长（秒）。真机实测「购买」(2026-11-08)：短单击 / hold=0.08
+        都毫无反应（按钮局部 diff 0.00%），hold=0.35 才跳挂单页（diff 42.09%）。
+        这类「按住才生效」的按钮必须传 hold，重试补不了。
         """
         self._assert_safe(point, raw=raw)
         x, y = (int(point[0]), int(point[1])) if raw else self.pt(point)
-        return self._click_at(x, y, label or str(point), expect_change, timeout)
+        return self._click_at(x, y, label or str(point), expect_change, timeout,
+                              hold=hold)
 
-    def click_px(self, point, label="", expect_change=True, timeout=4.0):
+    def click_px(self, point, label="", expect_change=True, timeout=4.0,
+                 hold=None):
         """点**真实屏幕像素**坐标（OCR / 模板返回的坐标，不再换算）。"""
         x, y = int(point[0]), int(point[1])
         self._assert_safe((x, y), raw=True)
-        return self._click_at(x, y, label or str(point), expect_change, timeout)
+        return self._click_at(x, y, label or str(point), expect_change, timeout,
+                              hold=hold)
 
-    def _click_at(self, x, y, label, expect_change, timeout):
+    def _click_at(self, x, y, label, expect_change, timeout, hold=None):
         """按真实像素点下去并等画面变化。
 
         **每次点击都校验游戏在前台**（Mouse 带了游戏窗口句柄时才有）：
@@ -577,7 +585,8 @@ class NavBase:
         """
         before = self._snap()
         hwnd = getattr(self.mouse, "_game_hwnd", None)
-        ok = self.mouse.click(x, y, verify=False, expect_foreground=hwnd)
+        kw = {"hold": hold} if hold else {}
+        ok = self.mouse.click(x, y, verify=False, expect_foreground=hwnd, **kw)
         if ok is False:
             # I2：message 通道的 False 分两种 ——
             #   accepted=False           真的没送出去（前台/被拦/窗口没了）→ 报错

@@ -127,13 +127,19 @@ class FakeMouse:
     def __init__(self, world):
         self.w = world
 
-    def click(self, x, y, verify=False, expect_foreground=None):
+    def click(self, x, y, verify=False, expect_foreground=None, hold=None):
+        # 真机实测「购买」按住才生效：短按 / hold=0.08 都是 0.00% 变化，
+        # hold=0.35 才跳挂单页（diff 42.09%）。台架照这个语义演。
+        if hold is not None and hold < 0.3:
+            return True
         s = self.w.state
         if s == "market" and abs(x - 323) <= 70 and 40 <= y <= 70:
             self.w.set("collection")
         elif s == "collection" and 60 <= x <= 430 and 240 <= y <= 870:
             self.w.set("collection_sel")
-        elif s == "collection_sel" and abs(x - 1700) <= 60 and abs(y - 885) <= 40:
+        elif s == "collection_sel" and (abs(x - 1700) <= 60 and abs(y - 885) <= 40
+                                        or 1481 <= x <= 1785 and 902 <= y <= 961):
+            # 两种都认：固定坐标点（旧）与倒计时锚点矩形中心（新）
             self.w.set("detail")
         return True
 

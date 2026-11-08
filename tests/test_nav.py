@@ -8,6 +8,8 @@
 页面识别用的拼串全部抄自真机 OCR 实测（2026-10-20，1920x1080 窗口化），
 所以以后改 classify() 会立刻被这些用例拦住。
 """
+import time
+
 import numpy as np
 import pytest
 
@@ -95,7 +97,7 @@ class FakeKeyboard:
 
 
 def _nav(size=(1920, 1080), frames=None, ocr_text="",
-         logs=None, buy_visible=True):
+         logs=None, buy_visible=True, stub_buy_point=True):
     screen = FakeScreen(size, frames)
     mouse = FakeMouse()
     kb = FakeKeyboard()
@@ -109,6 +111,9 @@ def _nav(size=(1920, 1080), frames=None, ocr_text="",
                   ocr_read=fake_ocr)
     # buy() 点之前会先确认右侧真的是「购买」；假屏幕读不出字，这里直接给定
     n._buy_button_visible = lambda: buy_visible
+    # 按钮坐标解析要真 OCR 整块右下面板，台架里换掉（锚点/回退另有专测）
+    if stub_buy_point:
+        n._buy_point = lambda: (COL_BUY, "固定坐标", False)
     return n, screen, mouse, kb, logs
 
 
@@ -343,6 +348,89 @@ def test_buy_succeeds_when_page_is_detail():
     assert n.buy() is True
 
 
+def test_buy_fails_fast_when_click_changes_nothing():
+    """hold=0.35 给足后画面仍 0 变化 → 立即报错，不再等满 3s。
+
+    真机失败路径原来是 6s（click）+ 3s（等页面）= 9s；早退后只花
+    hold 0.35s + 两次 0.2s 采样。
+    """
+    n, _, mouse, _, _ = _nav(frames=[_blank()] * 60, ocr_text=MARKET_TEXT)
+    t0 = time.perf_counter()
+    with pytest.raises(NavError, match="仍无变化"):
+        n.buy()
+    assert time.perf_counter() - t0 < 1.6
+    assert len(mouse.clicks) == 1
+
+
+def test_buy_keeps_validating_when_click_responds():
+    """有点响应（0.02）就不能当无响应早退，必须继续按页面判定。"""
+    n, _, _, _, _ = _nav(frames=[_blank()], ocr_text=MARKET_TEXT)
+    n.click = lambda *a, **kw: 0.02
+    waits = []
+
+    def fake_wait(want, **kw):
+        waits.append(want)
+        raise NavError("期望页面 market")
+
+    n._wait_page = fake_wait
+    with pytest.raises(NavError, match="期望页面"):
+        n.buy()
+    assert waits == [("detail", "onsale")]
+
+
+def test_buy_point_uses_countdown_anchor(monkeypatch):
+    """有倒计时行就用现算的锚点（真实像素，raw=True）。"""
+    from core import autocalib
+    from core.config import Config
+
+    monkeypatch.setattr(Config, "load_cached", lambda *a, **k: {})
+    seen = {}
+
+    def fake_find(img, size, cfg=None):
+        seen["size"] = size
+        return {"ok": True, "text": "剩余：1小时2分", "rect": (331, 282, 304, 59),
+                "center": (483.0, 311.0), "check": {"why": "通过"}}
+
+    monkeypatch.setattr(autocalib, "find_buy_by_countdown", fake_find)
+    n, _, _, _, _ = _nav(frames=[_blank()], stub_buy_point=False)
+    point, how, raw = n._buy_point()
+    # 搜索区左上 (1150,620) + 子图中心 (483,311) = 整屏 (1633,931)
+    assert point == (1633, 931)
+    assert "倒计时锚点" in how
+    assert raw is True
+    assert seen["size"] == (770, 460)
+
+
+def test_buy_point_falls_back_when_anchor_check_fails(monkeypatch):
+    """找到了倒计时但按钮区不像按钮 → 退回固定坐标，不拿来盲点。"""
+    from core import autocalib
+    from core.config import Config
+
+    monkeypatch.setattr(Config, "load_cached", lambda *a, **k: {})
+    monkeypatch.setattr(autocalib, "find_buy_by_countdown",
+                        lambda *a, **k: {"ok": False, "text": "剩余：1小时2分",
+                                         "rect": (0, 0, 1, 1),
+                                         "center": (0.0, 0.0),
+                                         "check": {"why": "与背景几乎同色"}})
+    n, _, _, _, _ = _nav(frames=[_blank()], stub_buy_point=False)
+    assert n._buy_point() == (COL_BUY, "固定坐标", False)
+
+
+def test_buy_point_falls_back_when_ocr_fails(monkeypatch):
+    """锚点读取炸了也只是回退固定坐标，不能把 buy 打挂。"""
+    from core import autocalib
+    from core.config import Config
+
+    monkeypatch.setattr(Config, "load_cached", lambda *a, **k: {})
+
+    def boom(*a, **k):
+        raise RuntimeError("OCR 挂了")
+
+    monkeypatch.setattr(autocalib, "find_buy_by_countdown", boom)
+    n, _, _, _, _ = _nav(frames=[_blank()], stub_buy_point=False)
+    assert n._buy_point() == (COL_BUY, "固定坐标", False)
+
+
 def test_ons_filter_raises_when_panel_does_not_open():
     """点筛选但面板没开 → 抛 NavError。"""
     n, _, _, _, _ = _nav(frames=[_blank(), _white()], ocr_text=ONSALE_TEXT)
@@ -490,36 +578,70 @@ def test_pick_skin_rejects_out_of_range_index():
 
 # ---------------------------------------------------------------- 复位
 
-def test_recover_presses_esc_until_market():
-    """从在售页按 ESC 退回市场。
+def test_recover_tabs_to_hall_then_f4_when_no_panel():
+    """没有面板时一次 ESC 都不发：Tab → 确认大厅 → F4 → 确认 market。
 
-    实测场景：用户点开始时可能停在在售页、筛选面板开着。硬编码「按 F4
-    开市场」在那种情况下无效（F4 只开不关），必须能自己退回来。
+    2026-11-08 用户反馈恢复路径反复按 ESC 抢操作，改成确定恢复链。
     """
     n, _, _, kb, _ = _nav(frames=[_blank()] * 40, ocr_text=ONSALE_TEXT)
-    n._ocr_read = None
-    seq = [ONSALE_TEXT, "随便", MARKET_TEXT]
+    seq = [ONSALE_TEXT, ONSALE_TEXT, HALL_TEXT, MARKET_TEXT]
 
     def fake_ocr(img):
         return [{"text": seq.pop(0) if seq else MARKET_TEXT,
                  "x": 0, "y": 0, "w": 10, "h": 10}]
 
     n._ocr_read = fake_ocr
-    # recover() 每轮还会调 _panel_open() / _ons_filter_open()（判两个筛选
-    # 面板在不在），它们走 OCR 会消耗上面的 seq。这里直接给结果 —— 本测试
-    # 关心的是 ESC 次数，面板判据在 test_nav_filter.py 里有专门的真机标定。
     n._panel_open = lambda: False
     n._ons_filter_open = lambda: False
     assert n.recover() == "market"
-    assert kb.taps == ["ESC", "ESC"]
+    assert kb.taps == ["TAB", "F4"]
 
 
-def test_recover_raises_when_esc_does_nothing():
-    """按了 ESC 还在原地 → 抛 NavError，不盲试更多次。"""
+def test_recover_stops_when_tab_does_not_reach_hall():
+    """Tab 后页面没变 → 直接报到，不连发。"""
     n, _, _, kb, _ = _nav(frames=[_blank()] * 40, ocr_text=ONSALE_TEXT)
-    with pytest.raises(NavError, match="复位失败"):
-        n.recover(max_esc=2)
-    assert kb.taps == ["ESC", "ESC"]
+    with pytest.raises(NavError, match="Tab 后不在大厅也不在交易行"):
+        n.recover()
+    assert kb.taps == ["TAB"]
+
+
+def test_recover_accepts_market_after_tab_from_collection():
+    """真机实测：典藏外观按 Tab 直接回交易行（market）→ 就地返回，不再按 F4。"""
+    n, _, _, kb, _ = _nav(frames=[_blank()] * 40, ocr_text=ONSALE_TEXT)
+    pages = iter(["unknown", "market"])
+    n.where = lambda: (next(pages), "")
+
+    assert n.recover_to_hall() == "market"
+    assert kb.taps == ["TAB"]
+
+
+def test_recover_sends_one_esc_only_when_panel_confirmed():
+    """确认识别到面板才发 ESC，且只发一次；关掉后直接回市场。"""
+    n, _, _, kb, _ = _nav(frames=[_blank()] * 40, ocr_text=ONSALE_TEXT)
+    state = {"open": True}
+    pages = iter(["onsale", "market"])
+
+    def fake_ocr(img):
+        return [{"text": MARKET_TEXT, "x": 0, "y": 0, "w": 10, "h": 10}]
+
+    n._ocr_read = fake_ocr
+    n.where = lambda: (next(pages, "market"), "")
+    # 面板在 ESC 真正发出去之前一直算开着；发完就关，模拟游戏行为
+    n._panel_open = lambda: "ESC" not in kb.taps
+    n._ons_filter_open = lambda: False
+    assert n.recover() == "market"
+    assert kb.taps == ["ESC"]
+
+
+def test_recover_raises_after_one_esc_when_panel_stays_open():
+    """ESC 一次面板还在 → 抛错并停手，绝不重放第二次。"""
+    n, _, _, kb, _ = _nav(frames=[_blank()] * 40, ocr_text=ONSALE_TEXT)
+    n.where = lambda: ("onsale", "")
+    n._panel_open = lambda: True
+    n._ons_filter_open = lambda: False
+    with pytest.raises(NavError, match="不重放"):
+        n.recover()
+    assert kb.taps == ["ESC"]
 
 
 def test_recover_presses_f4_when_in_hall():

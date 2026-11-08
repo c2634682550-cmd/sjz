@@ -1348,12 +1348,76 @@ class NavColPanel:
         self.say("连试 3 轮都没点中卡片", "warn")
         return False
 
+    # 购买按钮锚点搜索区：右下面板（1920x1080 基准）。只在这一块读倒计时行，
+    # 不整屏 OCR —— 整屏一次 700ms，这块只占 12% 面积，约 100ms。
+    _BUY_ANCHOR_BOX = (1150, 620, 770, 460)
+
+    def _buy_point(self):
+        """购买按钮点哪儿：优先倒计时锚点现算，算不出来退回固定 COL_BUY。
+
+        倒计时行（「剩余：X小时Y分」）跟着版本/分辨率跑，固定坐标会过期
+        （真机 3/3 点空）。`autocalib.find_buy_by_countdown` 从当前帧现算
+        按钮矩形，拿不到就退回 COL_BUY —— 两条路径都返回，绝不盲点。
+
+        返回 `(point, how, raw)`；raw=True 表示 point 已是真实屏幕像素。
+        """
+        from . import autocalib
+        from .config import Config
+        try:
+            img = self._snap()
+            if getattr(img, "shape", None) is None:
+                raise ValueError("抓不到画面")
+            H, W = img.shape[:2]
+            x0, y0, w, h = self.px_box(self._BUY_ANCHOR_BOX)
+            sub = img[y0:y0 + h, x0:x0 + w]
+            if sub.size == 0:
+                raise ValueError(f"锚点搜索区为空 {self._BUY_ANCHOR_BOX}")
+            rel = autocalib.buy_anchor_rel(Config.load_cached())
+            # 基准量 → 当前整屏像素；再把参照系换成裁剪块，这样函数在子图上
+            # 算出的仍是真实像素（加回 x0/y0 就是整屏坐标）。
+            sx = W / float(rel["ref"][0])
+            sy = H / float(rel["ref"][1])
+            local = dict(rel)
+            local["w"] = float(rel["w"]) * sx
+            local["h"] = float(rel["h"]) * sy
+            local["offset_x"] = float(rel["offset_x"]) * sx
+            local["offset_y"] = float(rel["offset_y"]) * sy
+            local["ref"] = [float(sub.shape[1]), float(sub.shape[0])]
+            hit = autocalib.find_buy_by_countdown(
+                sub, (sub.shape[1], sub.shape[0]),
+                {"calibration": {"buy_anchor": local}})
+        except Exception as e:                   # noqa: BLE001
+            self.say(f"倒计时锚点读取失败：{e}，退回固定坐标 COL_BUY", "warn")
+            return COL_BUY, "固定坐标", False
+        if hit and hit.get("ok"):
+            cx, cy = hit["center"]
+            point = (int(round(cx + x0)), int(round(cy + y0)))
+            # 锚点得跟固定坐标大致对得上才敢用：真机挂单页按钮中心 (1633,931)
+            # 与 COL_BUY (1700,885) 差 81px；偏差超过 120px 说明读到的是别处
+            # 的「剩余」行，宁可退回固定坐标也不盲点。
+            fix = self.pt(COL_BUY)
+            if (abs(point[0] - fix[0]) > 120.0 * W / 1920.0
+                    or abs(point[1] - fix[1]) > 120.0 * H / 1080.0):
+                self.say(f"倒计时锚点 {point} 离固定坐标 {fix} 太远，"
+                         f"不采用，退回固定坐标", "warn")
+                return COL_BUY, "固定坐标", False
+            self.say(f"购买按钮用倒计时锚点：{hit.get('text')!r} "
+                     f"rect={hit['rect']} 整屏点={point}", "info")
+            return point, f"倒计时锚点（{hit.get('text')}）", True
+        if hit:
+            self.say(f"找到倒计时行但按钮区不像按钮：{hit['check']['why']}，"
+                     f"退回固定坐标 COL_BUY", "warn")
+        else:
+            self.say("没找到倒计时行（这页没有剩余倒计时），用固定坐标 COL_BUY",
+                     "info")
+        return COL_BUY, "固定坐标", False
+
     def buy(self):
         """点购买，进入在售页。
 
         这是全程最危险的一步：曼德尔砖页上「购买」(1642,959) 和
-        「售出」(1634,1032) 只差 73px。所以这里**只认 COL_BUY 一个坐标**，
-        不试备选。实测典藏外观页购买在 (1700,885)，变化 62.5%。
+        「售出」(1634,1032) 只差 73px。所以这里**只点一个点**，不试备选：
+        有倒计时就用锚点现算（`_buy_point`），没有就固定 COL_BUY。
 
         校验：必须落到 detail（商品详情+挂单列表）或 onsale（挂单列表）。
         """
@@ -1362,7 +1426,19 @@ class NavColPanel:
         if not self._buy_button_visible():
             raise NavError("右侧看不到「购买」按钮（这个皮肤可能已经拥有了，"
                            "页面显示的是「售出」）—— 不点，先换一个皮肤")
-        self.click(COL_BUY, "购买", timeout=6.0)
+        point, how, raw = self._buy_point()
+        # hold=0.35：真机实测这个按钮**按住才生效**。短单击、hold=0.08 都
+        # 毫无反应（按钮局部 diff 0.00%，page 一直是 market），hold=0.35 才
+        # 跳挂单页（diff 42.09%，page=onsale）。之前 3 次重试全白跑。
+        hold = 0.35
+        self.say(f"购买按钮 {point}（{how}），hold={hold}s", "info")
+        d = self.click(point, "购买", timeout=0.6, raw=raw, hold=hold)
+        # 失败早退：hold 已经给足，画面还是 0 变化 → 是坐标过期/不在前台，
+        # 不是「时间不够」。原来这里白等 6s + 3s 才报错。
+        if d <= 0.005:
+            raise NavError(f"点购买：hold={hold}s 之后画面仍无变化"
+                           f"（{d * 100:.2f}%）—— 坐标 {point}（{how}）"
+                           f"可能过期，或游戏不在前台")
         # 固定 1.5s → 轮询到页面变成 detail/onsale 即走，上限 3s。
         # 校验没删：到点仍不对就抛与 `require` 同文案的 NavError（不当成功）。
         self._wait_page(("detail", "onsale"), cap=3.0, step=0.2,
