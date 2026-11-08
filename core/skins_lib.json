@@ -1,13 +1,13 @@
 {
- "updated": "2026-11-08T16:45:46+08:00",
- "note": "44 池（11 赛季 × 4 品阶）两遍枚举，品阶来自筛选上下文 filter_context",
- "source": "tier_all_result.json + tier_retry_result.json",
- "total": 232,
+ "updated": "2026-11-08T18:07:19+08:00",
+ "note": "S1–S11 为 44 池两遍枚举 232 条；S12「王者之剑」为 2026-11-08 四池两遍枚举追加，品阶来自筛选上下文 filter_context",
+ "source": "tier_all_result.json + tier_retry_result.json + micro_result.json",
+ "total": 252,
  "dist_tiers": {
-  "传说": 14,
-  "史诗": 33,
-  "稀有": 85,
-  "普通": 100
+  "传说": 15,
+  "史诗": 35,
+  "稀有": 93,
+  "普通": 109
  },
  "dist_seasons": {
   "棱镜攻势": {
@@ -75,6 +75,12 @@
    "史诗": 3,
    "稀有": 7,
    "普通": 10
+  },
+  "王者之剑": {
+   "传说": 1,
+   "史诗": 2,
+   "稀有": 8,
+   "普通": 9
   }
  },
  "errors": [],
@@ -2863,6 +2869,332 @@
    "weapon": "腾龙突击步枪",
    "gun": "步枪",
    "skin": "夜穹"
+  },
+  {
+   "name": "K437突击步枪-王者之剑",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "传说",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "K437突击步枪",
+   "gun": "步枪",
+   "skin": "王者之剑"
+  },
+  {
+   "name": "AUG突击步枪-私人定制",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "史诗",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "AUG突击步枪",
+   "gun": "步枪",
+   "skin": "私人定制"
+  },
+  {
+   "name": "腾龙突击步枪-私人定制",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "史诗",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "腾龙突击步枪",
+   "gun": "步枪",
+   "skin": "私人定制"
+  },
+  {
+   "name": "AR57突击步枪-睡衣派对",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "AR57突击步枪",
+   "gun": "步枪",
+   "skin": "睡衣派对"
+  },
+  {
+   "name": "FS-12霰弹枪-睡衣派对",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "FS-12霰弹枪",
+   "gun": "霰弹枪",
+   "skin": "睡衣派对"
+  },
+  {
+   "name": "M1014霰弹枪-地脉",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "M1014霰弹枪",
+   "gun": "霰弹枪",
+   "skin": "地脉"
+  },
+  {
+   "name": "M700狙击步枪-地脉",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "M700狙击步枪",
+   "gun": "狙击步枪",
+   "skin": "地脉"
+  },
+  {
+   "name": "Mini-14射手步枪-地脉",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "Mini-14射手步枪",
+   "gun": "精准射手步枪",
+   "skin": "地脉"
+  },
+  {
+   "name": "PKM通用机枪-睡衣派对",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "PKM通用机枪",
+   "gun": "轻机枪",
+   "skin": "睡衣派对"
+  },
+  {
+   "name": "PTR-32突击步枪-地脉",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "PTR-32突击步枪",
+   "gun": "步枪",
+   "skin": "地脉"
+  },
+  {
+   "name": "SV-98狙击步枪-睡衣派对",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "稀有",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "SV-98狙击步枪",
+   "gun": "狙击步枪",
+   "skin": "睡衣派对"
+  },
+  {
+   "name": "AKM突击步枪-警戒线",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "AKM突击步枪",
+   "gun": "步枪",
+   "skin": "警戒线"
+  },
+  {
+   "name": "CAR-15突击步枪-极地冰霜",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "CAR-15突击步枪",
+   "gun": "步枪",
+   "skin": "极地冰霜"
+  },
+  {
+   "name": "FS-12霰弹枪-警戒线",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "FS-12霰弹枪",
+   "gun": "霰弹枪",
+   "skin": "警戒线"
+  },
+  {
+   "name": "K437突击步枪-极地冰霜",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "K437突击步枪",
+   "gun": "步枪",
+   "skin": "极地冰霜"
+  },
+  {
+   "name": "M7战斗步枪-警戒线",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "M7战斗步枪",
+   "gun": "步枪",
+   "skin": "警戒线"
+  },
+  {
+   "name": "M870霰弹枪-极地冰霜",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "M870霰弹枪",
+   "gun": "霰弹枪",
+   "skin": "极地冰霜"
+  },
+  {
+   "name": "SR-25射手步枪-警戒线",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "SR-25射手步枪",
+   "gun": "精准射手步枪",
+   "skin": "警戒线"
+  },
+  {
+   "name": "SVD狙击步枪-极地冰霜",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "SVD狙击步枪",
+   "gun": "狙击步枪",
+   "skin": "极地冰霜"
+  },
+  {
+   "name": "野牛冲锋枪-极地冰霜",
+   "season": "S12",
+   "season_name": "王者之剑",
+   "tier": "普通",
+   "category": "枪皮",
+   "source": "filter_context",
+   "enumerated_at": "2026-11-08T18:07:19+08:00",
+   "weapon": "野牛冲锋枪",
+   "gun": "冲锋枪",
+   "skin": "极地冰霜"
+  }
+ ],
+ "added": {
+  "season": "S12",
+  "season_name": "王者之剑",
+  "count": 20,
+  "at": "2026-11-08T18:07:19+08:00",
+  "pools": [
+   {
+    "grade": "传说",
+    "count": 1,
+    "counts": [
+     1,
+     1
+    ],
+    "consistent": true,
+    "screens": [
+     2,
+     2
+    ],
+    "truncated": false,
+    "attempt": 2,
+    "season_readback": "王者之剑"
+   },
+   {
+    "grade": "史诗",
+    "count": 2,
+    "counts": [
+     2,
+     2
+    ],
+    "consistent": true,
+    "screens": [
+     2,
+     2
+    ],
+    "truncated": false,
+    "attempt": 1,
+    "season_readback": "王者之剑"
+   },
+   {
+    "grade": "稀有",
+    "count": 8,
+    "counts": [
+     8,
+     8
+    ],
+    "consistent": true,
+    "screens": [
+     3,
+     3
+    ],
+    "truncated": false,
+    "attempt": 1,
+    "season_readback": "王者之剑"
+   },
+   {
+    "grade": "普通",
+    "count": 9,
+    "counts": [
+     9,
+     9
+    ],
+    "consistent": true,
+    "screens": [
+     3,
+     3
+    ],
+    "truncated": false,
+    "attempt": 1,
+    "season_readback": "王者之剑"
+   }
+  ]
+ },
+ "ocr_variants": [
+  {
+   "a": "M4A1突击步枪-雪地迷彩",
+   "b": "M4A1突击步枪-雪地迷彩：",
+   "season": "S1",
+   "tier": "普通"
+  },
+  {
+   "a": "Vector冲锋枪-花岗岩",
+   "b": "Vector冲锋枪花岗岩",
+   "season": "S2",
+   "tier": "稀有"
   }
  ]
 }
