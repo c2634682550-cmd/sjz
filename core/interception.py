@@ -760,6 +760,7 @@ class Interception:
                     f"Interception 驱动没有接收事件（send 返回 {n}，设备 "
                     f"{target}）。常见原因：装完驱动没重启；或驱动被卸载/"
                     f"被杀软清掉；或该设备号已被拔掉。")
+        return n
 
     def send_mouse_batch(self, strokes, device=None):
         """一次提交多条 mouse stroke（同一次锁、同一个驱动调用）。

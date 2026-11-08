@@ -1341,7 +1341,7 @@ class Mouse:
             pass
 
     def click(self, x, y, verify=None, expect_foreground=None, path=None,
-              hold=None, fire=None):
+              hold=None, fire=None, move_gap=None):
         """移动 + 按下 + 抬起。默认走 Interception 驱动（2026-10-30 起）。
 
         为什么换掉「SetCursorPos + PostMessage」组合（旧做法，实测有效但慢）：
@@ -1472,10 +1472,12 @@ class Mouse:
                                         fire=fire, mode=mode, first=first)
         return self._click_driver(x, y, verify, path=path, hold=hold,
                                   prepared=prepared, fire=fire,
-                                  mode=mode, first=first)
+                                  mode=mode, first=first,
+                                  move_gap=move_gap)
 
     def _click_driver(self, x, y, verify=True, path=None, hold=None,
-                      prepared=None, fire=False, mode=None, first=False):
+                      prepared=None, fire=False, mode=None, first=False,
+                      move_gap=None):
         """驱动通道：注入到**真实鼠标设备**，点完等 down/up 落地再还原光标。
 
         2026-11-07 重做，三个硬约束：
@@ -1583,16 +1585,23 @@ class Mouse:
             watch = None
         mark("watch")
         t0 = time.perf_counter()
-        t_down = t_up = None
+        t_down = t_up = t_mv = None
+        # 投递层明细：每条事件「期望写入数 vs 驱动实际写入数」。这是把
+        # 「事件没发出去」和「发出去了但游戏没响应」分开的唯一证据。
+        sends = []
         # 批处理只对「不按住」的快路径成立：hold 必须真的在 down/up 之间停住，
         # 那段的语义是时间间隔本身，没法合并。能力判定走**显式契约**
         # （drv.supports_batch + 代际 gen），不靠 hasattr 的偶然性 —— 驱动
         # 对象被代理/façade/测试替身包过时方法会藏起来，若只看方法存在性
         # 就会静默退回逐条发送，性能掉一档却查不到原因。
         batch_cap = bool(getattr(drv, "supports_batch", False))
-        use_batch = bool(opt.get("batch")) and not hold and has_gen and batch_cap
+        # move_gap>0 时必须逐条发：批处理会把 move 和 down 压进同一帧，
+        # 无法在两者之间插入等待（这正是「move→down 间隔」实验要量的东西）。
+        gap = max(0.0, float(move_gap or 0.0))
+        use_batch = (bool(opt.get("batch")) and not hold and not gap
+                     and has_gen and batch_cap)
         if not use_batch and bool(opt.get("batch")) and not hold \
-                and not self._batch_warn_once:
+                and not gap and not self._batch_warn_once:
             self._batch_warn_once = True
             if not has_gen:
                 why = "驱动对象没有代际信息 gen，无法确认设备句柄有效"
@@ -1637,8 +1646,12 @@ class Mouse:
                     strokes.append((0, ox, oy, flags))
                 pressed = True
                 try:
-                    drv.send_mouse_batch(strokes, device=ident["device"])
+                    _got = drv.send_mouse_batch(strokes, device=ident["device"])
+                    sends.append({"ev": "batch", "want": len(strokes),
+                                  "got": _got})
                 except InterceptionError as e:
+                    sends.append({"ev": "batch", "want": len(strokes),
+                                  "got": getattr(e, "sent", 0), "err": "partial"})
                     if getattr(e, "sent", 0) != 0 \
                             or getattr(drv, "send_mouse", None) is None:
                         raise
@@ -1648,34 +1661,46 @@ class Mouse:
                     self._ident_gen = -1
                     ident = drv.mouse_device(force=True)
                     for _st, _sx, _sy, _fl in strokes:
-                        drv.send_mouse(_st, x=_sx, y=_sy, flags=_fl,
-                                       device=ident["device"])
+                        _r = drv.send_mouse(_st, x=_sx, y=_sy, flags=_fl,
+                                            device=ident["device"])
+                        sends.append({"ev": "retry", "want": 1, "got": _r})
                     mark("send_batch_retry")
                 else:
                     mark("send_batch")
-                t_down = t_up = time.perf_counter()
+                t_mv = t_down = t_up = time.perf_counter()
                 pressed = False
             else:
-                drv.send_mouse(0, x=dx, y=dy, flags=flags, device=ident["device"])
+                _mv = drv.send_mouse(0, x=dx, y=dy, flags=flags,
+                                     device=ident["device"])
+                sends.append({"ev": "move", "want": 1, "got": _mv})
                 mark("send_move")
+                # move→down 间隔：假说「move 和 down 落在同一渲染帧时按钮
+                # 的悬停态还没生效就收到按下」——这里让 down 至少晚 gap 秒，
+                # 小于一帧的移动才有机会被 UI 先消化。
+                t_mv = time.perf_counter()
+                if gap:
+                    time.sleep(gap)
                 t_down = time.perf_counter()
-                drv.send_mouse(MOUSE_LEFT_DOWN, x=dx, y=dy, flags=flags,
-                               device=ident["device"])
+                _dn = drv.send_mouse(MOUSE_LEFT_DOWN, x=dx, y=dy, flags=flags,
+                                     device=ident["device"])
+                sends.append({"ev": "down", "want": 1, "got": _dn})
                 mark("send_down")
                 pressed = True
                 # 连点参数要求「按住 hold_ms」真的发生：这里就是 down→up 之间。
                 if hold:
                     time.sleep(float(hold))
-                drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags,
-                               device=ident["device"])
+                _up = drv.send_mouse(MOUSE_LEFT_UP, x=dx, y=dy, flags=flags,
+                                     device=ident["device"])
+                sends.append({"ev": "up", "want": 1, "got": _up})
                 mark("send_up")
                 t_up = time.perf_counter()
                 pressed = False
                 if use_send_restore:
                     # 逐条路径的回原点：必须是最后一条位置事件，才能压掉
                     # 仍在队列里的 UP 位置更新覆盖（hold 越大越明显）。
-                    drv.send_mouse(0, x=ox, y=oy, flags=flags,
-                                   device=ident["device"])
+                    _rs = drv.send_mouse(0, x=ox, y=oy, flags=flags,
+                                         device=ident["device"])
+                    sends.append({"ev": "restore", "want": 1, "got": _rs})
                     mark("send_restore")
         except BaseException as e:
             # 含 StopSignal / KeyboardInterrupt：先把光标送回原点再往外抛，
@@ -1846,6 +1871,17 @@ class Mouse:
             "virtual": bool(ident.get("virtual")),
             "device_source": ident.get("source"),
             "accepted": True,
+            # 投递层明细：want=期望写入事件数，got=interception_send 实回数。
+            # got<want 就是「事件没发出去」；got==want 但画面 0 变化才是
+            # 「发出去了游戏没响应」。两者解法不同，必须分开记。
+            "sends": sends,
+            "hold_ms": round(float(hold or 0) * 1000.0, 2),
+            "down_after_enter_ms": (round((t_down - t0) * 1000.0, 2)
+                                    if t_down else None),
+            "move_down_gap_ms": (round((t_down - t_mv) * 1000.0, 2)
+                                 if (t_down and t_mv) else None),
+            "down_up_ms": (round((t_up - t_down) * 1000.0, 2)
+                           if (t_down and t_up) else None),
             "landing": landing,
             "occupancy_ms": round(occupancy_ms, 3),
             "restored": restored,
