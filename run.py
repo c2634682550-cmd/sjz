@@ -1,10 +1,35 @@
 """启动入口：python run.py [--port 8777] [--no-browser]"""
 import argparse
+import socket
 import sys
 import threading
 import webbrowser
 
 from core.server import serve
+
+# 已知控制台端口：启动前先探一遍，有实例在听就先报出来，不再出现两个
+# 实例同时注入（2026-11-08 实测事故：旧实例 :8799 + 新实例同时抢鼠标）。
+KNOWN_PORTS = (8799, 8801)
+
+
+def _listening(port, host="127.0.0.1", timeout=0.25):
+    try:
+        with socket.create_connection((host, int(port)), timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _preflight_ports(port):
+    """返回 (ok, 提示)。port 被占 → 起不来；已知端口被占 → 先报出来。"""
+    busy = [p for p in (int(port),) + KNOWN_PORTS if _listening(p)]
+    if not busy:
+        return True, ""
+    busy = sorted(set(busy))
+    msg = "检测到已监听的控制台端口：%s" % ", ".join(":%d" % p for p in busy)
+    if int(port) in busy:
+        return False, msg + "（本次要用的端口被占，先关掉旧实例再启动）"
+    return False, msg + "（同一时间只允许一个控制台，先停掉旧实例再启动）"
 
 
 def main():
@@ -16,6 +41,11 @@ def main():
     # 提权了」，对用户没有意义，所以不出现在 --help 里。
     ap.add_argument("--elevated", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
+
+    ok, why = _preflight_ports(args.port)
+    if not ok:
+        print(why)
+        return 1
 
     url = f"http://{args.host}:{args.port}"
     # 和桌面版共用同一把单实例闸：源码跑一个、exe 又开一个，等于两个
