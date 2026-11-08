@@ -173,6 +173,7 @@ def scan_list(nav, step=6, max_screens=60, pause=0.0):
     seen = set()
     screens = 0
     empty_streak = 0
+    truncated = False
     for _ in range(max_screens):
         items = nav.skin_items()
         screens += 1
@@ -192,7 +193,12 @@ def scan_list(nav, step=6, max_screens=60, pause=0.0):
         nav.skin_scroll(step)
         if pause:
             time.sleep(pause)
-    return {"names": names, "screens": screens, "count": len(names)}
+    else:
+        # 循环跑满 max_screens 还没遇到「整屏全见过」—— 没到底，如实标注，
+        # 不许把截断的条数当成「全部」。
+        truncated = True
+    return {"names": names, "screens": screens, "count": len(names),
+            "truncated": truncated}
 
 
 def _diff(a, b):
@@ -242,6 +248,7 @@ def enumerate_season(nav, season, grade="普通", passes=2, step=6,
         "consistent": consistent,
         "diff": diff,
         "screens": [r["screens"] for r in runs],
+        "truncated": [r.get("truncated") for r in runs],
         "items": items,
     }
 
