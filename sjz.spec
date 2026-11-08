@@ -125,6 +125,7 @@ HIDDEN = [
     "core.ocr_chain",
     "core.fire_proc",
     "core.version",
+    "core.tier_enum",
 ]
 HIDDEN += collect_submodules("rapidocr")
 for _m in collect_submodules("webview"):
