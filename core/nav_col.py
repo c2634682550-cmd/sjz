@@ -1473,6 +1473,16 @@ class NavColPanel:
         for i in range(3):
             if i:
                 time.sleep(0.5)
+            # 真机实测：点按本身不送悬停帧，按钮要先「停」在光标下才认。
+            # 手动先 move_path 到按钮再点，第二下必成（63%）；不悬停时
+            # 连点 3 下都是 0.01%。所以每一下都先悬停、再点。
+            mv = getattr(self.mouse, "move_path", None)
+            if mv:
+                try:
+                    mv([point], 120)
+                    time.sleep(0.15)
+                except Exception:            # noqa: BLE001
+                    pass
             d = self.click(point, "购买", timeout=0.6 if i == 0 else 0.8,
                            raw=raw, hold=hold)
             if d > 0.005:
