@@ -27,6 +27,8 @@ import json
 import re
 import threading
 
+import cv2
+
 from . import ocr_chain, ocr_ppocr, ocr_rapid
 
 _lock = threading.Lock()
@@ -81,6 +83,7 @@ def reload():
         _backend = None
         _broken = False
         _last_err = ""
+    clear_frame_cache()
 
 
 def _client():
@@ -258,6 +261,7 @@ def metrics():
             "tier2_attempts": st.get("tier2", 0),
             "tier2_fails": st.get("tier2_fail", 0),
             "tier2_error": str(getattr(b, "last_error", "") or ""),
+            "reuse": _stats.get("reuse", 0),
         }
     except Exception as e:                       # noqa: BLE001
         return {"ok": False, "url": "", "calls": 0, "fails": 0,
@@ -312,6 +316,10 @@ def read_words(img, timeout=None, raise_on_error=False):
         if raise_on_error:
             raise OCRError(f"OCR 客户端不可用：{_last_err or '未配置'}")
         return []
+    if bool(_cfg().get("reuse_frame", True)):
+        hit = _frame_get(img, b)
+        if hit is not None:
+            return hit
     try:
         words = None
         if _panel_roi_on() and _panel_like(img):
@@ -332,7 +340,68 @@ def read_words(img, timeout=None, raise_on_error=False):
         _stats["empty"] += 1
     else:
         _stats["calls"] += 1
+        _frame_put(img, words, b)
     return words
+
+
+# ---------------- 同帧复用 ----------------
+# 主链路里 `where()` 会在同一张静止画面上被连读 2~4 次（进入判定 → 轮询
+# 命中 → 购买后 require → 公示期检查 → 收尾再判）。游戏内页面在两次抓帧
+# 之间像素不变，重复送模型是纯浪费。
+#
+# 命中条件是「逐像素完全相同」——不是相似、不是尺寸相同。像素相同则 OCR
+# 结果必然相同，这是唯一可以零准确率代价的缓存口径。
+# 只缓存非空结果：空结果可能是动画/加载中的瞬态，缓存会把「暂时没字」
+# 固化成「永远没字」。
+#
+# 缓存条目记着当时的 backend 对象：`reload()` 会把 `_backend` 置空重建，
+# 配置（面板 ROI / 降采样倍率）变了以后的读数口径也跟着变，不跟着 backend
+# 作废就会把旧口径的结果喂给新配置（回归用例里换 min_score / 关面板 ROI
+# 时就是这么被抓出来的）。
+
+_FRAME_MAX = 3
+_frame = []              # [(backend, 原图副本, words)]
+_frame_lock = threading.Lock()
+
+
+def _frame_same(a, b):
+    if a is None or b is None or a.shape != b.shape or a.dtype != b.dtype:
+        return False
+    try:
+        return float(cv2.norm(a, b, cv2.NORM_L1)) == 0.0
+    except Exception:                            # noqa: BLE001
+        return False
+
+
+def _frame_get(img, be):
+    with _frame_lock:
+        for i, (owner, ref, words) in enumerate(_frame):
+            if owner is not be:                  # is() 比 id() 稳：对象被持有时不会被复用
+                continue
+            if _frame_same(img, ref):
+                if i:
+                    _frame.insert(0, _frame.pop(i))
+                _stats["reuse"] = _stats.get("reuse", 0) + 1
+                return [dict(w) for w in words]
+    return None
+
+
+def _frame_put(img, words, be):
+    if not words:
+        return
+    try:
+        ref = img.copy()
+    except Exception:                            # noqa: BLE001
+        return
+    with _frame_lock:
+        _frame.insert(0, (be, ref, [dict(w) for w in words]))
+        del _frame[_FRAME_MAX:]
+
+
+def clear_frame_cache():
+    """丢掉同帧缓存。换 backend / 换配置后由 `reload()` 调用。"""
+    with _frame_lock:
+        _frame.clear()
 
 
 # ---------------- 文本清理 / 比对 ----------------

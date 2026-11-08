@@ -248,6 +248,10 @@ DEFAULTS = {
         "rapid": {
             "enabled": True,                  # false = 退回旧的纯 PP-OCR 服务路径
         },
+        # 同帧（逐像素完全相同）复用 OCR 结果，默认开。段落数固定为
+        # rapid / ppocr / service 三段，这是开关不是后端，仍放在 ocr 下
+        # （见 ocr.py `read_words` 的 `_frame_get`）。
+        "reuse_frame": True,
         "ppocr": {
             "mode": "auto",                   # auto / http / off
             "url": "http://127.0.0.1:8081",   # paddlex --serve --pipeline tools/OCR_tiny.yaml

@@ -130,7 +130,9 @@ def test_defaults_keep_only_the_three_known_ocr_sections():
     「多后端切换」加回来：后端一多，落点偏移的坑就跟着回来。
     """
     d = config.DEFAULTS["ocr"]
-    assert set(d) == {"rapid", "ppocr", "service"}
+    # 只多一个开关 reuse_frame（同帧复用，见 ocr.py `_frame_get`），
+    # 它不是后端段：别再把 backend / paddle_vl / hot_backend 加回来。
+    assert set(d) == {"rapid", "ppocr", "service", "reuse_frame"}
     assert d["rapid"]["enabled"] is True
     assert d["ppocr"]["model"].startswith("PP-OCRv6")
     assert d["ppocr"]["url"].startswith("http")
