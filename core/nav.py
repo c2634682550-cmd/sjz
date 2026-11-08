@@ -1040,13 +1040,15 @@ class NavBase:
         if not self.pick_skin(y=skin_y, index=skin_index):
             raise NavError(f"点皮肤卡片没响应（y={skin_y} index={skin_index}）")
         time.sleep(1.0)
-        self.buy()
+        # buy() 返回「点购买」落点确认到的页面（detail/onsale），不再
+        # 单独再判一次整屏 —— 判定结论同源，动作序列不变。
+        page = self.buy()
         # 固定路径：进在售页后先钉住「只显示公示期」，再交回上层扫列表。
         try:
             self.ensure_public_filter()
         except Exception as e:                  # noqa: BLE001
             self.say(f"公示期筛选失败（继续走原流程）：{e}", "warn")
-        page, _ = self.where()
+        self.say(f"收尾页面：{page}（复用「点购买」落点确认，未重复判页）")
         return page
 
 

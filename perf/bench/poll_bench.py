@@ -313,8 +313,9 @@ def part_d():
     nv._buy_point = lambda: ((1700, 885), "固定坐标", False)
     w.set("collection_sel")
     t = time.perf_counter()
-    assert nv.buy() is True
-    print(f"正常路径 → 落地 {nv.where()[0]}，{(time.perf_counter() - t) * 1000:.0f}ms")
+    page = nv.buy()
+    assert page in ("detail", "onsale"), page
+    print(f"正常路径 → 落地 {page}，{(time.perf_counter() - t) * 1000:.0f}ms")
 
 
 if __name__ == "__main__":

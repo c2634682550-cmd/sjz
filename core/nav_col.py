@@ -1496,6 +1496,7 @@ class NavColPanel:
                            f"可能过期，或游戏不在前台")
         # 固定 1.5s → 轮询到页面变成 detail/onsale 即走，上限 3s。
         # 校验没删：到点仍不对就抛与 `require` 同文案的 NavError（不当成功）。
-        self._wait_page(("detail", "onsale"), cap=3.0, step=0.2,
-                        label="点购买", activate="点购买")
-        return True
+        # 返回确认到的页面名，调用方直接用，不必再烧一次整屏 OCR。
+        page = self._wait_page(("detail", "onsale"), cap=3.0, step=0.2,
+                               label="点购买", activate="点购买")
+        return page

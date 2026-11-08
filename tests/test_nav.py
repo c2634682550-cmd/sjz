@@ -347,7 +347,7 @@ def test_buy_raises_when_page_is_still_collection():
 
 def test_buy_succeeds_when_page_is_detail():
     n, _, _, _, _ = _nav(frames=[_blank(), _white()], ocr_text=DETAIL_TEXT)
-    assert n.buy() is True
+    assert n.buy() == "detail"
 
 
 def test_buy_fails_fast_when_click_changes_nothing():
@@ -598,6 +598,19 @@ def test_go_to_onsale_keeps_fallback_when_enter_market_raises():
     assert n.go_to_onsale(from_hall=True) == "onsale"
     assert len(calls) == 1
     assert any("入口失败" in m for _, m in logs)
+
+
+def test_go_to_onsale_reuses_buy_confirmation_for_return():
+    """返回值复用「点购买」落点确认，收尾不再判 where；日志写明来源。"""
+    n, _, _, _, logs = _nav()
+    n.where = lambda: pytest.fail("收尾不该再判 where")
+    n.enter_market = lambda *a, **k: "market"
+    n.tab = lambda *a, **k: True
+    n.pick_skin = lambda *a, **k: True
+    n.buy = lambda: "onsale"
+    n.ensure_public_filter = lambda *a, **k: True
+    assert n.go_to_onsale(from_hall=True) == "onsale"
+    assert any("复用「点购买」落点确认" in m for _, m in logs)
 
 
 # ---------------------------------------------------------------- 皮肤卡片
