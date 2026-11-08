@@ -64,10 +64,22 @@ def _engine(monkeypatch, balances, record):
 
     seq = list(balances)
 
-    def fake_read(_img, **kw):
-        return seq.pop(0) if seq else ""
+    def fake_balance(_screen, _img=None):
+        """余额走 `_balance` 的词框解析，这里直接给数字序列。
 
-    monkeypatch.setattr(engine_mod.ocr, "read_text", fake_read)
+        原来 mock 的是 `ocr.read_text`；`_balance` 改成读词框（只认最右带 `+`
+        的三角币组）之后就不走 read_text 了，mock 打空 → 余额永远 None →
+        判定不出成交。这里改在 `_balance` 这一层给数，测的仍是「点一下余额
+        掉 = 成交」。
+        """
+        if not seq:
+            return None
+        raw = seq.pop(0)
+        tok = raw.split()[-1].rstrip("+") if raw.strip() else ""
+        digits = "".join(ch for ch in tok if ch.isdigit())
+        return int(digits) if digits else None
+
+    monkeypatch.setattr(e, "_balance", fake_balance)
     monkeypatch.setattr(engine_mod.time, "sleep", lambda s: None)
     # 「先识别再点」和结算弹窗各自有专门的测试；这里默认放行，免得它们
     # 抢走 fake_read 的返回序列。
@@ -270,17 +282,38 @@ def test_insufficient_popup_aborts_the_fire_loop_after_one_buy_click(monkeypatch
         "regions": {"confirm": {"x": 0.3, "y": 0.3, "w": 0.4, "h": 0.5}},
     })
     e = _engine(monkeypatch, [], lambda *a, **k: None)
-    e._insufficient_showing = lambda screen: True
+    # 真机语义：**点购买之前**没有弹窗；点完第一下才弹「三角币不足」。
+    # 所以 `_insufficient_showing` 必须是有状态的 —— 开火前守门（
+    # `_pre_fire_popup_guard`）要看到 False，点完之后才看到 True。
+    state = {"popup": False}
     popup_result = {
         "found": True, "kind": "insufficient", "shortfall": 2001,
         "recommend": 328, "text": "您当前的三角币不足，是否前往充值？",
         "buttons": {"cancel": {"cx": 700, "cy": 600},
                     "recharge": {"cx": 900, "cy": 600}},
     }
-    monkeypatch.setattr(engine_mod.popup, "scan", lambda img: popup_result)
+
+    def fake_scan(_img):
+        return dict(popup_result) if state["popup"] else {"found": False}
+
+    def fake_cancel_point(res):
+        btn = (res.get("buttons") or {}).get("cancel")
+        return (btn["cx"], btn["cy"]) if btn else None
+
+    class Clicking(FakeMouse):
+        def click(self, x, y, expect_foreground=None, **kw):
+            super().click(x, y, expect_foreground, **kw)
+            if (x, y) == (1600, 930):
+                state["popup"] = True          # 点购买 → 弹余额不足
+            if (x, y) == (700, 600):
+                state["popup"] = False         # 点取消 → 弹窗真的消失
+
+    e._insufficient_showing = lambda screen: state["popup"]
+    monkeypatch.setattr(engine_mod.popup, "scan", fake_scan)
+    monkeypatch.setattr(engine_mod.popup, "cancel_point", fake_cancel_point)
     monkeypatch.setattr(engine_mod.Config, "load", staticmethod(lambda: cfg))
 
-    mouse = FakeMouse()
+    mouse = Clicking()
     with pytest.raises(engine_mod.Aborted) as ei:
         e._fire_and_confirm(cfg, FakeScreen(), mouse, "CONFIRM_TEMPLATE",
                             (1600, 930), 0.0, item="G3战斗步枪-叠锋", price=2)

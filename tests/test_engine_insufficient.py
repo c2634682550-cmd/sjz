@@ -77,13 +77,15 @@ def test_insufficient_popup_clicks_cancel_and_never_top_up(eng):
     with pytest.raises(engine_mod.Aborted):
         eng._guard_insufficient(screen, mouse)
 
-    assert len(mouse.clicks) == 1, f"点了 {len(mouse.clicks)} 次，只该点一次「取消」"
-    x, y = mouse.clicks[0]
-    full_x, full_y = x + CROP[0], y + CROP[1]
-    # 录屏实测：取消 x 782-819 / y 665-683，充值 x 1100-1137
-    assert 782 <= full_x <= 819, f"点到了 x={full_x}，不是「取消」"
-    assert 665 <= full_y <= 683, f"点到了 y={full_y}，不是「取消」"
-    assert full_x < 900, f"点到了 x={full_x}，已越过「取消」进入「充值」区域"
+    # 静态帧里弹窗永远不会消失，所以会按 `tries` 重试「取消」再回退 ESC；
+    # 断言「点到的全是取消、从没点充值」。重试次数上限就是 tries=3。
+    assert 1 <= len(mouse.clicks) <= 3, f"点了 {len(mouse.clicks)} 次，超出重试上限"
+    for x, y in mouse.clicks:
+        full_x, full_y = x + CROP[0], y + CROP[1]
+        # 录屏实测：取消 x 782-819 / y 665-683，充值 x 1100-1137
+        assert 782 <= full_x <= 819, f"点到了 x={full_x}，不是「取消」"
+        assert 665 <= full_y <= 683, f"点到了 y={full_y}，不是「取消」"
+        assert full_x < 900, f"点到了 x={full_x}，已越过「取消」进入「充值」区域"
 
 
 def test_popup_without_located_cancel_does_not_guess_a_position(eng):
@@ -152,7 +154,11 @@ def test_fire_stops_on_the_first_click_when_money_is_short(eng, monkeypatch):
     真机实测：点满 fire_timeout 之前弹窗就盖在上面了，后面每一下点击落到
     哪都不受控（弹窗右边就是「充值」）。所以第一次点完就要查。
     """
-    monkeypatch.setattr(eng, "_insufficient_showing", lambda scr: True)
+    # 开火前守门会先看一次「是否已经在弹窗页」：真机里点购买之前没有弹窗，
+    # 点完第一下才弹。所以这个桩必须有状态，否则守门在开火前就中止，
+    # 一次购买都点不出去（断言 1 次就把这个回归钉住）。
+    state = {"popup": False}
+    monkeypatch.setattr(eng, "_insufficient_showing", lambda scr: state["popup"])
     guard_calls = []
 
     def guard(screen, mouse, tries=3, gap=0.35):
@@ -162,7 +168,12 @@ def test_fire_stops_on_the_first_click_when_money_is_short(eng, monkeypatch):
     monkeypatch.setattr(eng, "_guard_insufficient", guard)
     monkeypatch.setattr(engine_mod, "match", lambda a, b: (0.0, None))
     clicks = []
-    monkeypatch.setattr(eng, "_click", lambda m, x, y, **kw: clicks.append((x, y)))
+
+    def fake_click(m, x, y, **kw):
+        clicks.append((x, y))
+        state["popup"] = True          # 这一下点完，弹窗盖上来
+
+    monkeypatch.setattr(eng, "_click", fake_click)
 
     with pytest.raises(engine_mod.Aborted):
         eng._fire_and_confirm(FakeCfg(), RectScreen(_load("insufficient.png")),

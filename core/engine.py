@@ -2576,21 +2576,22 @@ class Engine:
     # ---------------- 点击购买 + 确认 ----------------
 
     def _balance(self, screen, img=None):
-        """右上角那排货币里最后一个是三角币，读它。
+        """右上角那排货币里最后一个是三角币，读它。读不出返回 None。
 
-        这一版界面点价格按钮**直接成交**（实测点三下成交三件、余额 40→34），
-        根本没有确认弹窗。没有弹窗可等，就只能用余额变化判断成没成 ——
-        比「点完就当买到了」靠谱得多。
+        按词框解析（`ocr.balance_from_words`），不再拼成一行取最后一个数字：
+        ROI 圈进右邻的充值标签时同一帧是 `2,049 / 0+ / 8+`，取末尾会得到 8。
+        余额是成交判定与误买止损的依据，读错比读不到更糟 —— 结构不清楚就
+        返回 None，上层按「余额未识别」处理。
         """
         try:
             crop = img if img is not None else screen.grab(screen.norm_to_px(BALANCE_N))
             if crop is None or getattr(crop, "size", 0) == 0:
                 return None
             big = upscale(crop, 3)
-            text = ocr.read_text(big) or ""
+            words = ocr.read_words(big)
         except Exception:
             return None
-        return ocr.last_number(text)
+        return ocr.balance_from_words(words)
 
     def _insufficient_showing(self, screen):
         """屏幕上是不是「三角币不足」弹窗 —— 只 OCR 那一行，几毫秒。
@@ -2634,6 +2635,78 @@ class Engine:
         self._say(f"{res['msg']}（{ms:.0f}ms）", "hit")
         return res
 
+    def _popup_present(self, screen):
+        """当前画面是不是「三角币不足」弹窗（全屏识别，回读用）。
+
+        识别失败按「不在」处理：关弹窗是保命动作，不能因为一次 OCR 抖动
+        就停手；真在的话后面 `_insufficient_showing` 还会再拦一次。
+        """
+        try:
+            return bool(popup.scan(screen.grab()).get("found"))
+        except Exception:                    # noqa: BLE001
+            return False
+
+    def _tap_esc(self):
+        """发一次 ESC。发不出去返回 False，由调用方决定停手。"""
+        try:
+            Keyboard(self._target_hwnd,
+                     mode=getattr(self, "_input_mode", "interception")
+                     ).tap("ESC")
+            return True
+        except Exception as e:                # noqa: BLE001
+            self._say(f"ESC 发送失败：{type(e).__name__}", "warn")
+            return False
+
+    def _close_insufficient_popup(self, screen, mouse, tries=3, gap=0.4):
+        """关掉「三角币不足」弹窗，并回读确认它真的消失。
+
+        真机事故（2026-11-08）：点「取消」落在 (800,675) 但弹窗没关掉，
+        后面 4 条挂单的点击全部落在弹窗上、全部读成 unknown —— 整批作废。
+        所以「取消」只是第一手段：点不动必须 ESC 兜底；每一步都回读，
+        发一次就算成功就是这次事故的写法。
+
+        返回 True=已回读确认消失；False=还在（调用方必须停手，不许再点）。
+        """
+        if not self._popup_present(screen):
+            return True
+        for _i in range(tries):
+            if self._stop.is_set():
+                raise Aborted("用户停止")
+            res = popup.scan(screen.grab())
+            if not res.get("found"):
+                return True
+            pt = popup.cancel_point(res)
+            if pt is not None:
+                try:
+                    self._click(mouse, *pt)
+                except Exception as e:        # noqa: BLE001
+                    self._say(f"点「取消」失败：{type(e).__name__}", "warn")
+                time.sleep(gap)
+                if not self._popup_present(screen):
+                    return True
+            # 「取消」没生效（或没定位到）→ ESC 兜底，再回读
+            self._say("「取消」没生效，改用 ESC 关弹窗", "warn")
+            if not self._tap_esc():
+                break
+            time.sleep(gap)
+            if not self._popup_present(screen):
+                return True
+        return not self._popup_present(screen)
+
+    def _pre_fire_popup_guard(self, screen, mouse):
+        """开火前守门：当前若还停在余额不足弹窗上，先关掉再继续。
+
+        用便宜的 ROI 判定（`_insufficient_showing`，几毫秒）不打断抢购节奏；
+        命中才走完整关闭流程。关不掉就停手 —— 弹窗盖着点购买，点击落点
+        不受控，右边就是「充值」。
+        """
+        if not self._insufficient_showing(screen):
+            return True
+        self._say("开火前发现仍停在「三角币不足」弹窗，先关闭", "warn")
+        if not self._close_insufficient_popup(screen, mouse, tries=2):
+            raise Aborted("余额不足弹窗关不掉，停止点击")
+        return True
+
     def _fire_and_confirm(self, cfg, screen, mouse, confirm_tpl, buy_click, t_start,
                           item="", price=None):
         """点购买直到弹窗出现，再点确认。返回是否成功。"""
@@ -2662,6 +2735,10 @@ class Engine:
             # 一旦没框确认区域就直接把任务炸了，审查 D4）。
             return self._buy_without_dialog(screen, mouse, buy_click, t_start,
                                             item=item, price=price)
+
+        # 开火前守门：上一次留下的「三角币不足」弹窗必须先关掉（并回读），
+        # 否则这一轮所有点击都落在弹窗上（真机事故：整批 4 条读成 unknown）。
+        self._pre_fire_popup_guard(screen, mouse)
 
         confirm_px = screen.norm_to_px(expand(confirm_region, 0.25))
         confirm_click = self._center(screen, confirm_region)
@@ -3060,17 +3137,23 @@ class Engine:
         else:
             self._say(f"点了 {confirm_clicks} 下确认，但没看到结算弹窗 —— "
                       "按没抢到记（多半是被人先买走了）", "warn")
-            # **把残留的提示收掉**。没抢到的时候屏幕上通常留着一个
-            # 「该商品已被购买」之类的弹窗，它挡住整个界面 —— 下一个任务
-            # 连页面都切不过去（实测连报三次「点 collection 标签 0.0%
-            # 无响应」，三个任务连环失败）。按 Esc 收掉，再继续。
+            # **把残留的提示收掉**，但只在真识别到弹窗时发一次 ESC。
+            # 器件约束：看不到弹窗就不按 —— 盲按 ESC 会抢用户的操作。
             try:
-                Keyboard(self._target_hwnd,
-                         mode=getattr(self, "_input_mode", "interception")
-                         ).tap("ESC")
-                time.sleep(0.4)
-            except Exception as e:            # noqa: BLE001
-                self._say(f"收残留弹窗失败：{type(e).__name__}", "warn")
+                words = ocr.read_words(screen.grab()) or []
+            except Exception:                 # noqa: BLE001
+                words = []
+            joined = "".join((w.get("text") or "") for w in words)
+            if any(k in joined for k in ("已被购买", "已被抢购", "该商品已被")):
+                try:
+                    Keyboard(self._target_hwnd,
+                             mode=getattr(self, "_input_mode", "interception")
+                             ).tap("ESC")
+                    time.sleep(0.4)
+                except Exception as e:        # noqa: BLE001
+                    self._say(f"收残留弹窗失败：{type(e).__name__}", "warn")
+            else:
+                self._say("没识别到残留弹窗，不发 ESC", "info")
         # 只有真成交才留图；没抢到也记一条 miss，好复盘
         self._record(cfg, screen, item=item, price=price,
                      elapsed=elapsed, result="hit" if bought else "miss")
@@ -3366,6 +3449,8 @@ class Engine:
         # ==== FEATURE:telemetry END ====
         if not mouse.ensure_foreground(self._target_hwnd, screen=screen):
             raise Aborted("游戏窗口抢不到前台，没法开点")
+        # 开火前守门：残留的「三角币不足」弹窗先关掉（并回读确认消失）
+        self._pre_fire_popup_guard(screen, mouse)
         before = self._balance(screen)
         ok = False
         by = ""
@@ -3707,14 +3792,13 @@ class Engine:
             # 账户级问题：不重试购买，直接进第 4 级（取消 + 一句话 + 唯一按钮）
             self._force_scene(sg.SC_INSUFFICIENT,
                               {"purchase_blocked": True, "why": msg})
-            point = popup.cancel_point(result)
-            if point is None:
-                # 认出了弹窗但没定位到「取消」。此时绝不能猜坐标：猜错就是「充值」。
-                self._say("认出了余额不足弹窗，但没定位到「取消」按钮 —— "
-                          "请手动点「取消」，程序不再继续点击", "error")
-                raise Aborted("余额不足，且没能定位取消按钮")
-            self._click(mouse, *point)
-            self._say(f"已点「取消」{point}", "warn")
+            # 「取消」点不动就 ESC 兜底，并回读确认真的消失 —— 只发一次就
+            # 算成功是 2026-11-08 那次事故的写法（弹窗残留 → 后续全 unknown）。
+            if not self._close_insufficient_popup(screen, mouse):
+                self._say("「取消」+ ESC 都没关掉余额不足弹窗 —— "
+                          "请手动关掉，程序停止点击", "error")
+                raise Aborted("余额不足，弹窗关不掉")
+            self._say("余额不足弹窗已关闭（回读确认）", "warn")
             raise Aborted("余额不足，已取消")
 
     @staticmethod

@@ -483,6 +483,50 @@ def last_number(text):
     return value
 
 
+_MARKED_NUMBER = re.compile(r"^(\d[\d,]*)\s*\+$")
+
+
+def balance_from_words(words):
+    """余额栏词框 → 三角币数量；结构不清楚返回 None。
+
+    真机铁证（2026-11-08 15:14）：点购买弹出「您当前的三角币不足…
+    (缺少2三角币)」，那件单价 10 → 账户三角币 = 8。同一帧货币条 OCR 是
+    `2,049 / 0+ / 8+`：2,049 是左侧纸币，8 才是最右的三角币。所以这条
+    不是「带千分位优先」（那会读成 2,049，多出一千多倍）。
+
+    规则（`money.scan_balance` 的词框版）：
+      1. 只在**带 `+`** 的组里找（`+` 是充值按钮标记，裸数字不是货币余额）；
+      2. 取**最右**（x 最大）的那一组；
+      3. 一组都没有 / 最右一组是残字（`à+`）→ None，上层按「余额未识别」处理。
+
+    宁可返回 None，也不返回一个错误的数字 —— 余额是成交判定与误买止损
+    的依据。
+    """
+    toks = []
+    for w in words or []:
+        if not isinstance(w, dict):
+            continue
+        t = str(w.get("text") or "").strip()
+        if t:
+            toks.append((float(w.get("y") or 0), float(w.get("x") or 0), t))
+    toks.sort()
+    texts = [t for _y, _x, t in toks]
+    merged = []
+    for t in texts:
+        if t == "+" and merged:
+            merged[-1] += "+"          # OCR 把 `+` 拆成独立 token
+        else:
+            merged.append(t)
+    marked = []
+    for t in merged:
+        m = _MARKED_NUMBER.match(t)
+        if m:
+            marked.append(int(m.group(1).replace(",", "")))
+    if not marked:
+        return None
+    return marked[-1]
+
+
 def read_price(img, ban=None, timeout=None):
     """读价格条上那个数。返回 int；读不到 / 不合格返回 None。
 
