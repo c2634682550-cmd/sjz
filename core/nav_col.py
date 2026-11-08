@@ -1486,11 +1486,13 @@ class NavColPanel:
             d = self.click(point, "购买", timeout=0.6 if i == 0 else 0.8,
                            raw=raw, hold=hold)
             if d > 0.005:
+                self.buy_hits.append(i + 1)
                 break
             self.say(f"第 {i + 1} 下被吞了（{d * 100:.2f}%），同点再来", "warn")
         # 失败早退：hold 给足、同点点了 3 次，画面还是 0 变化 → 坐标过期
         # 或不在前台。原来这里白等 6s + 3s 才报错。
         if d <= 0.005:
+            self.buy_hits.append(0)
             raise NavError(f"点购买：hold={hold}s 同点连点 3 次画面仍无变化"
                            f"（{d * 100:.2f}%）—— 坐标 {point}（{how}）"
                            f"可能过期，或游戏不在前台")

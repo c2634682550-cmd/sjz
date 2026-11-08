@@ -54,6 +54,12 @@ HALL_TEXT = ("CNUIO:I巳巳917734233179499一2囗231囗2囗1917开始游戏，�
              "02，477K极星守望0显示装备s11：群星零量杰坝02，089+0返行动9天"
              "2时27分行前备找0游对局")
 
+# 标题界面 / 主菜单。真机 OCR 原文（2026-11-08，在特勤处里连按两次 ESC 后抓的）。
+# 这一屏没有任何大厅/市场锚点，旧代码判 unknown，真机链 0 卡死在这里。
+TITLE_TEXT = ("CNUID:186668917734233179499202611081141InTheSummer"
+              "三角洲行动(DELTAFORCE)BRAK烽火地带全面战场黑潮爆破黑鹰坠落"
+              "进入特勤处客服设置退出游戏")
+
 # 市场页的第二种 OCR 形态：内容稀疏时「典藏工坊」会整段漏掉，
 # 「典藏外观」被读成「典崆外」，只剩「当季产出」「往季产」「市场流通量」。
 MARKET_TEXT_SPARSE = ("典崆外当季产出曼德尔砖．疾光魅影：：：二一一往季产曼德尔砖．星"
@@ -230,6 +236,17 @@ def test_classify_empty_is_unknown():
     assert classify("       ") == "unknown"
 
 
+def test_classify_title_screen_is_not_unknown():
+    """真机链 0 的 unknown：ESC 退到标题界面。判据是「客服 + 退出游戏」。"""
+    assert classify(TITLE_TEXT) == "title"
+
+
+def test_classify_hall_settings_menu_is_still_hall():
+    """大厅 ESC 设置菜单有「退出游戏」但没有「客服」→ 不能判成标题界面。"""
+    assert classify("三角洲行动十医疗部门特勤处脱离卡死设置研发部门"
+                    "离开特勤处退出游戏开始游戏") == "hall"
+
+
 # 典藏外观页（砖皮列表）真机 1 倍 OCR 原文：页面上全是小字，只剩碎片，
 # 但「曼德尔砖典藏外观典藏」这几个字认得准 —— 靠它认出这是市场页，
 # 否则导航会以为站错页、按 ESC 乱复位。
@@ -378,6 +395,29 @@ def test_buy_keeps_validating_when_click_responds():
     with pytest.raises(NavError, match="期望页面"):
         n.buy()
     assert waits == [("detail", "onsale")]
+
+
+def test_buy_records_second_click_when_the_first_is_swallowed():
+    """命中分布统计：第一下被吞、第二下点进 → buy_hits 记 2。"""
+    n, _, _, _, _ = _nav(frames=[_blank()] * 60, ocr_text=MARKET_TEXT)
+    seq = iter([0.0, 0.02])
+    n.click = lambda *a, **kw: next(seq, 0.02)
+
+    def fake_wait(*a, **kw):
+        raise NavError("期望页面 market")
+
+    n._wait_page = fake_wait
+    with pytest.raises(NavError, match="期望页面"):
+        n.buy()
+    assert n.buy_hits == [2]
+
+
+def test_buy_records_zero_when_all_three_clicks_miss():
+    """三下全被吞 → buy_hits 记 0（复测时算进失败率）。"""
+    n, _, _, _, _ = _nav(frames=[_blank()] * 60, ocr_text=MARKET_TEXT)
+    with pytest.raises(NavError, match="仍无变化"):
+        n.buy()
+    assert n.buy_hits == [0]
 
 
 def test_buy_point_uses_countdown_anchor(monkeypatch):
@@ -697,6 +737,68 @@ def test_recover_accepts_market_after_tab_from_collection():
     n.where = lambda: (next(pages), "")
 
     assert n.recover_to_hall() == "market"
+    assert kb.taps == ["TAB"]
+
+
+def test_recover_normalizes_hall_esc_menu_then_department_view():
+    """真机 2026-11-08：大厅停在「ESC 菜单 + 部门视图」时 F4 连按两次都无效。
+
+    OCR 原文：`…特勤处 脱离卡死 设置 研发部门 离开特勤处 退出游戏 开始游戏 表情`
+    归位顺序：ESC 关菜单 → Tab 切回顶栏 → F4 进市场；每一步都页面复判。
+    """
+    n, _, _, kb, _ = _nav(frames=[_blank()] * 60)
+    menu = "CNUIO:I巳巳917734233179499特勤处脱离卡死设置研发部门离开特勤处退出游戏开始游戏"
+    dept = "CNUIO:I巳巳917734233179499特勤处医疗部门研发部门开始游戏表情"
+    seq = [("hall", menu), ("hall", dept),
+           ("hall", HALL_TEXT), ("market", MARKET_TEXT)]
+    n.where = lambda: seq.pop(0) if seq else ("market", MARKET_TEXT)
+
+    assert n.recover() == "market"
+    assert kb.taps == ["ESC", "TAB", "F4"]
+
+
+def test_recover_from_title_clicks_enter_hall_first():
+    """真机链 0：ESC 退到标题界面（unknown）→ 先点「进入特勤处」再走 F4。"""
+    n, _, mouse, kb, _ = _nav(ocr_text=TITLE_TEXT)
+    seq = [("title", TITLE_TEXT), ("hall", HALL_TEXT),
+           ("hall", HALL_TEXT), ("market", MARKET_TEXT)]
+    n.where = lambda: seq.pop(0) if seq else ("market", MARKET_TEXT)
+
+    assert n.recover() == "market"
+    assert mouse.clicks == [(5, 5)]      # 「进入特勤处」词框中心
+    assert kb.taps == ["F4"]
+
+
+def test_enter_title_requires_landing_confirmation():
+    """点了「进入特勤处」但没落到已知页 → 报错，不在加载页上继续发按键。"""
+    n, _, _, kb, _ = _nav(ocr_text=TITLE_TEXT)
+    n._wait_landing = lambda *a, **kw: ("unknown", "加载中")
+    with pytest.raises(NavError, match="进入特勤处"):
+        n.enter_title()
+    assert kb.taps == []
+
+
+def test_recover_to_hall_waits_out_a_transition_frame():
+    """Tab 后第一帧是过渡态（unknown）→ 等稳再判，不把过渡帧当结论。"""
+    n, _, _, kb, _ = _nav(frames=[_blank()] * 40)
+    seq = [("onsale", ""), ("unknown", ""), ("hall", HALL_TEXT), ("market", MARKET_TEXT)]
+    n.where = lambda: seq.pop(0) if seq else ("market", MARKET_TEXT)
+
+    assert n.recover_to_hall() == "market"
+    assert kb.taps == ["TAB", "F4"]
+
+
+def test_recover_never_presses_a_key_while_page_is_unknown():
+    """反证：Tab 后若不做落点确认，就会在 unknown 页上继续按键（盲发 F4）。
+
+    旧实现 Tab 后固定 sleep 1.2s 读一次，读到 unknown 就直接抛；上层若重试，
+    就会在 unrecognized 画面上继续发键 —— 真机链 0 的现象。
+    这里钉住：unknown 恒定时，Tab 之后一个 F4 都不发，报错带上 OCR 原文。
+    """
+    n, _, _, kb, _ = _nav(frames=[_blank()] * 60)
+    n.where = lambda: ("unknown", "进入特勤处客服")
+    with pytest.raises(NavError, match="Tab 后不在大厅也不在交易行"):
+        n.recover_to_hall()
     assert kb.taps == ["TAB"]
 
 

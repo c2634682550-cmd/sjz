@@ -194,6 +194,14 @@ _PAGE_ANCHORS = [
     # 放在 on sale / detail 之后：在售页的详情面板里也写着「典藏外观」，
     # 顺序反了会把在售页认成市场页。
     ("market", ("典藏外观",), ()),
+    # 标题界面 / 主菜单：在特勤处里连按两次 ESC 会退到这一屏。真机 OCR 实测
+    # （2026-11-08）：「In The Summer 三角洲行动(DELTA FORCE) 烽火地带 全面战场
+    # 黑潮爆破 黑鹰坠落 进入特勤处 客服 设置 退出游戏」。这一屏没有任何大厅/
+    # 市场锚点，旧代码判成 unknown（真机链 0 就卡死在这里）。
+    # 判据用「客服 + 退出游戏」：大厅/仓库/特战干员的设置菜单都有「退出游戏」，
+    # 但只有标题界面同时有「客服」；单用「进入特勤处」也不行 —— 大厅底部
+    # 也写着「进入特勤处」。
+    ("title", ("客服", "退出游戏"), ()),
     # 模式选择页：从桌面进游戏看到的第一屏（烽火地带/全面战场/…四张卡）。
     # 真机 OCR 实测：「烽火地带 选好装备，射击！… 前往游玩 … 烽火地带 全面战场
     # 黑潮爆破 红鼠窝竞技场」。这一屏没有任何大厅导航词，也进不了市场 ——
@@ -344,6 +352,9 @@ class NavBase:
         # 两段式判页计数（复测统计用）：fast=局部采用 / fallback=降级整屏 /
         # guard=弹窗守卫命中 / conflict=局部与整屏结论冲突（以整屏为准）。
         self.page_stats = {"fast": 0, "fallback": 0, "guard": 0, "conflict": 0}
+        # 购买点击命中分布：每次 buy() 追加「第几下点进」（1/2/3），0=三下都没进。
+        # 复测统计用：≥10 次样本给出「1 下/2 下/3 下/失败」的比例。
+        self.buy_hits = []
         # 注入的 OCR 桩对所有裁剪返回同一段文字，模拟不出「局部 ≠ 整屏」；
         # 注入模式退回整屏，保持原用例语义。台架专测里显式打开。
         self._fast_det = ocr_read is None
@@ -626,6 +637,36 @@ class NavBase:
                            f"（OCR：{text[:80]}）")
         return page
 
+    def _wait_landing(self, want, cap=2.6, step=0.2, label=""):
+        """等一次按键之后的**落点**：先等帧差安静，再判页面；只认 want。
+
+        `_wait_page` 的问题是它直接判 —— Tab 之后恰好撞上过渡/加载帧时，
+        第一判定就是 unknown，旧代码当场抛错（真机链 0）。这里补两件事：
+
+          1) 每轮判定前先 `_settle`（帧差 ≤0.5% 才算稳），过渡帧不会被当成
+             结论；到点仍没稳就再等一次大的，然后复判一次。
+          2) 落点可以是多个已知页（hall / market / title），顺序由调用方决定。
+
+        返回 (页面名, 拼串)；到 cap 仍不在 want 也不抛错，交给调用方按页型
+        补分支（标题界面要点击进入特勤处，而不是继续等）。
+        """
+        wants = (want,) if isinstance(want, str) else tuple(want)
+        self._settle(budget=0.8, step=0.12)
+        t0 = time.perf_counter()
+        page, text = self.where()
+        while page not in wants:
+            left = cap - (time.perf_counter() - t0)
+            if left <= 0:
+                break
+            time.sleep(min(step, left))
+            self._settle(budget=0.5, step=0.12)
+            page, text = self.where()
+        if page not in wants and self._settle(budget=1.0, step=0.12):
+            # 到点还在动：等稳了再判一次，不让过渡帧收尾
+            page, text = self.where()
+        if page in wants and label:
+            self.say(f"  {label}：{page}", "info")
+        return page, text
 
     @staticmethod
     def _diff(a, b):
@@ -800,7 +841,7 @@ class NavBase:
         timeout = float(self._nav_opt("market_timeout_s") if timeout is None else timeout)
         rounds = int(self._nav_opt("market_rounds") if rounds is None else rounds)
 
-        page, _ = self.where()
+        page, text = self.where()
         if page == "popup":
             # 弹窗是模态的：这时候按 F4 / 点图标全落在弹窗上（弹窗右边就是
             # 「充值」）。入口动作一个都不发，直接报错交给上层关弹窗。
@@ -813,6 +854,17 @@ class NavBase:
             return page
         if page == "modeselect":
             page = self.enter_hall()
+            if page in MARKET_PAGES:
+                return page
+        if page == "title":
+            # ESC 退出特勤处后的主菜单：先点「进入特勤处」回大厅，再走入口
+            page = self.enter_title()
+            if page in MARKET_PAGES:
+                return page
+            page, text = self.where()
+        if page == "hall":
+            # 大厅 ESC 菜单/部门视图下 F4 无效（真机实测），先归位到顶栏视图
+            page, text = self._normalize_hall(page, text, label="入口")
             if page in MARKET_PAGES:
                 return page
 
@@ -969,6 +1021,72 @@ class NavBase:
                 return page
         raise NavError("点「前往游玩」后没进到烽火地带大厅")
 
+    def enter_title(self, tries=2):
+        """标题界面（主菜单）→ 点「进入特勤处」回大厅。
+
+        真机实测（2026-11-08）：在特勤处里按两次 ESC 会退到这一屏。旧代码
+        判成 unknown，恢复链直接抛错（链 0）。这一屏的「进入特勤处」是唯一
+        入口，用 OCR 词框定位，点完必须确认落到已知页，否则报错不盲走。
+        """
+        from . import ocr as _ocr
+        self._activate("特勤处入口")
+        for _ in range(tries):
+            img = self._snap()
+            words = (self._ocr_read or _ocr.read_words)(img) or []
+            cands = [w for w in words if "进入特勤处" in str(w.get("text", ""))]
+            if not cands:
+                raise NavError("标题界面没读到「进入特勤处」")
+            w = cands[0]
+            x = int(int(w.get("x", 0)) + int(w.get("w", 0)) / 2)
+            y = int(int(w.get("y", 0)) + int(w.get("h", 0)) / 2)
+            self.say(f"标题界面 → 点「进入特勤处」({x},{y})")
+            # 真机实测（2026-11-08，live_stability 第一轮）：裸 click 两次都被
+            # 吞（画面 diff 0.00%），和「购买」同一类丢点。这里补 hover + hold，
+            # 并且每次重读词框换新坐标再点（上限 3 次，和购买同一口径）。
+            try:
+                self.mouse.move_path([(x, y), (x, y)], 120)
+                time.sleep(0.18)
+            except Exception:                                   # noqa: BLE001
+                pass
+            self.mouse.click(x, y, hold=0.35)
+            # 进特勤处要过一屏加载：等帧差稳定后再判，不把加载帧当 unknown
+            page, _text = self._wait_landing(("hall", "modeselect", "market"),
+                                             cap=6.0, label="进入特勤处")
+            if page == "modeselect":
+                page = self.enter_hall()
+            self.say(f"  进入特勤处后：{page}")
+            if page in ("hall", "market"):
+                return page
+        raise NavError("点「进入特勤处」后没回到大厅")
+
+    def _normalize_hall(self, page, text, label=" "):
+        """大厅有两种子状态 F4 都不生效，先归位到顶栏视图（真机实测 2026-11-08）。
+
+          a) ESC 菜单（「脱离卡死/设置/离开特勤处/退出游戏」）→ ESC 关掉；
+          b) 部门视图（只有「医疗部门/研发部门」，没有「交易行/仓库/改枪台」）
+             → Tab 切回顶栏视图。
+        按键会被间歇吞，所以每种归位最多补一次，每次都用页面复判；
+        一旦落到 market 直接返回，不再发键。
+        """
+        for _ in range(3):
+            if page != "hall":
+                break
+            if "退出游戏" in (text or "") and "离开特勤处" in (text or ""):
+                self.say(f"大厅停在{label}ESC 菜单上 → 按一次 ESC 关掉", "warn")
+                self.keyboard.tap("ESC")
+            elif (("医疗部门" in (text or "") or "研发部门" in (text or ""))
+                  and not any(k in (text or "") for k in ("交易行", "仓库", "改枪台"))):
+                self.say(f"大厅在{label}部门视图（F4 不生效）→ 按一次 Tab 切回顶栏", "warn")
+                self.keyboard.tap("TAB")
+            else:
+                break
+            time.sleep(1.2)
+            page, text = self.where()
+            self.say(f"  归位后：{page}")
+            if page in MARKET_PAGES:
+                return page, text
+        return page, text
+
     def _close_panel_once(self, why=""):
         """关面板只发一次 ESC：必须先确认识别到面板，发完回读，没关掉就报错。
 
@@ -995,29 +1113,59 @@ class NavBase:
         主页，OCR 出现「交易行/仓库/改枪台/特战干员」顶栏；再按 F4 进市场。
         每一步都先判页面再按键，已在市场时零输入，Tab 后不在大厅就报错，
         不连发。
+
+        链 0 的 unknown 修在这里（2026-11-08 真机抓帧）：
+          · 在特勤处里按两次 ESC 会退到**标题界面**（「进入特勤处 / 客服 /
+            退出游戏 / 烽火地带…」），整屏没有任何大厅/市场锚点 → unknown；
+          · Tab 在在售页是空操作（实测 30 帧 diff 0.00%，页面一直是 onsale），
+            说明「Tab 后 unknown」不是 Tab 造成的，是按下之前就已经不在已知页。
+        所以：Tab 后不再「读一次就下结论」，而是 `_wait_landing` 等帧差稳定
+        后连判；落成 title 就点「进入特勤处」补进大厅；仍然认不出才报错，
+        并带上 OCR 原文，绝不在 unknown 页面上继续按键。
         """
         if self.keyboard is None:
             raise NavError("没有 Keyboard，没法恢复")
-        page, _ = self.where()
+        page, text = self.where()
         if page == "market":
             self.say("已在市场，零输入")
             return page
+        if page == "title":
+            # 标题界面不是「次级界面」，Tab 在这里没用，直接点进特勤处
+            page = self.enter_title()
+            if page != "market":
+                page, text = self.where()
+            if page == "market":
+                return page
         if page != "hall":
             self.say(f"恢复：当前「{page}」→ 只按一次 Tab")
             self.keyboard.tap("TAB")
-            time.sleep(1.2)
-            page, _ = self.where()
-            self.say(f"  Tab 后：{page}")
+            page, text = self._wait_landing(("hall", "market", "title"),
+                                            cap=2.6, label="Tab 后")
             # 真机实测：从典藏外观这种次级页按 Tab 会直接回交易行（market），
             # 不是大厅。既然已经到目标页，就别再要求必须落在 hall。
+            if page == "title":
+                page = self.enter_title()
+                if page != "market":
+                    page, text = self.where()
             if page == "market":
                 return page
             if page != "hall":
-                raise NavError(f"Tab 后不在大厅也不在交易行（现在 {page}），停止，不连发按键")
-        self.keyboard.tap("F4")
-        # 固定 2.0s → 轮询到 page 变成 market 即走；上限仍是 2.0s，
-        # 到点不是 market 就照旧抛（`_wait_page` 保证等满上限再下结论）。
-        page = self._wait_page("market", cap=2.0, step=0.25)
+                raise NavError(f"Tab 后不在大厅也不在交易行（现在 {page}），"
+                               f"停止，不连发按键（OCR：{(text or '')[:60]}）")
+        # 大厅有两种子状态，F4 都不生效，先归位（ESC 菜单 → ESC；部门视图 → Tab）
+        page, text = self._normalize_hall(page, text, label="Tab 后")
+        if page == "market":
+            return page
+        # F4 只开不关：按键会被吞（同一现象），按一次没进市场就补一次，
+        # 每次都用页面确认；仍然不是 market 就停，不连发。
+        for attempt in range(2):
+            self._settle(budget=0.6, step=0.12)
+            self.keyboard.tap("F4")
+            page = self._wait_page("market", cap=2.0, step=0.25)
+            if page == "market":
+                break
+            if attempt == 0:
+                self.say("F4 后还不是市场，补按一次", "warn")
         self.say(f"  F4 后：{page}")
         if page != "market":
             raise NavError(f"F4 后仍不在市场（现在 {page}）")
@@ -1033,8 +1181,15 @@ class NavBase:
         if self.keyboard is None:
             raise NavError("没有 Keyboard，没法复位")
 
-        page, _ = self.where()
+        page, text = self.where()
         self.say(f"复位前页面：{page}")
+        if page == "title":
+            # 标题界面：Tab/ESC 都没用，只有「进入特勤处」这一个出口
+            page = self.enter_title()
+            # 落点后重读一次：进入特勤处后可能直接落在部门视图/ESC 菜单，
+            # 归位判断要用**新画面**的文字，不能拿标题页的旧 text 去判。
+            if page != "market":
+                page, text = self.where()
         if page == "modeselect":
             # 进游戏的第一屏（模式卡）：先点「前往游玩」把人送进烽火地带大厅，
             # 后面的 F4/ESC 那套逻辑才有意义。
@@ -1044,9 +1199,18 @@ class NavBase:
             return page
 
         if page == "hall":
-            # 大厅按 F4 进市场。F4 只开不关，所以按一次就够。
-            self.keyboard.tap("F4")
-            page = self._wait_page("market", cap=2.0, step=0.25)
+            # 大厅两种子状态（ESC 菜单 / 部门视图）F4 都不生效，先归位再按 F4。
+            page, text = self._normalize_hall(page, text, label="复位")
+            if page == "market":
+                return page
+            # F4 只开不关，所以按一次就够；被吞就补一次，每次都用页面复判。
+            for attempt in range(2):
+                self.keyboard.tap("F4")
+                page = self._wait_page("market", cap=2.0, step=0.25)
+                if page == "market":
+                    break
+                if attempt == 0:
+                    self.say("F4 后还不是市场，补按一次", "warn")
             self.say(f"  F4 后：{page}")
             if page == "market":
                 return page
