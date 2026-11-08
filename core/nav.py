@@ -1017,12 +1017,23 @@ class NavBase:
         返回当前页面名。
         """
         if from_hall:
-            # 统一入口：F4 主路径 + 点快捷栏图标备选，每步按页面校验
+            # 统一入口：F4 主路径 + 点快捷栏图标备选，每步按页面校验。
+            # 入口成功返回的 page 就是「现在在哪一页」，直接拿来用 ——
+            # 它只能是 market 或 MARKET_PAGES 子页（popup 抛错、其余路径
+            # 只有 `_poll_page` 认到 market 才 return），再判一次是重复烧
+            # 一次整屏 OCR（真机实测 1.0s）。
             try:
-                self.enter_market()
+                page = self.enter_market()
             except NavError as e:
+                # 只有入口抛错时才留一次兜底判定：入口不知道自己在哪，
+                # 得先读一眼再决定要不要 recover。
                 self.say(f"入口失败，转 recover：{e}", "warn")
-        page, _ = self.where()
+                page, _ = self.where()
+        else:
+            page, _ = self.where()
+        # page 来自 enter_market 的返回值（不再重复判 where）。子页
+        # （onsale/detail/筛选面板）必须复位回 market 根页：真机实测在
+        # 在售页直接点「典藏外观」标签，绿框停在 mandel，切不过去。
         if page != "market":
             page = self.recover()
         self.tab("collection")

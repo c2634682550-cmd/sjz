@@ -530,6 +530,76 @@ def test_go_to_onsale_stops_at_first_wrong_page():
     assert len(mouse.clicks) <= 1
 
 
+def test_go_to_onsale_reuses_enter_market_page_without_extra_where():
+    """入口返回 market 时：不重复判 where，也不 recover。
+
+    旧实现紧接着无条件 `where()` 再判一次 `page != "market"`，真机白烧
+    1.0s；合并后直接复用 enter_market 的返回值。
+    """
+    n, _, _, _, _ = _nav()
+    calls = []
+
+    def boom(*a, **k):
+        raise AssertionError("已在 market 根页，不该 recover")
+
+    n.where = lambda: (calls.append(1), ("market", ""))[1]
+    n.enter_market = lambda *a, **k: "market"
+    n.recover = boom
+    n.tab = lambda *a, **k: True
+    n.pick_skin = lambda *a, **k: True
+    n.buy = lambda: "onsale"
+    n.ensure_public_filter = lambda *a, **k: True
+    assert n.go_to_onsale(from_hall=True) == "onsale"
+    assert calls == []
+
+
+def test_go_to_onsale_recovers_from_subpage_using_enter_market_page():
+    """入口返回 onsale 子页：不重复判 where，但必须走 recover 回根页。
+
+    真机实测（2026-11-08，3/3 复现）：在售页直接点「典藏外观」标签，
+    绿框停在 mandel、三次都切不过去；必须先 Esc 回 market 根页。
+    """
+    n, _, _, _, _ = _nav()
+    calls = []
+    recovered = []
+
+    n.where = lambda: (calls.append(1), ("onsale", ""))[1]
+    n.enter_market = lambda *a, **k: "onsale"
+
+    def fake_recover(*a, **k):
+        recovered.append(1)
+        return "market"
+
+    n.recover = fake_recover
+    n.tab = lambda *a, **k: True
+    n.pick_skin = lambda *a, **k: True
+    n.buy = lambda: "onsale"
+    n.ensure_public_filter = lambda *a, **k: True
+    assert n.go_to_onsale(from_hall=True) == "onsale"
+    assert calls == []          # 子页来自入口返回值，不再判 where
+    assert recovered == [1]
+
+
+def test_go_to_onsale_keeps_fallback_when_enter_market_raises():
+    """只有入口抛 NavError 时才判一次 where，并由它决定要不要 recover。"""
+    n, _, _, _, logs = _nav()
+    calls = []
+
+    def boom(*a, **k):
+        raise NavError("当前有弹窗盖在页面上")
+
+    n.enter_market = boom
+    n.where = lambda: (calls.append(1), ("hall", ""))[1]
+    n.recover = lambda *a, **k: "market"
+    n.tab = lambda *a, **k: True
+    n.pick_skin = lambda *a, **k: True
+    n.buy = lambda: "onsale"
+    n.ensure_public_filter = lambda *a, **k: True
+    assert n.go_to_onsale(from_hall=True) == "onsale"
+    assert len(calls) == 1
+    assert any("入口失败" in m for _, m in logs)
+
+
 # ---------------------------------------------------------------- 皮肤卡片
 
 def test_skin_cards_start_at_298_not_272():
