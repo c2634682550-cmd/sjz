@@ -1021,8 +1021,30 @@ class Handler(BaseHTTPRequestHandler):
         """典藏外观目录：每个赛季 × 四个品阶的全部皮肤。
 
         界面用它列出「有哪些砖、各自属于哪个赛季/品阶/枪种」。
+
+        数据源优先用 `skins_lib.json`（2026-11-08 的 44 池两遍枚举，
+        232 条，品阶来自筛选上下文）；没有这份文件时退回 bricks.json
+        的 243 条老表。老表**不删**，`bricks.catalog()` 定位流程照旧用它。
         """
         from . import bricks
+        lib = bricks.load_skin_lib()
+        if lib:
+            out, by_season = [], {}
+            for it in lib["items"]:
+                if it["season"] not in by_season:
+                    by_season[it["season"]] = {
+                        "season": it["season"], "season_name": it["season_name"],
+                        "series": it["season_name"], "tiers": {}}
+                    out.append(by_season[it["season"]])
+                by_season[it["season"]]["tiers"].setdefault(it["tier"], []).append({
+                    "name": it["name"], "weapon": it["weapon"],
+                    "gun": it["gun"], "skin": it["skin"],
+                    "category": it.get("category", "枪皮"),
+                    "source": it.get("source", "filter_context"),
+                    "enumerated_at": it.get("enumerated_at", ""),
+                })
+            return self._json({"ok": True, "seasons": out, "total": lib["total"],
+                               "updated": lib.get("updated", "")})
         out = []
         for s in bricks._load().get("seasons", []):
             tiers = {}
@@ -2076,7 +2098,10 @@ def overlay_state():
             "task_index": 0, "task_total": 0, "avg_match_ms": None,
             "next_retry_s": None, "next_window_s": None,
             "license_remaining_s": 0.0, "license_days": 0,
-            "hotkey": "F8", "errors": []}
+            "hotkey": "F8", "errors": [],
+            # 迷你控制条：进度 + 可即时修改的必要设置
+            "bought": 0, "attempts": 0, "target": 1,
+            "settings": {"max_price": 0, "quota": 1, "semi": False}}
 
     try:
         cfg = Config.load()
@@ -2094,6 +2119,13 @@ def overlay_state():
         snap["item"] = str(tgt.get("name") or tgt.get("item") or "")
         price = tgt.get("price", tgt.get("max_price"))
         snap["price"] = "" if price in (None, "") else str(price)
+        # 迷你控制条直接改三个必要项：价格上限 / 每轮数量 / 自动-半自动
+        cn = cfg.get("console") or {}
+        snap["settings"] = {
+            "max_price": int(cn.get("max_price") or 0),
+            "quota": int(cn.get("quota") or 1),
+            "semi": bool(cfg.get("semi_mode")),
+        }
     except Exception as e:                    # noqa: BLE001
         snap["errors"].append(f"配置：{type(e).__name__}: {e}")
 
@@ -2138,6 +2170,25 @@ def overlay_state():
             if act and t.get("id") == act:
                 snap["task_index"] = i + 1
                 break
+
+        # 迷你控制条：已抢 / 目标 / 尝试次数（只读内存计数，不动上传语义）
+        try:
+            snap["bought"] = int(stats.get("bought") or 0)
+        except (TypeError, ValueError):
+            snap["bought"] = 0
+        snap["attempts"] = int(snap["matched"])
+        cur_task = None
+        for t in enabled:
+            if act and t.get("id") == act:
+                cur_task = t
+                break
+        if cur_task is None and enabled:
+            cur_task = enabled[0]
+        if isinstance(cur_task, dict):
+            try:
+                snap["target"] = int(cur_task.get("quota") or 0) or 1
+            except (TypeError, ValueError):
+                snap["target"] = 1
 
         # 下次开卖窗口：队列里最近一个未来的 fire_at（没有就 null）
         soon = None

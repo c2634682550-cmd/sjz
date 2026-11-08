@@ -272,6 +272,34 @@ def parse_grade(text):
 
 TIER_ORDER = ("传说", "史诗", "稀有", "普通")
 
+_LIB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skins_lib.json")
+_lib_cache = {"mtime": 0, "data": None}
+
+
+def load_skin_lib():
+    """目标库（2026-11-08 44 池枚举，232 条）。
+
+    与 bricks.json 的 243 条老表**分开存**：老表是「2026-10-23 逐卡点开读标题」，
+    定位/模糊匹配（`catalog()`、`find_skin()`）还在用它；新表是筛选上下文
+    继承出来的权威清单，只喂目标库界面。两份并存，互不覆盖。
+    文件缺失返回 None，界面自动退回老表。
+    """
+    try:
+        mtime = os.path.getmtime(_LIB_PATH)
+    except OSError:
+        return None
+    if _lib_cache["data"] is not None and _lib_cache["mtime"] == mtime:
+        return _lib_cache["data"]
+    try:
+        with open(_LIB_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:                            # noqa: BLE001
+        return None
+    if not data.get("items"):
+        return None
+    _lib_cache.update(mtime=mtime, data=data)
+    return data
+
 
 def catalog():
     """整个品阶目录：[(赛季, 系列, 品阶, 枪种, 皮肤)]。
