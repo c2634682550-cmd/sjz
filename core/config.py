@@ -247,6 +247,8 @@ DEFAULTS = {
     "ocr": {
         "rapid": {
             "enabled": True,                  # false = 退回旧的纯 PP-OCR 服务路径
+            "fast_det": True,                 # 整屏/超长条降采样 det（见 ocr_rapid._det_scale）
+            "fast_det_screen": 1.0,           # 整屏 det 倍率；1.0=不降（会丢 12px 小字，见 ocr_rapid._det_scale）
         },
         # 同帧（逐像素完全相同）复用 OCR 结果，默认开。段落数固定为
         # rapid / ppocr / service 三段，这是开关不是后端，仍放在 ocr 下
