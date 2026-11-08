@@ -111,7 +111,38 @@ NAV_DEFAULTS = {
 # 「已经在交易行里」的页面集合：市场主标签页 + 在售 / 详情 / 两个筛选面板。
 # 入口判定必须用这个集合，否则在售页会被当成「没进市场」而重复发 F4。
 MARKET_PAGES = ("market", "onsale", "detail", "filter_onsale",
-                "filter_collection")
+                "filter_collection", "mandel_buy")
+
+# 页签 → 购买界面类型。**三个页签是三套界面，不是三份同一套挂单卡**：
+#   collection / charm：点「购买」进在售页（onsale，右栏 6 张挂单卡）
+#   mandel：点「购买」直接在原地弹「指定价格购买」下单层（mandel_buy）
+# 真机证据（2026-11-08，mandel_3_buy.png）：曼德尔砖点购买后整屏只剩
+# 「成交均价 / 挂单数 / 指定价格购买 / 购买数量 / 预期总花费 / 挂单有效期」
+# + 底部六个价格档位，没有任何挂单卡。拿 onsale 的 6 卡解析去套这一页，
+# 读出来的永远是空列表 —— 会被当成「没货」，比报错危险得多。
+TAB_INTERFACE = {"collection": "onsale", "charm": "onsale",
+                 "mandel": "mandel_buy"}
+
+
+class InterfaceMismatch(RuntimeError):
+    """页签与购买界面类型不匹配。枚举必须停下，不许降级成「没货」。"""
+
+
+def assert_interface(tab, page):
+    """校验「这个页签现在停在该停的界面」。返回界面类型，不匹配就抛错。
+
+    为什么是硬错不是警告：unknown / 错界面时枚举结果是 0 条，上层会把它
+    当成「全站没有货」。真机事故就是这么发生的（mandel 判 unknown →
+    报告「进不去挂单列表」，看起来像没货）。
+    """
+    want = TAB_INTERFACE.get(tab)
+    if want is None:
+        raise InterfaceMismatch(f"未知页签 {tab}（没有界面映射）")
+    if page != want:
+        raise InterfaceMismatch(
+            f"页签 {tab} 应进入 {want}，实际是 {page} —— 界面类型不匹配，"
+            "停止枚举（不许当成没货）")
+    return want
 
 # 模态弹窗（浮层）判据。OCR 是整屏拼串，弹窗盖在页面上时弹窗文字和底下的
 # 页面文字混在一起：余额不足弹窗正文里就有「交易」「推荐充值」，会被
@@ -177,6 +208,13 @@ _PAGE_ANCHORS = [
     ("onsale", re.compile(r"第\s*\d+\s*页"), ()),
     ("detail", ("相似皮",), ()),
     ("detail", ("编号", "淘汰"), ()),
+    # 曼德尔砖下单层（2026-11-08 真机帧 mandel_3_buy.png 定案）。
+    # 这**不是**在售页：整屏没有挂单卡，只有「指定价格购买 / 购买数量 /
+    # 预期总花费 / 挂单有效期」和底部一排价格档位。缺了这条锚点，整页落到
+    # unknown，枚举当场读成 0 条 → 报「进不去挂单列表」（真机事故）。
+    # 两组判据：① 唯一整句「指定价格购买」；② 组合「预期总花费 + 挂单有效期」。
+    ("mandel_buy", ("指定价格购买",), ()),
+    ("mandel_buy", ("预期总花费", "挂单有效期"), ()),
     # 市场页（曼德尔砖 / 典藏外观 / 典藏挂饰）的统一判据。
     #
     # 实测两种 OCR 形态：
@@ -716,7 +754,7 @@ class NavBase:
                 raise NavError(f"拒绝点击 ({x},{y})：太接近「{name}」({bx},{by})")
 
     def click(self, point, label="", expect_change=True, timeout=4.0, raw=False,
-              hold=None):
+              hold=None, move_gap=None):
         """点一个标定好的点（**基准坐标**），等画面变化。
 
         raw=True 时 point 已经是真实屏幕像素，直接按原值点。坐标口径只有
@@ -731,17 +769,18 @@ class NavBase:
         self._assert_safe(point, raw=raw)
         x, y = (int(point[0]), int(point[1])) if raw else self.pt(point)
         return self._click_at(x, y, label or str(point), expect_change, timeout,
-                              hold=hold)
+                              hold=hold, move_gap=move_gap)
 
     def click_px(self, point, label="", expect_change=True, timeout=4.0,
-                 hold=None):
+                 hold=None, move_gap=None):
         """点**真实屏幕像素**坐标（OCR / 模板返回的坐标，不再换算）。"""
         x, y = int(point[0]), int(point[1])
         self._assert_safe((x, y), raw=True)
         return self._click_at(x, y, label or str(point), expect_change, timeout,
-                              hold=hold)
+                              hold=hold, move_gap=move_gap)
 
-    def _click_at(self, x, y, label, expect_change, timeout, hold=None):
+    def _click_at(self, x, y, label, expect_change, timeout, hold=None,
+                  move_gap=None):
         """按真实像素点下去并等画面变化。
 
         **每次点击都校验游戏在前台**（Mouse 带了游戏窗口句柄时才有）：
@@ -753,6 +792,8 @@ class NavBase:
         before = self._snap()
         hwnd = getattr(self.mouse, "_game_hwnd", None)
         kw = {"hold": hold} if hold else {}
+        if move_gap:
+            kw["move_gap"] = move_gap
         ok = self.mouse.click(x, y, verify=False, expect_foreground=hwnd, **kw)
         if ok is False:
             # I2：message 通道的 False 分两种 ——

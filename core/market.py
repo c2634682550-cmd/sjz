@@ -924,3 +924,27 @@ def pick(rows, task, exclude=None):
 
     best = hits[0]
     return best, f"选中第 {len(diag)} 行里的 1 条", diag
+
+
+def scan_tab(tab, page, img):
+    """按「页签 → 界面类型」分派解析器。**唯一的枚举入口**。
+
+    三个页签是三套界面，绝不能拿一份解析通吃：
+      collection / charm → onsale    → 6 张挂单卡（scan）
+      mandel            → mandel_buy → 下单层字段（mandel_buy.read）
+
+    `page` 与页签映射对不上时**抛 InterfaceMismatch**（nav.assert_interface），
+    不返回空结果 —— 空列表会被上层当成「没货」，真机事故就是这么发生的
+    （mandel 判 unknown → 报「进不去挂单列表」）。
+
+    返回统一结构：`{"page_type": ..., ...}`，落盘时用它区分 onsale / mandel_buy。
+    """
+    from . import mandel_buy as _mb
+    from . import nav as _nav
+
+    want = _nav.assert_interface(tab, page)
+    if want == "mandel_buy":
+        out = _mb.read(img)
+        out["tab"] = tab
+        return out
+    return {"page_type": "onsale", "tab": tab, "rows": scan(img) or []}
