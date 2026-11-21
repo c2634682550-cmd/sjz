@@ -923,6 +923,57 @@ def _work_area():
         return 0, 0, 1920, 1080
 
 
+def clamp_into_work_area(x, y, w, h, work):
+    """把 (x, y, w, h) 夹进工作区 work=(x0, y0, aw, ah)，返回新的 (x, y)。
+
+    纯函数。窗口比工作区还大时左/上边贴住，保证标题和按钮那一侧看得见。
+    """
+    x0, y0, aw, ah = work
+    nx = max(x0, min(int(x), x0 + aw - int(w)))
+    ny = max(y0, min(int(y), y0 + ah - int(h)))
+    return nx, ny
+
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD)]
+
+
+def _monitor_work_area(hwnd):
+    """窗口当前所在显示器的工作区；拿不到就退回主显示器 `_work_area()`。
+
+    悬浮窗可以被拖到副屏，展开时不能拿主屏的工作区去夹它。
+    """
+    try:
+        if hwnd:
+            u = _u32()
+            mon = u.MonitorFromWindow(ctypes.c_void_p(int(hwnd)), 2)  # NEAREST
+            if mon:
+                mi = _MONITORINFO()
+                mi.cbSize = ctypes.sizeof(_MONITORINFO)
+                if u.GetMonitorInfoW(ctypes.c_void_p(mon), ctypes.byref(mi)):
+                    r = mi.rcWork
+                    if r.right > r.left and r.bottom > r.top:
+                        return (int(r.left), int(r.top),
+                                int(r.right - r.left), int(r.bottom - r.top))
+    except Exception:                         # noqa: BLE001
+        pass
+    return _work_area()
+
+
+def _overlay_scale(hwnd, wr=None):
+    """悬浮窗的像素缩放：窗口矩形已有宽度就以它为准，否则取窗口 DPI。
+
+    `OVERLAY_W/H` 是逻辑像素，而 `_work_area`、`_window_rect`、SetWindowPos 全是
+    物理像素；缩放 150% 时直接拿 304 去算右上角，窗口会探出屏幕右缘。
+    """
+    if wr and wr.get("w"):
+        return wr["w"] / float(OVERLAY_W)
+    return _dpi_scale(hwnd) if hwnd else 1.0
+
+
 def _overlay_pos_path():
     return os.path.join(APPDIR, "overlay_pos.json")
 
@@ -967,11 +1018,17 @@ def _place_overlay(ov=None, force_default=False):
         return False
     try:
         pos = None if force_default else _load_overlay_pos()
+        hwnd = h.get("hwnd")
+        wr = _window_rect(hwnd) if hwnd else None
+        scale = _overlay_scale(hwnd, wr)
+        pw, ph = int(OVERLAY_W * scale), int(OVERLAY_H * scale)
+        work = _work_area()
         if pos is None:
-            x0, y0, aw, ah = _work_area()
-            x, y = x0 + aw - OVERLAY_W - 16, y0 + 16
+            x0, y0, aw, ah = work
+            x, y = x0 + aw - pw - 16, y0 + 16
         else:
             x, y = pos
+        x, y = clamp_into_work_area(x, y, pw, ph, work)
         ov = ov or h.get("win")
         if ov is not None:
             ov.move(max(x, 0), max(y, 0))
@@ -984,7 +1041,8 @@ def _place_overlay(ov=None, force_default=False):
     return False
 
 
-_OVERLAY_HANDLE = {"win": None, "hwnd": None, "placed": False, "pos": None}
+_OVERLAY_HANDLE = {"win": None, "hwnd": None, "placed": False, "pos": None,
+                   "watch": None}
 _OVERLAY_STOP = threading.Event()
 
 
@@ -1020,6 +1078,23 @@ def _overlay_pos_watch(stop_evt):
             pass
 
 
+def _start_overlay_watch():
+    """起位置监视线程；已有活着的就不再叠一条（重建悬浮窗时会再调到这里，
+    多条线程会同时写 overlay_pos.json）。"""
+    try:
+        old = _OVERLAY_HANDLE.get("watch")
+        if old is not None and old.is_alive():
+            return False
+        t = threading.Thread(target=_overlay_pos_watch,
+                             args=(_OVERLAY_STOP,), daemon=True,
+                             name="overlay-pos")
+        _OVERLAY_HANDLE["watch"] = t
+        t.start()
+        return True
+    except Exception:                         # noqa: BLE001
+        return False
+
+
 def _resize_overlay(expanded):
     """紧凑 ↔ 展开：只改高度，左上角不动（JS 改不了 WebView 窗口尺寸）。
 
@@ -1034,12 +1109,15 @@ def _resize_overlay(expanded):
     try:
         wr = _window_rect(hwnd) if hwnd else None
         if wr:
-            scale = (wr["w"] / float(OVERLAY_W)) if wr["w"] else 1.0
-            ctypes.windll.user32.SetWindowPos(
-                ctypes.c_void_p(int(hwnd)), None,
-                int(wr["x"]), int(wr["y"]),
-                int(OVERLAY_W * scale), int(h * scale),
-                _SWP_NOZORDER | 0x0010)        # NOZORDER | NOACTIVATE
+            scale = _overlay_scale(hwnd, wr)
+            nw, nh = int(OVERLAY_W * scale), int(h * scale)
+            # 展开后的矩形必须仍在窗口所在显示器的工作区内：窗口被拖到靠近
+            # 底边时，只向上挪够放下新高度为止，左上角其余时候不动。
+            nx, ny = clamp_into_work_area(
+                wr["x"], wr["y"], nw, nh, _monitor_work_area(hwnd))
+            _u32().SetWindowPos(
+                ctypes.c_void_p(int(hwnd)), None, nx, ny, nw, nh,
+                _SWP_NOZORDER | _SWP_NOACTIVATE)
             return True
     except Exception as e:                    # noqa: BLE001
         _log(f"!! 悬浮窗改尺寸失败：{type(e).__name__}: {e}")
@@ -1087,6 +1165,10 @@ def _u32():
         lib.GetWindowRect.restype = ctypes.c_int
         lib.GetDpiForWindow.argtypes = [ctypes.c_void_p]
         lib.GetDpiForWindow.restype = ctypes.c_uint
+        lib.MonitorFromWindow.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        lib.MonitorFromWindow.restype = ctypes.c_void_p
+        lib.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        lib.GetMonitorInfoW.restype = ctypes.c_int
         _U32["lib"] = lib
     return _U32["lib"]
 
@@ -1157,11 +1239,12 @@ def _apply_noactivate(hwnd, topmost=True):
 
 
 def _overlay_no_white(hwnd):
-    """窗体底色改深色 + 同色色键透明：圆角外面不再露白底/白线。
+    """窗体底色改成极深色，并开 Win11 DWM 圆角：不再露白底/白线。
 
     pywebview 的 transparent=True 只把 WebView2 的 DefaultBackgroundColor 设成
     透明，托管窗体自己的 BackColor 仍是默认白 —— 页面 body 透明时露出的就是
-    那层白。这里把窗体底色和 TransparencyKey 设成同一个极深色，像素级挖掉。
+    那层白。这里把 BackColor 换成极深色，并显式清空 TransparencyKey（不用色键
+    抠透明），圆角外缘由 DWM 裁切，露出来的是深色而不是桌面。
     """
     try:
         import clr
@@ -1578,12 +1661,7 @@ def _create_overlay(ctl, base_url=""):
     except Exception as e:                     # noqa: BLE001
         _log(f"!! 悬浮窗初始尺寸设置失败：{type(e).__name__}: {e}")
     _place_overlay(ov)
-    try:
-        threading.Thread(target=_overlay_pos_watch,
-                         args=(_OVERLAY_STOP,), daemon=True,
-                         name="overlay-pos").start()
-    except Exception:                         # noqa: BLE001
-        pass
+    _start_overlay_watch()
 
     # http 被鉴权拦下（403）时页面里 0 个脚本：退回 file:// / 内联
     if mode == "url":
