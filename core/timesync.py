@@ -40,8 +40,11 @@ sync_lock = threading.Lock()
 
 # ---- 本机代理 / 环回地址 ----
 # Clash、Mihomo 的 fake-ip 模式默认把域名解析到 198.18.0.0/15（RFC 2544
-# 基准测试保留段）。这些地址上的 NTP 应答是本机代理伪造的：既不能用来校时，
-# 也不是 DNS 投毒。遇到它们应当明确降级，而不是反复告警/重试。
+# 基准测试保留段）。公共 NTP 域名不会合法地解析到这些段，所以这些地址上的应答
+# 一律不采信：既不能用来校时，也不去猜是代理还是被篡改 —— 结论只写「落在本机
+# 代理/保留段」，明确降级到系统时间，而不是反复告警/重试。fc00::/7 是为 Clash
+# 的 IPv6 fake-ip（落在 ULA 段）留的；内网自建 NTP 若用 ULA 地址，只会被跳过，
+# 其余服务器照常校时。
 PROXY_FAKE_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
     "198.18.0.0/15", "127.0.0.0/8", "0.0.0.0/8", "::1/128", "fc00::/7"))
 PROXY_RETRY_S = 300.0          # 代理降级态的重试间隔：5 分钟一次，不刷屏
@@ -287,11 +290,11 @@ def _is_proxy_ip(ip):
 
 
 def _proxy_message(hits):
-    """代理降级的统一说明：说清是 fake-ip，不是投毒。"""
+    """代理降级的统一说明：只陈述事实（解析落在哪些地址），不下「是不是投毒」的结论。"""
     ips = ", ".join(sorted({str(ip) for ip in hits.values()}))
-    return ("校时不可用：走代理（NTP 域名解析到本机 fake-ip/环回 "
-            f"{ips}），已用系统时间；这是 Clash/Mihomo 的 fake-ip，"
-            "不是 DNS 投毒，后台每 5 分钟最多试一次")
+    return ("校时不可用：走代理（NTP 域名解析到本机代理/环回保留段 "
+            f"{ips}），这些应答不采信，已用系统时间；"
+            "后台每 5 分钟最多试一次")
 
 
 def _fail(msg, errors, attempts, got, proxy=False):

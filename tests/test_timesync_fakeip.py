@@ -1,7 +1,7 @@
 """NTP 被本机代理 fake-ip 接管时的判定。
 
 Clash/Mihomo 的 fake-ip 默认段是 198.18.0.0/15。NTP 域名全解析到该段时：
-- 结论必须是「走代理、校时不可用、已用系统时间」，不能报 DNS 投毒；
+- 结论必须是「走代理、校时不可用、已用系统时间」，不报 DNS 投毒也不替它担保「不是投毒」；
 - 不向 fake-ip 发 NTP 请求（省掉每轮十几秒白等）；
 - 自动循环低频重试，且同一状态只通知一次。
 """
@@ -32,7 +32,9 @@ def test_all_fake_ip_degrades_without_poison(monkeypatch):
     assert res["attempts"] == 0
     assert "走代理" in res["error"]
     assert "已用系统时间" in res["error"]
-    assert "不是 DNS 投毒" in res["error"]
+    assert "不采信" in res["error"]
+    assert "投毒" not in res["error"]       # 不下结论，只陈述解析落点
+    assert "198.18.0.90" in res["error"]
     assert "疑似" not in res["error"]
     assert queried == []                    # 不在 fake-ip 上浪费 UDP 请求
 

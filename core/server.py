@@ -1417,10 +1417,10 @@ def _on_auto_sync_result(res, trigger):
             _scheduler.note(f"{where}校时完成：{res.get('server') or 'NTP'} "
                             f"{float(res.get('offset') or 0) * 1000:+.0f}ms", "info")
         elif res.get("proxy"):
-            # 本机代理把 NTP 域名解析成 fake-ip：明确说「不可用 + 已用系统时间」，
-            # 不写「投毒」，也不按失败退避刷屏（后台 5 分钟才试一次）。
-            _scheduler.note(f"{where}校时不可用：走代理（NTP 域名被解析到本机 "
-                            "fake-ip/环回），已用系统时间；这不是 DNS 投毒",
+            # NTP 域名解析到本机代理/环回保留段：明确说「不可用 + 已用系统时间」，
+            # 只陈述事实、不下投毒与否的结论，也不按失败退避刷屏（5 分钟才试一次）。
+            _scheduler.note(f"{where}校时不可用：走代理（NTP 域名被解析到本机代理/"
+                            "环回保留段），这些应答不采信，已用系统时间",
                             "warn")
         else:
             _scheduler.note(f"{where}校时失败：{res.get('error') or '原因未知'}"
