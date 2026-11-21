@@ -2593,20 +2593,6 @@ class Engine:
             return None
         return ocr.balance_from_words(words)
 
-    def _skip_visible(self, screen):
-        """窄带（100x55）里有没有结算弹窗的「跳过」—— 约 30ms，只作正向证据。
-
-        读不到、抓帧失败、OCR 报错一律返回 False（fail-open 到原来的整屏
-        守卫），绝不把「没读到」当成「没成交」或「没弹窗」。
-        """
-        try:
-            crop = screen.grab(screen.norm_to_px(SKIP_N))
-            if crop is None or not getattr(crop, "size", 0):
-                return False
-            return "跳过" in (ocr.read_text(upscale(crop, 2)) or "")
-        except Exception:                                # noqa: BLE001
-            return False
-
     def _insufficient_showing(self, screen):
         """屏幕上是不是「三角币不足」弹窗 —— 只 OCR 那一行，几毫秒。
 
@@ -3396,7 +3382,13 @@ class Engine:
         return False
 
     def _skip_shown(self, screen):
-        """奖励弹窗底部那个「跳过」还在不在（100x55，约 32ms）。"""
+        """奖励弹窗底部那个「跳过」还在不在（100x55，约 32ms）。
+
+        只作正向证据：读不到、抓帧失败、OCR 报错一律返回 False（fail-open），
+        绝不把「没读到」当成「没成交」或「没弹窗」。余额守卫的提前收手
+        （`_guard_insufficient(stop_on_bought=True)`）与成交后收尾共用这一个
+        探针和同一个窄带 `SKIP_N`，不再各留一份。
+        """
         try:
             crop = screen.grab(screen.norm_to_px(SKIP_N))
             if crop is None or not getattr(crop, "size", 0):
@@ -3853,7 +3845,7 @@ class Engine:
             result = popup.scan(screen.grab())
             if not result["found"]:
                 if (stop_on_bought and i < tries - 1
-                        and self._skip_visible(screen)):
+                        and self._skip_shown(screen)):
                     self._say("结算弹窗已出现（跳过可见），余额不足不成立，"
                               "守卫提前结束", "info")
                     return
