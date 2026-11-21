@@ -754,3 +754,39 @@ def test_perpetual_license_ignores_anchor_and_lease():
                         mono=1000 + 10 * DAY)
     d2 = ev(blob, state=st, now=T0 + 11 * DAY, mono=1000 + 11 * DAY)
     assert d2.ok and d2.status == "ok"
+
+
+def test_perpetual_license_still_honours_revocation():
+    """永久卡跳过的只是时间判定；吊销要在它之前生效（离线卡的唯一撤销手段）。"""
+    d = ev(make_blob(perpetual=True), rev=rev_doc(),
+           state=unproven_state(born=T0))
+    assert d.status == "revoked" and not d.ok
+
+
+def test_perpetual_license_still_checks_fingerprint():
+    """换了机器的永久卡照样 fp_mismatch，不因永久而放行。"""
+    other = {k: v + "-x" for k, v in COMPS.items()}
+    d = ev(make_blob(perpetual=True), comps=other,
+           state=unproven_state(born=T0))
+    assert d.status == "fp_mismatch" and not d.ok
+
+
+def test_perpetual_license_still_rejects_ledger_of_other_license():
+    """账本属于别的许可 → need_online，永久卡也不能借别人的账本直接 ok。"""
+    d = ev(make_blob(perpetual=True),
+           state=unproven_state(born=T0, lic_id="lic-other"))
+    assert d.status == "need_online" and not d.ok
+
+
+def test_offline_ok_flag_behaves_like_perpetual_after_same_guards():
+    """offline_ok 与 perpetual 走同一分支（42f0d01 一并放开）：锁定现状。
+
+    本仓的签发工具（tools/license_admin.py、license_server.py）只写 perpetual，
+    没有任何地方签 offline_ok；它是否还需要，留给作者定。
+    """
+    blob = make_blob(offline_ok=True)
+    d = ev(blob, state=unproven_state(born=T0, used=30 * DAY,
+                                      now=T0 + 30 * DAY, mono=1000 + 30 * DAY),
+           now=T0 + 31 * DAY, mono=1000 + 31 * DAY)
+    assert d.ok and d.lease_remaining_s is None
+    assert ev(blob, rev=rev_doc(), state=unproven_state(born=T0)).status == "revoked"

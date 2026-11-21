@@ -1182,7 +1182,8 @@ def evaluate(blob, *, revocations=None, state=None, state_trusted=True,
     if payload.get("perpetual") or payload.get("offline_ok"):
         extra["lease_remaining_s"] = None
         return Decision("ok", True, "永久许可", **extra)
-    # 未联网锚点没有「永久」：本地签出来的许可也必须按时联网，否则可无限续期
+    # 以下只对非永久许可生效：永久卡（上面已返回）不再受未联网锚点的租期封顶；
+    # 永久卡仍然要先过上面的签名、吊销、硬件指纹、账本与许可 id 校验。
 
     if span > lease_s + offline_grace_s:
         if kind == ANCHOR_UNPROVEN:
