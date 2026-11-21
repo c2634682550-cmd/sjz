@@ -1,0 +1,47 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>sjz direction · Field Manual</title><style>*{box-sizing:border-box;margin:0}html,body{height:100%}
+.d1{--bg:#12140d;--p:#1b1e14;--p2:#23271a;--ln:#3b4128;--tx:#dcd8c4;--dim:#8d8c76;--ac:#c9a24d;--od:#6d7d3a;--bad:#c4513a;--ok:#8fa24a;
+background:var(--bg);color:var(--tx);height:900px;font:13px/1.5 "Bahnschrift","DIN Alternate","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;overflow:hidden}
+.d1 .top{display:flex;align-items:center;gap:20px;padding:0 16px;height:54px;border-bottom:2px solid var(--ln);background:#0e1009}
+.d1 .brand{display:flex;gap:10px;align-items:center;letter-spacing:.14em}
+.d1 .logo{width:22px;height:22px;background:var(--od);clip-path:polygon(0 0,70% 0,100% 30%,100% 100%,30% 100%,0 70%)}
+.d1 .tabs{margin-left:auto;display:flex;gap:2px}.d1 .tabs button,.d1 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.d1 .tabs button{padding:8px 16px;color:var(--dim);letter-spacing:.2em;text-transform:uppercase;border-bottom:3px solid transparent}
+.d1 .tabs .on{color:var(--tx);border-color:var(--ac)}
+.d1 .start{background:var(--ac);color:#17130a;padding:10px 20px;font-weight:700;letter-spacing:.24em;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+.d1 kbd{margin-left:10px;font:600 11px monospace;opacity:.7}
+.d1 .stat{display:flex;gap:12px;align-items:center;padding:8px 16px;background:var(--p);border-bottom:1px solid var(--ln)}
+.d1 .stat span{color:var(--dim)}.d1 .stat em{margin-left:auto;font-style:normal;border:1px solid var(--ln);padding:0 8px;color:var(--dim);letter-spacing:.2em}
+.d1 .dot{width:8px;height:8px;background:var(--ok)}
+.d1 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--ln);border-bottom:1px solid var(--ln)}
+.d1 .card{display:flex;gap:12px;align-items:center;background:var(--p);padding:12px 16px;border-left:4px solid var(--ok)}.d1 .card.bad{border-left-color:var(--bad)}
+.d1 .card small{display:block;color:var(--dim);letter-spacing:.2em;font-size:10px;text-transform:uppercase}.d1 .card b{display:block}.d1 .card span{color:var(--dim);font-size:11px}
+.d1 .ico{display:none}.d1 .mini{margin-left:auto;border:1px solid var(--ac);color:var(--ac);padding:3px 10px;font-size:11px}
+.d1 .main{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0}
+.d1 .list{padding:16px;border-right:1px solid var(--ln);overflow:hidden}
+.d1 .lh{display:flex;gap:12px;align-items:baseline;margin-bottom:12px}.d1 .lh b{letter-spacing:.2em;font-size:15px}.d1 .lh span{color:var(--dim)}.d1 .add{margin-left:auto;border:1px solid var(--ln);padding:5px 12px}
+.d1 table{width:100%;border-collapse:collapse}.d1 th{font:600 10px "Bahnschrift",sans-serif;letter-spacing:.22em;color:var(--dim);text-align:left;padding:6px 8px;border-bottom:2px solid var(--ln)}
+.d1 td{padding:10px 8px;border-bottom:1px solid var(--ln);white-space:nowrap}.d1 td.nm{max-width:280px;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.d1 tr.sel td{background:var(--p2)}.d1 tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--ac)}.d1 td[data-s="运行中"]{color:var(--ok)}
+.d1 .panel{background:var(--p);padding:16px;display:flex;flex-direction:column;gap:12px}
+.d1 .ph b{letter-spacing:.2em;font-size:15px;display:block}.d1 .ph span{color:var(--dim)}
+.d1 label{display:grid;gap:4px;font-size:11px;letter-spacing:.16em;color:var(--dim)}
+.d1 select,.d1 input{background:#0e1009;border:1px solid var(--ln);color:var(--tx);padding:7px 9px;font:inherit}
+.d1 .seg{display:flex}.d1 .seg button{flex:1;padding:6px;border:1px solid var(--ln);color:var(--dim);margin-left:-1px}.d1 .seg .on{background:var(--od);color:#fff;border-color:var(--od)}
+.d1 .pr{display:flex;gap:8px;align-items:center}.d1 .pr input{flex:1;width:0;min-width:0}
+.d1 .pf{margin-top:auto;display:flex;justify-content:space-between}.d1 .del{border:1px solid var(--bad);color:#e8795f;padding:8px 14px}.d1 .save{background:var(--od);color:#fff;padding:8px 18px;letter-spacing:.12em}
+.d1 .foot{display:flex;gap:22px;padding:6px 16px;border-top:2px solid var(--ln);background:#0e1009;color:var(--dim);font-size:11px;letter-spacing:.14em}</style></head><body><div class="d1 app">
+<header class="top"><div class="brand"><span class="logo" aria-hidden="true"></span><b>三角洲 · 抢购控制台</b></div>
+<nav class="tabs"><button class="on">抢购</button><button>目标库</button><button>记录</button><button>分析</button><button>日记</button><button>设置</button></nav>
+<button class="start">启动抢购<kbd>F7</kbd></button></header>
+<div class="stat"><i class="dot"></i><b>待命，等你开始</b><span>共 1 条任务，1 条已启用</span><em>待命</em></div>
+<section class="cards"><article class="card bad"><i class="ico"></i><div><small>游戏窗口</small><b>没找到游戏窗口</b><span>先在游戏里打开交易行，再回来点重新检查</span></div><button class="mini">重新检查</button></article><article class="card bad"><i class="ico"></i><div><small>画面识别</small><b>还没认出页面</b><span>还没有识别结果</span></div><button class="mini">重新检查</button></article><article class="card ok"><i class="ico"></i><div><small>时间校准</small><b>已自动校准</b><span>偏差 +28ms · 9 样本 · 3s 前</span></div></article><article class="card ok"><i class="ico"></i><div><small>购买延迟</small><b>0 毫秒</b><span>动态调整已开，点击更快更准</span></div></article></section>
+<main class="main"><section class="list"><div class="lh"><b>任务清单</b><span>共 3 条任务</span><button class="add">+ 添加任务</button></div>
+<table><thead><tr><th>#</th><th>目标</th><th>成色·磨损</th><th>价格区间</th><th>限量</th><th>已抢</th><th>状态</th></tr></thead><tbody><tr class="sel"><td>1</td><td class="nm">AKM突击步枪·星之彩</td><td>不限</td><td>≤ 41,500</td><td>1</td><td>0</td><td data-s="等待">等待</td></tr><tr><td>2</td><td class="nm">M4A1突击步枪·暗影</td><td>极品</td><td>≤ 68,000</td><td>2</td><td>1</td><td data-s="运行中">运行中</td></tr><tr><td>3</td><td class="nm">未命名任务·这是一个非常非常长的目标名称用来测试截断</td><td>不限</td><td>不限</td><td>1</td><td>0</td><td data-s="等待">等待</td></tr></tbody></table></section>
+<aside class="panel"><div class="ph"><b>任务设置</b><span>AKM突击步枪·星之彩</span></div>
+<label>赛季目标<select><option>不限赛季</option></select></label><label>成色选择<select><option>不限成色</option></select></label>
+<label>品阶<span class="seg"><button class="on">不限</button><button>极品</button><button>优品</button></span></label>
+<label>价格区间<span class="pr"><input placeholder="最低"><i>至</i><input placeholder="最高"></span></label>
+<label>本轮限量<input value="1"></label>
+<label>抢购路线<span class="seg"><button class="on">公示期倒计时</button><button>在售列表</button><button>商品页按钮</button></span></label>
+<div class="pf"><button class="del">删除任务</button><button class="save">保存修改</button></div></aside></main>
+<footer class="foot"><span>已连接</span><span>任务 1</span><span>队列 1</span><span>引擎待命</span><span>v1.1.2</span></footer></div></body></html>

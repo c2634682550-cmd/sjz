@@ -295,7 +295,7 @@ def test_start_is_mutually_exclusive(html):
 def test_task_name_is_escaped_in_the_queue_list(html):
     """任务名来自用户输入，拼进 innerHTML 前必须转义。"""
     body = _function_body(html, "taskRowsHtml")
-    assert "esc(t.name)" in body, "任务名没转义"
+    assert "esc(taskTitle(t, i))" in body and "esc(taskSub(t))" in body, "任务名/关键词没转义"
     assert "esc(t.id)" in body, "行 data-id 没转义"
     assert "esc(wearTxt)" in body, "磨损/品阶标签没转义"
 

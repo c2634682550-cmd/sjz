@@ -6,39 +6,39 @@
 <title>抢购悬浮窗</title>
 <style>
   /* 令牌与 web/index.html 的 :root 逐项一致（同一份定义直接内联，少一次请求）。
-     面板底色用 --surface 的 RGB（#11151c），只把 alpha 降到 .94 让圆角外透出桌面；
+     面板底色用 --surface 的 RGB（#171615），只把 alpha 降到 .94 让圆角外透出桌面；
      这是唯一一处刻意差值，其余颜色不做任何改动。 */
   :root{
     color-scheme:dark;
-    --bg:#090b10;
-    --bg-2:#0b0e14;
-    --surface:#11151c;
-    --surface-2:#151a23;
-    --surface-3:#1a202a;
-    --surface-4:#202733;
-    --line:#222936;
-    --line-2:#2c3545;
-    --line-3:#39445a;
+    --bg:#0d0c0b;
+    --bg-2:#100f0e;
+    --surface:#171615;
+    --surface-2:#1b1a19;
+    --surface-3:#21201f;
+    --surface-4:#282726;
+    --line:#2a2928;
+    --line-2:#363534;
+    --line-3:#454443;
     --text:#e7ecf5;
-    --text-2:#a1abbd;
-    --text-3:#6c7586;
-    --accent:#5a8cf7;
-    --accent-2:#85a9ff;
-    --accent-soft:rgba(90,140,247,.13);
-    --ok:#3ecf8e;
-    --ok-soft:rgba(62,207,142,.11);
+    --text-2:#acabaa;
+    --text-3:#767574;
+    --accent:#0ff796;
+    --accent-2:#5bfba9;
+    --accent-soft:rgba(15,247,150,.13);
+    --ok:#22d3c5;
+    --ok-soft:rgba(34,211,197,.11);
     --warn:#e8b04b;
     --warn-soft:rgba(232,176,75,.11);
     --bad:#f0606a;
     --bad-soft:rgba(240,96,106,.11);
-    --gold:#e6b45c;
+    --gold:#5bfba9;
     --r-xs:5px; --r-sm:7px; --r-md:10px; --r-lg:14px;
     --shadow-1:0 1px 2px rgba(0,0,0,.45);
     --shadow-2:0 18px 48px rgba(0,0,0,.42);
     --dur:.16s;
     --font-ui:"Segoe UI","Microsoft YaHei","PingFang SC",-apple-system,BlinkMacSystemFont,sans-serif;
     --font-num:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace;
-    --panel-a:rgba(17,21,28,.94);   /* = --surface #11151c，alpha .94（透明圆角用） */
+    --panel-a:rgba(17,21,28,.94);   /* = --surface #171615，alpha .94（透明圆角用） */
   }
   *{box-sizing:border-box}
   html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--surface)}

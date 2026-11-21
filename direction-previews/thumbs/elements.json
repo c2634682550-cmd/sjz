@@ -1,0 +1,2583 @@
+{
+  "viewport": {
+    "width": 1500,
+    "height": 700
+  },
+  "background": [
+    34,
+    34,
+    34
+  ],
+  "items": [
+    {
+      "kind": "block",
+      "id": "div:2",
+      "box": {
+        "x": 10,
+        "y": 10,
+        "w": 480,
+        "h": 300
+      },
+      "fill": [
+        20,
+        22,
+        15
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "i:4",
+      "box": {
+        "x": 22,
+        "y": 26.6875,
+        "w": 12,
+        "h": 12
+      },
+      "fill": [
+        201,
+        162,
+        77
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:5",
+      "text": "三角洲 · 抢购控制台",
+      "box": {
+        "x": 42,
+        "y": 24.296875,
+        "w": 108.421875,
+        "h": 16.796875
+      },
+      "lines": [
+        {
+          "x": 42,
+          "y": 24.296875,
+          "w": 108.421875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "u:6",
+      "text": "启动抢购 F7",
+      "box": {
+        "x": 400.4375,
+        "y": 22,
+        "w": 77.5625,
+        "h": 21.390625
+      },
+      "lines": [
+        {
+          "x": 409.4375,
+          "y": 25,
+          "w": 59.5625,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        201,
+        162,
+        77
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:7",
+      "box": {
+        "x": 22,
+        "y": 51.390625,
+        "w": 456,
+        "h": 23.796875
+      }
+    },
+    {
+      "kind": "text",
+      "id": "span:8",
+      "text": "抢购",
+      "box": {
+        "x": 22,
+        "y": 51.390625,
+        "w": 24,
+        "h": 18.796875
+      },
+      "lines": [
+        {
+          "x": 22,
+          "y": 51.390625,
+          "w": 24,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:9",
+      "text": "目标库",
+      "box": {
+        "x": 60,
+        "y": 51.390625,
+        "w": 36,
+        "h": 18.796875
+      },
+      "lines": [
+        {
+          "x": 60,
+          "y": 51.390625,
+          "w": 36,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:10",
+      "text": "记录",
+      "box": {
+        "x": 110,
+        "y": 51.390625,
+        "w": 24,
+        "h": 18.796875
+      },
+      "lines": [
+        {
+          "x": 110,
+          "y": 51.390625,
+          "w": 24,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:11",
+      "text": "设置",
+      "box": {
+        "x": 148,
+        "y": 51.390625,
+        "w": 24,
+        "h": 18.796875
+      },
+      "lines": [
+        {
+          "x": 148,
+          "y": 51.390625,
+          "w": 24,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:15",
+      "text": "1 AKM突击步枪·星之彩 ≤ 41,500",
+      "box": {
+        "x": 22,
+        "y": 83.1875,
+        "w": 275.6875,
+        "h": 28.796875
+      },
+      "lines": [
+        {
+          "x": 33,
+          "y": 89.1875,
+          "w": 179.34375,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:16",
+      "text": "2 M4A1突击步枪·暗影 ≤ 68,000",
+      "box": {
+        "x": 22,
+        "y": 111.984375,
+        "w": 275.6875,
+        "h": 28.796875
+      },
+      "lines": [
+        {
+          "x": 33,
+          "y": 117.984375,
+          "w": 173.796875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "div:17",
+      "text": "任务设置",
+      "box": {
+        "x": 305.6875,
+        "y": 83.1875,
+        "w": 172.3125,
+        "h": 57.59375
+      },
+      "lines": [
+        {
+          "x": 314.6875,
+          "y": 83.1875,
+          "w": 48,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "small:18",
+      "text": "品阶 不限 / 极品",
+      "box": {
+        "x": 314.6875,
+        "y": 101.984375,
+        "w": 73.15625,
+        "h": 14
+      },
+      "lines": [
+        {
+          "x": 314.6875,
+          "y": 101.984375,
+          "w": 73.15625,
+          "h": 14
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:20",
+      "text": "Infinity Ward menus",
+      "box": {
+        "x": 22,
+        "y": 261.609375,
+        "w": 456,
+        "h": 19.59375
+      },
+      "lines": [
+        {
+          "x": 22,
+          "y": 261.609375,
+          "w": 143.65625,
+          "h": 19
+        }
+      ],
+      "fontSize": 14,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:21",
+      "text": "top tabs · list + side detail",
+      "box": {
+        "x": 22,
+        "y": 281.203125,
+        "w": 148.703125,
+        "h": 16
+      },
+      "lines": [
+        {
+          "x": 22,
+          "y": 281.203125,
+          "w": 148.703125,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        20,
+        22,
+        15
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:22",
+      "box": {
+        "x": 500,
+        "y": 10,
+        "w": 480,
+        "h": 300
+      },
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "i:24",
+      "box": {
+        "x": 512,
+        "y": 26.6875,
+        "w": 12,
+        "h": 12
+      },
+      "fill": [
+        163,
+        48,
+        28
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:25",
+      "text": "三角洲 · 抢购控制台",
+      "box": {
+        "x": 532,
+        "y": 24.296875,
+        "w": 108.421875,
+        "h": 16.796875
+      },
+      "lines": [
+        {
+          "x": 532,
+          "y": 24.296875,
+          "w": 108.421875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "u:26",
+      "text": "启动抢购 F7",
+      "box": {
+        "x": 890.4375,
+        "y": 22,
+        "w": 77.5625,
+        "h": 21.390625
+      },
+      "lines": [
+        {
+          "x": 899.4375,
+          "y": 25,
+          "w": 59.5625,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "h4:28",
+      "text": "OPERATION ORDER · 抢购令 No.001",
+      "box": {
+        "x": 512,
+        "y": 57.390625,
+        "w": 456,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 512,
+          "y": 65.390625,
+          "w": 259.640625,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:32",
+      "text": "1",
+      "box": {
+        "x": 512.5,
+        "y": 90.890625,
+        "w": 43.171875,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 519,
+          "y": 95.390625,
+          "w": 7.046875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:33",
+      "text": "AKM突击步枪·星之彩",
+      "box": {
+        "x": 555.671875,
+        "y": 90.890625,
+        "w": 274.984375,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 562.171875,
+          "y": 95.390625,
+          "w": 114.6875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:34",
+      "text": "≤ 41,500",
+      "box": {
+        "x": 830.65625,
+        "y": 90.890625,
+        "w": 136.84375,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 837.15625,
+          "y": 95.390625,
+          "w": 50.53125,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:36",
+      "text": "2",
+      "box": {
+        "x": 512.5,
+        "y": 116.6875,
+        "w": 43.171875,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 519,
+          "y": 121.1875,
+          "w": 7.046875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:37",
+      "text": "M4A1突击步枪·暗影",
+      "box": {
+        "x": 555.671875,
+        "y": 116.6875,
+        "w": 274.984375,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 562.171875,
+          "y": 121.1875,
+          "w": 109.140625,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:38",
+      "text": "≤ 68,000",
+      "box": {
+        "x": 830.65625,
+        "y": 116.6875,
+        "w": 136.84375,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 837.15625,
+          "y": 121.1875,
+          "w": 50.53125,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:40",
+      "text": "3",
+      "box": {
+        "x": 512.5,
+        "y": 142.484375,
+        "w": 43.171875,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 519,
+          "y": 146.984375,
+          "w": 7.046875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:41",
+      "text": "未命名任务",
+      "box": {
+        "x": 555.671875,
+        "y": 142.484375,
+        "w": 274.984375,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 562.171875,
+          "y": 146.984375,
+          "w": 60,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:42",
+      "text": "不限",
+      "box": {
+        "x": 830.65625,
+        "y": 142.484375,
+        "w": 136.84375,
+        "h": 25.796875
+      },
+      "lines": [
+        {
+          "x": 837.15625,
+          "y": 146.984375,
+          "w": 24,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:44",
+      "text": "Vignelli standards manual",
+      "box": {
+        "x": 512,
+        "y": 261.609375,
+        "w": 456,
+        "h": 19.59375
+      },
+      "lines": [
+        {
+          "x": 512,
+          "y": 261.609375,
+          "w": 182.984375,
+          "h": 19
+        }
+      ],
+      "fontSize": 14,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:45",
+      "text": "single-column document · ruled table",
+      "box": {
+        "x": 512,
+        "y": 281.203125,
+        "w": 216.046875,
+        "h": 16
+      },
+      "lines": [
+        {
+          "x": 512,
+          "y": 281.203125,
+          "w": 216.046875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:46",
+      "box": {
+        "x": 990,
+        "y": 10,
+        "w": 480,
+        "h": 300
+      },
+      "fill": [
+        11,
+        13,
+        12
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "span:48",
+      "text": "待命",
+      "box": {
+        "x": 1002,
+        "y": 22,
+        "w": 75.125,
+        "h": 30.78125
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 23,
+          "w": 22,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "small:49",
+      "text": "1 任务 · 1 启用",
+      "box": {
+        "x": 1002,
+        "y": 39.390625,
+        "w": 75.125,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 39.390625,
+          "w": 75.125,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:50",
+      "text": "F7",
+      "box": {
+        "x": 1404.671875,
+        "y": 22,
+        "w": 53.328125,
+        "h": 44.78125
+      },
+      "lines": [
+        {
+          "x": 1438.796875,
+          "y": 24,
+          "w": 19.203125,
+          "h": 18
+        }
+      ],
+      "fontSize": 16,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "right"
+    },
+    {
+      "kind": "text",
+      "id": "small:51",
+      "text": "启动抢购",
+      "box": {
+        "x": 1404.671875,
+        "y": 48.390625,
+        "w": 53.328125,
+        "h": 15
+      },
+      "lines": [
+        {
+          "x": 1404.671875,
+          "y": 48.390625,
+          "w": 53.328125,
+          "h": 15
+        }
+      ],
+      "fontSize": 13.3333,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "right"
+    },
+    {
+      "kind": "text",
+      "id": "span:52",
+      "text": "游戏窗口 ✕时间校准 +28ms",
+      "box": {
+        "x": 1002,
+        "y": 216.828125,
+        "w": 83.609375,
+        "h": 30.78125
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 217.828125,
+          "w": 59.59375,
+          "h": 12
+        },
+        {
+          "x": 1002,
+          "y": 233.21875,
+          "w": 83.609375,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:53",
+      "text": "AKM突击步枪·星之彩≤ 41,500 · 已抢 0/1",
+      "box": {
+        "x": 1336.96875,
+        "y": 216.828125,
+        "w": 121.03125,
+        "h": 30.78125
+      },
+      "lines": [
+        {
+          "x": 1354.59375,
+          "y": 217.828125,
+          "w": 103.40625,
+          "h": 12
+        },
+        {
+          "x": 1336.96875,
+          "y": 233.21875,
+          "w": 121.03125,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "right"
+    },
+    {
+      "kind": "text",
+      "id": "b:55",
+      "text": "CoD in-game HUD",
+      "box": {
+        "x": 1002,
+        "y": 261.609375,
+        "w": 456,
+        "h": 19.59375
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 261.609375,
+          "w": 130.109375,
+          "h": 19
+        }
+      ],
+      "fontSize": 14,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:56",
+      "text": "corner-anchored readouts",
+      "box": {
+        "x": 1002,
+        "y": 281.203125,
+        "w": 149.46875,
+        "h": 16
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 281.203125,
+          "w": 149.46875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        223,
+        229,
+        224
+      ],
+      "background": [
+        11,
+        13,
+        12
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:57",
+      "box": {
+        "x": 10,
+        "y": 320,
+        "w": 480,
+        "h": 300
+      },
+      "fill": [
+        26,
+        27,
+        28
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "i:59",
+      "box": {
+        "x": 22,
+        "y": 336.6875,
+        "w": 12,
+        "h": 12
+      },
+      "fill": [
+        184,
+        196,
+        207
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:60",
+      "text": "三角洲 · 抢购控制台",
+      "box": {
+        "x": 42,
+        "y": 334.296875,
+        "w": 108.421875,
+        "h": 16.796875
+      },
+      "lines": [
+        {
+          "x": 42,
+          "y": 334.296875,
+          "w": 108.421875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        26,
+        27,
+        28
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "u:61",
+      "text": "启动抢购 F7",
+      "box": {
+        "x": 400.4375,
+        "y": 332,
+        "w": 77.5625,
+        "h": 21.390625
+      },
+      "lines": [
+        {
+          "x": 409.4375,
+          "y": 335,
+          "w": 59.5625,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        184,
+        196,
+        207
+      ],
+      "background": [
+        26,
+        27,
+        28
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:63",
+      "text": "AKM",
+      "box": {
+        "x": 22,
+        "y": 361.390625,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 63.890625,
+          "y": 376.390625,
+          "w": 27.21875,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        44,
+        48,
+        52
+      ],
+      "align": "center",
+      "fill": [
+        44,
+        48,
+        52
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:64",
+      "text": "M4A1",
+      "box": {
+        "x": 137,
+        "y": 361.390625,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 175.921875,
+          "y": 376.390625,
+          "w": 33.15625,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:65",
+      "text": "MP5",
+      "box": {
+        "x": 252,
+        "y": 361.390625,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 294.828125,
+          "y": 376.390625,
+          "w": 25.328125,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:66",
+      "text": "SR-25",
+      "box": {
+        "x": 367,
+        "y": 361.390625,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 406.15625,
+          "y": 376.390625,
+          "w": 32.671875,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:67",
+      "text": "P90",
+      "box": {
+        "x": 22,
+        "y": 410.78125,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 67.09375,
+          "y": 425.78125,
+          "w": 20.796875,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:68",
+      "text": "PTR-32",
+      "box": {
+        "x": 137,
+        "y": 410.78125,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 172.40625,
+          "y": 425.78125,
+          "w": 40.171875,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:69",
+      "text": "AUG",
+      "box": {
+        "x": 252,
+        "y": 410.78125,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 294.984375,
+          "y": 425.78125,
+          "w": 25.03125,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:70",
+      "text": "AWM",
+      "box": {
+        "x": 367,
+        "y": 410.78125,
+        "w": 111,
+        "h": 45.390625
+      },
+      "lines": [
+        {
+          "x": 406.984375,
+          "y": 425.78125,
+          "w": 31.03125,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        35,
+        37,
+        38
+      ],
+      "align": "center",
+      "fill": [
+        35,
+        37,
+        38
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "span:72",
+      "text": "1 AKM突击步枪·星之彩 ≤ 41,500",
+      "box": {
+        "x": 22,
+        "y": 464.171875,
+        "w": 456,
+        "h": 28.796875
+      },
+      "lines": [
+        {
+          "x": 33,
+          "y": 470.171875,
+          "w": 179.34375,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        26,
+        27,
+        28
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:74",
+      "text": "Escape from Tarkov inventory",
+      "box": {
+        "x": 22,
+        "y": 571.609375,
+        "w": 456,
+        "h": 19.59375
+      },
+      "lines": [
+        {
+          "x": 22,
+          "y": 571.609375,
+          "w": 209.453125,
+          "h": 19
+        }
+      ],
+      "fontSize": 14,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        26,
+        27,
+        28
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:75",
+      "text": "chamfered steel panels · cell grid",
+      "box": {
+        "x": 22,
+        "y": 591.203125,
+        "w": 187.953125,
+        "h": 16
+      },
+      "lines": [
+        {
+          "x": 22,
+          "y": 591.203125,
+          "w": 187.953125,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        211,
+        214,
+        216
+      ],
+      "background": [
+        26,
+        27,
+        28
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:76",
+      "box": {
+        "x": 500,
+        "y": 320,
+        "w": 480,
+        "h": 300
+      },
+      "fill": [
+        227,
+        223,
+        211
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "i:78",
+      "box": {
+        "x": 512,
+        "y": 336.6875,
+        "w": 12,
+        "h": 12
+      },
+      "fill": [
+        255,
+        90,
+        31
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:79",
+      "text": "三角洲 · 抢购控制台",
+      "box": {
+        "x": 532,
+        "y": 334.296875,
+        "w": 108.421875,
+        "h": 16.796875
+      },
+      "lines": [
+        {
+          "x": 532,
+          "y": 334.296875,
+          "w": 108.421875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        227,
+        223,
+        211
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "u:80",
+      "text": "启动抢购 F7",
+      "box": {
+        "x": 890.4375,
+        "y": 332,
+        "w": 77.5625,
+        "h": 21.390625
+      },
+      "lines": [
+        {
+          "x": 899.4375,
+          "y": 335,
+          "w": 59.5625,
+          "h": 15
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        90,
+        31
+      ],
+      "background": [
+        227,
+        223,
+        211
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:82",
+      "text": "游戏窗口",
+      "box": {
+        "x": 512,
+        "y": 361.390625,
+        "w": 148,
+        "h": 49
+      },
+      "lines": [
+        {
+          "x": 520,
+          "y": 375.390625,
+          "w": 44,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start",
+      "fill": [
+        236,
+        232,
+        220
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:83",
+      "text": "✕",
+      "box": {
+        "x": 520,
+        "y": 387.390625,
+        "w": 132,
+        "h": 13
+      },
+      "lines": [
+        {
+          "x": 520,
+          "y": 389.390625,
+          "w": 7.484375,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:84",
+      "text": "画面识别",
+      "box": {
+        "x": 666,
+        "y": 361.390625,
+        "w": 148,
+        "h": 49
+      },
+      "lines": [
+        {
+          "x": 674,
+          "y": 375.390625,
+          "w": 44,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start",
+      "fill": [
+        236,
+        232,
+        220
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:85",
+      "text": "✕",
+      "box": {
+        "x": 674,
+        "y": 387.390625,
+        "w": 132,
+        "h": 13
+      },
+      "lines": [
+        {
+          "x": 674,
+          "y": 389.390625,
+          "w": 7.484375,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:86",
+      "text": "时间校准",
+      "box": {
+        "x": 820,
+        "y": 361.390625,
+        "w": 148,
+        "h": 49
+      },
+      "lines": [
+        {
+          "x": 828,
+          "y": 375.390625,
+          "w": 44,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        255,
+        90,
+        31
+      ],
+      "align": "start",
+      "fill": [
+        255,
+        90,
+        31
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:87",
+      "text": "ok",
+      "box": {
+        "x": 828,
+        "y": 387.390625,
+        "w": 132,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 828,
+          "y": 387.390625,
+          "w": 11,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        255,
+        90,
+        31
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:88",
+      "text": "购买延迟",
+      "box": {
+        "x": 512,
+        "y": 416.390625,
+        "w": 148,
+        "h": 50
+      },
+      "lines": [
+        {
+          "x": 520,
+          "y": 430.390625,
+          "w": 44,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start",
+      "fill": [
+        236,
+        232,
+        220
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:89",
+      "text": "0ms",
+      "box": {
+        "x": 520,
+        "y": 442.390625,
+        "w": 132,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 520,
+          "y": 442.390625,
+          "w": 16.5,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:90",
+      "text": "品阶",
+      "box": {
+        "x": 666,
+        "y": 416.390625,
+        "w": 148,
+        "h": 50
+      },
+      "lines": [
+        {
+          "x": 674,
+          "y": 430.390625,
+          "w": 22,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start",
+      "fill": [
+        236,
+        232,
+        220
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:91",
+      "text": "不限",
+      "box": {
+        "x": 674,
+        "y": 442.390625,
+        "w": 132,
+        "h": 14
+      },
+      "lines": [
+        {
+          "x": 674,
+          "y": 445.390625,
+          "w": 18.328125,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:92",
+      "text": "路线",
+      "box": {
+        "x": 820,
+        "y": 416.390625,
+        "w": 148,
+        "h": 50
+      },
+      "lines": [
+        {
+          "x": 828,
+          "y": 430.390625,
+          "w": 22,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start",
+      "fill": [
+        236,
+        232,
+        220
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:93",
+      "text": "倒计时",
+      "box": {
+        "x": 828,
+        "y": 442.390625,
+        "w": 132,
+        "h": 14
+      },
+      "lines": [
+        {
+          "x": 828,
+          "y": 445.390625,
+          "w": 27.484375,
+          "h": 11
+        }
+      ],
+      "fontSize": 9.16667,
+      "fontWeight": 400,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        236,
+        232,
+        220
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:95",
+      "text": "Hardware Panel (roulette)",
+      "box": {
+        "x": 512,
+        "y": 571.609375,
+        "w": 456,
+        "h": 19.59375
+      },
+      "lines": [
+        {
+          "x": 512,
+          "y": 571.609375,
+          "w": 182.40625,
+          "h": 19
+        }
+      ],
+      "fontSize": 14,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        227,
+        223,
+        211
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:96",
+      "text": "labelled keys · silkscreen",
+      "box": {
+        "x": 512,
+        "y": 591.203125,
+        "w": 139.171875,
+        "h": 16
+      },
+      "lines": [
+        {
+          "x": 512,
+          "y": 591.203125,
+          "w": 139.171875,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        23,
+        22,
+        15
+      ],
+      "background": [
+        227,
+        223,
+        211
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:97",
+      "box": {
+        "x": 990,
+        "y": 320,
+        "w": 480,
+        "h": 300
+      },
+      "fill": [
+        14,
+        14,
+        14
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "div:98",
+      "box": {
+        "x": 1001.6943969726562,
+        "y": 331.0238342285156,
+        "w": 456.61126708984375,
+        "h": 46.95233154296875
+      },
+      "fill": [
+        255,
+        228,
+        94
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:99",
+      "text": "抢购控制台",
+      "box": {
+        "x": 1014.8494873046875,
+        "y": 346.4449462890625,
+        "w": 75.3551025390625,
+        "h": 22.30572509765625
+      },
+      "lines": [
+        {
+          "x": 1014.8494873046875,
+          "y": 346.4449462890625,
+          "w": 75.337646484375,
+          "h": 21.305877685546875
+        }
+      ],
+      "fontSize": 15,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        17,
+        17,
+        17
+      ],
+      "background": [
+        255,
+        228,
+        94
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:100",
+      "text": "启动抢购 F7",
+      "box": {
+        "x": 1367.87939453125,
+        "y": 343.2488708496094,
+        "w": 77.2501220703125,
+        "h": 18.137603759765625
+      },
+      "lines": [
+        {
+          "x": 1373.87841796875,
+          "y": 343.35357666015625,
+          "w": 65.238037109375,
+          "h": 17.131439208984375
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        255,
+        42,
+        42
+      ],
+      "align": "start",
+      "fill": [
+        255,
+        42,
+        42
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "div:101",
+      "box": {
+        "x": 1001.6943969726562,
+        "y": 384.0238037109375,
+        "w": 456.61126708984375,
+        "h": 46.952392578125
+      },
+      "fill": [
+        255,
+        42,
+        42
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:102",
+      "text": "游戏窗口 没找到",
+      "box": {
+        "x": 1014.8494873046875,
+        "y": 393.24932861328125,
+        "w": 109.818603515625,
+        "h": 22.90728759765625
+      },
+      "lines": [
+        {
+          "x": 1014.866943359375,
+          "y": 393.24932861328125,
+          "w": 109.8011474609375,
+          "h": 21.907440185546875
+        }
+      ],
+      "fontSize": 15,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        255,
+        42,
+        42
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "div:103",
+      "box": {
+        "x": 1001.6943969726562,
+        "y": 437.0238037109375,
+        "w": 456.61126708984375,
+        "h": 46.952392578125
+      },
+      "fill": [
+        17,
+        17,
+        17
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:104",
+      "text": "AKM星之彩 ≤41,500",
+      "box": {
+        "x": 1014.8494873046875,
+        "y": 451.161376953125,
+        "w": 148.8907470703125,
+        "h": 23.58929443359375
+      },
+      "lines": [
+        {
+          "x": 1014.8494873046875,
+          "y": 451.161376953125,
+          "w": 148.873291015625,
+          "h": 22.589447021484375
+        }
+      ],
+      "fontSize": 15,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        228,
+        94
+      ],
+      "background": [
+        17,
+        17,
+        17
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:106",
+      "text": "HK street signs (roulette)",
+      "box": {
+        "x": 1002,
+        "y": 571.609375,
+        "w": 456,
+        "h": 19.59375
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 571.609375,
+          "w": 177.734375,
+          "h": 19
+        }
+      ],
+      "fontSize": 14,
+      "fontWeight": 700,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        228,
+        94
+      ],
+      "background": [
+        14,
+        14,
+        14
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:107",
+      "text": "stacked signage · hazard colour",
+      "box": {
+        "x": 1002,
+        "y": 591.203125,
+        "w": 180.5625,
+        "h": 16
+      },
+      "lines": [
+        {
+          "x": 1002,
+          "y": 591.203125,
+          "w": 180.5625,
+          "h": 16
+        }
+      ],
+      "fontSize": 12,
+      "fontWeight": 400,
+      "fontFamily": "\"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        228,
+        94
+      ],
+      "background": [
+        14,
+        14,
+        14
+      ],
+      "align": "start"
+    }
+  ],
+  "media": []
+}

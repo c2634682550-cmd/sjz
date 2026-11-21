@@ -1,0 +1,2941 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "background": [
+    255,
+    255,
+    255
+  ],
+  "items": [
+    {
+      "kind": "block",
+      "id": "div:1",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 900
+      },
+      "fill": [
+        18,
+        20,
+        13
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "header:2",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 54
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "span:4",
+      "box": {
+        "x": 16,
+        "y": 15,
+        "w": 22,
+        "h": 22
+      },
+      "fill": [
+        109,
+        125,
+        58
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:5",
+      "text": "三角洲 · 抢购控制台",
+      "box": {
+        "x": 48,
+        "y": 16.25,
+        "w": 133.765625,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 48,
+          "y": 19.25,
+          "w": 133.765625,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:7",
+      "text": "抢购",
+      "box": {
+        "x": 865.234375,
+        "y": 6.75,
+        "w": 63.203125,
+        "h": 38.5
+      },
+      "lines": [
+        {
+          "x": 881.234375,
+          "y": 17.75,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:8",
+      "text": "目标库",
+      "box": {
+        "x": 930.4375,
+        "y": 6.75,
+        "w": 78.8125,
+        "h": 38.5
+      },
+      "lines": [
+        {
+          "x": 946.4375,
+          "y": 17.75,
+          "w": 46.8125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:9",
+      "text": "记录",
+      "box": {
+        "x": 1011.25,
+        "y": 6.75,
+        "w": 63.203125,
+        "h": 38.5
+      },
+      "lines": [
+        {
+          "x": 1027.25,
+          "y": 17.75,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:10",
+      "text": "分析",
+      "box": {
+        "x": 1076.453125,
+        "y": 6.75,
+        "w": 63.203125,
+        "h": 38.5
+      },
+      "lines": [
+        {
+          "x": 1092.453125,
+          "y": 17.75,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:11",
+      "text": "日记",
+      "box": {
+        "x": 1141.65625,
+        "y": 6.75,
+        "w": 63.203125,
+        "h": 38.5
+      },
+      "lines": [
+        {
+          "x": 1157.65625,
+          "y": 17.75,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:12",
+      "text": "设置",
+      "box": {
+        "x": 1206.859375,
+        "y": 6.75,
+        "w": 63.203125,
+        "h": 38.5
+      },
+      "lines": [
+        {
+          "x": 1222.859375,
+          "y": 17.75,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:13",
+      "text": "启动抢购",
+      "box": {
+        "x": 1290.0625,
+        "y": 6.25,
+        "w": 133.9375,
+        "h": 39.5
+      },
+      "lines": [
+        {
+          "x": 1310.0625,
+          "y": 19.25,
+          "w": 64.484375,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        23,
+        19,
+        10
+      ],
+      "background": [
+        201,
+        162,
+        77
+      ],
+      "align": "center",
+      "fill": [
+        201,
+        162,
+        77
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "kbd:14",
+      "text": "F7",
+      "box": {
+        "x": 1384.546875,
+        "y": 20.25,
+        "w": 19.453125,
+        "h": 12
+      },
+      "lines": [
+        {
+          "x": 1384.546875,
+          "y": 20.25,
+          "w": 19.453125,
+          "h": 12
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 600,
+      "fontFamily": "monospace",
+      "color": [
+        23,
+        19,
+        10
+      ],
+      "background": [
+        201,
+        162,
+        77
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "div:15",
+      "box": {
+        "x": 0,
+        "y": 54,
+        "w": 1440,
+        "h": 38.5
+      },
+      "fill": [
+        27,
+        30,
+        20
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "i:16",
+      "box": {
+        "x": 16,
+        "y": 68.75,
+        "w": 8,
+        "h": 8
+      },
+      "fill": [
+        143,
+        162,
+        74
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:17",
+      "text": "待命，等你开始",
+      "box": {
+        "x": 36,
+        "y": 63,
+        "w": 91,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 36,
+          "y": 66,
+          "w": 91,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:18",
+      "text": "共 1 条任务，1 条已启用",
+      "box": {
+        "x": 139,
+        "y": 63,
+        "w": 136.125,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 139,
+          "y": 66,
+          "w": 136.125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:19",
+      "text": "待命",
+      "box": {
+        "x": 1374.796875,
+        "y": 62,
+        "w": 49.203125,
+        "h": 21.5
+      },
+      "lines": [
+        {
+          "x": 1383.796875,
+          "y": 66,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "section:20",
+      "box": {
+        "x": 0,
+        "y": 92.5,
+        "w": 1440,
+        "h": 79
+      },
+      "fill": [
+        59,
+        65,
+        40
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "article:21",
+      "box": {
+        "x": 0,
+        "y": 92.5,
+        "w": 359.25,
+        "h": 78
+      },
+      "fill": [
+        27,
+        30,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:23",
+      "text": "游戏窗口",
+      "box": {
+        "x": 20,
+        "y": 104.5,
+        "w": 209,
+        "h": 15
+      },
+      "lines": [
+        {
+          "x": 20,
+          "y": 106.5,
+          "w": 48,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:24",
+      "text": "没找到游戏窗口",
+      "box": {
+        "x": 20,
+        "y": 119.5,
+        "w": 209,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 20,
+          "y": 122.5,
+          "w": 91,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:25",
+      "text": "先在游戏里打开交易行，再回来点重新检查",
+      "box": {
+        "x": 20,
+        "y": 143,
+        "w": 209,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 20,
+          "y": 143,
+          "w": 209,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:26",
+      "text": "重新检查",
+      "box": {
+        "x": 277.25,
+        "y": 119.25,
+        "w": 66,
+        "h": 24.5
+      },
+      "lines": [
+        {
+          "x": 288.25,
+          "y": 125.25,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        201,
+        162,
+        77
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "article:27",
+      "box": {
+        "x": 360.25,
+        "y": 92.5,
+        "w": 359.25,
+        "h": 78
+      },
+      "fill": [
+        27,
+        30,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:29",
+      "text": "画面识别",
+      "box": {
+        "x": 380.25,
+        "y": 104.5,
+        "w": 78,
+        "h": 15
+      },
+      "lines": [
+        {
+          "x": 380.25,
+          "y": 106.5,
+          "w": 48,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:30",
+      "text": "还没认出页面",
+      "box": {
+        "x": 380.25,
+        "y": 119.5,
+        "w": 78,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 380.25,
+          "y": 122.5,
+          "w": 78,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:31",
+      "text": "还没有识别结果",
+      "box": {
+        "x": 380.25,
+        "y": 143,
+        "w": 77,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 380.25,
+          "y": 143,
+          "w": 77,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:32",
+      "text": "重新检查",
+      "box": {
+        "x": 637.5,
+        "y": 119.25,
+        "w": 66,
+        "h": 24.5
+      },
+      "lines": [
+        {
+          "x": 648.5,
+          "y": 125.25,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        201,
+        162,
+        77
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "article:33",
+      "box": {
+        "x": 720.5,
+        "y": 92.5,
+        "w": 359.25,
+        "h": 78
+      },
+      "fill": [
+        27,
+        30,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:35",
+      "text": "时间校准",
+      "box": {
+        "x": 740.5,
+        "y": 104.5,
+        "w": 130.328125,
+        "h": 15
+      },
+      "lines": [
+        {
+          "x": 740.5,
+          "y": 106.5,
+          "w": 48,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:36",
+      "text": "已自动校准",
+      "box": {
+        "x": 740.5,
+        "y": 119.5,
+        "w": 130.328125,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 740.5,
+          "y": 122.5,
+          "w": 65,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:37",
+      "text": "偏差 +28ms · 9 样本 · 3s 前",
+      "box": {
+        "x": 740.5,
+        "y": 143,
+        "w": 130.328125,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 740.5,
+          "y": 143,
+          "w": 130.328125,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "article:38",
+      "box": {
+        "x": 1080.75,
+        "y": 92.5,
+        "w": 359.25,
+        "h": 78
+      },
+      "fill": [
+        27,
+        30,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "small:40",
+      "text": "购买延迟",
+      "box": {
+        "x": 1100.75,
+        "y": 104.5,
+        "w": 143,
+        "h": 15
+      },
+      "lines": [
+        {
+          "x": 1100.75,
+          "y": 106.5,
+          "w": 48,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:41",
+      "text": "0 毫秒",
+      "box": {
+        "x": 1100.75,
+        "y": 119.5,
+        "w": 143,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 1100.75,
+          "y": 122.5,
+          "w": 36.671875,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:42",
+      "text": "动态调整已开，点击更快更准",
+      "box": {
+        "x": 1100.75,
+        "y": 143,
+        "w": 143,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 1100.75,
+          "y": 143,
+          "w": 143,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "section:44",
+      "box": {
+        "x": 0,
+        "y": 171.5,
+        "w": 1080,
+        "h": 698
+      }
+    },
+    {
+      "kind": "text",
+      "id": "b:46",
+      "text": "任务清单",
+      "box": {
+        "x": 16,
+        "y": 191.5,
+        "w": 72,
+        "h": 22.5
+      },
+      "lines": [
+        {
+          "x": 16,
+          "y": 194.5,
+          "w": 72,
+          "h": 15
+        }
+      ],
+      "fontSize": 15,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:47",
+      "text": "共 3 条任务",
+      "box": {
+        "x": 100,
+        "y": 193.5,
+        "w": 65.859375,
+        "h": 19.5
+      },
+      "lines": [
+        {
+          "x": 100,
+          "y": 196.5,
+          "w": 65.859375,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:48",
+      "text": "+ 添加任务",
+      "box": {
+        "x": 974.640625,
+        "y": 187.5,
+        "w": 88.359375,
+        "h": 31.5
+      },
+      "lines": [
+        {
+          "x": 987.640625,
+          "y": 196.5,
+          "w": 62.359375,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "th:52",
+      "text": "#",
+      "box": {
+        "x": 16,
+        "y": 231,
+        "w": 44.4375,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 24,
+          "y": 239.5,
+          "w": 8.453125,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "th:53",
+      "text": "目标",
+      "box": {
+        "x": 60.4375,
+        "y": 231,
+        "w": 508.875,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 68.4375,
+          "y": 241,
+          "w": 24.40625,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "th:54",
+      "text": "成色·磨损",
+      "box": {
+        "x": 569.3125,
+        "y": 231,
+        "w": 125.625,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 577.3125,
+          "y": 241,
+          "w": 53.125,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "th:55",
+      "text": "价格区间",
+      "box": {
+        "x": 694.9375,
+        "y": 231,
+        "w": 121.21875,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 702.9375,
+          "y": 241,
+          "w": 48.8125,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "th:56",
+      "text": "限量",
+      "box": {
+        "x": 816.15625,
+        "y": 231,
+        "w": 73.421875,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 824.15625,
+          "y": 241,
+          "w": 24.40625,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "th:57",
+      "text": "已抢",
+      "box": {
+        "x": 889.578125,
+        "y": 231,
+        "w": 73.421875,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 897.578125,
+          "y": 241,
+          "w": 24.40625,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "th:58",
+      "text": "状态",
+      "box": {
+        "x": 963,
+        "y": 231,
+        "w": 100,
+        "h": 28
+      },
+      "lines": [
+        {
+          "x": 971,
+          "y": 241,
+          "w": 24.40625,
+          "h": 10
+        }
+      ],
+      "fontSize": 10,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "left"
+    },
+    {
+      "kind": "text",
+      "id": "td:61",
+      "text": "1",
+      "box": {
+        "x": 16,
+        "y": 259,
+        "w": 44.4375,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 24,
+          "y": 273,
+          "w": 4.328125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:62",
+      "text": "AKM突击步枪·星之彩",
+      "box": {
+        "x": 60.4375,
+        "y": 259,
+        "w": 508.875,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 68.4375,
+          "y": 273,
+          "w": 120.78125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:63",
+      "text": "不限",
+      "box": {
+        "x": 569.3125,
+        "y": 259,
+        "w": 125.625,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 577.3125,
+          "y": 273,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:64",
+      "text": "≤ 41,500",
+      "box": {
+        "x": 694.9375,
+        "y": 259,
+        "w": 121.21875,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 702.9375,
+          "y": 273,
+          "w": 48.65625,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:65",
+      "text": "1",
+      "box": {
+        "x": 816.15625,
+        "y": 259,
+        "w": 73.421875,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 824.15625,
+          "y": 273,
+          "w": 4.328125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:66",
+      "text": "0",
+      "box": {
+        "x": 889.578125,
+        "y": 259,
+        "w": 73.421875,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 897.578125,
+          "y": 273,
+          "w": 7.1875,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:67",
+      "text": "等待",
+      "box": {
+        "x": 963,
+        "y": 259,
+        "w": 100,
+        "h": 41
+      },
+      "lines": [
+        {
+          "x": 971,
+          "y": 273,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        35,
+        39,
+        26
+      ],
+      "align": "start",
+      "fill": [
+        35,
+        39,
+        26
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:69",
+      "text": "2",
+      "box": {
+        "x": 16,
+        "y": 300,
+        "w": 44.4375,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 24,
+          "y": 313.5,
+          "w": 6.71875,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:70",
+      "text": "M4A1突击步枪·暗影",
+      "box": {
+        "x": 60.4375,
+        "y": 300,
+        "w": 508.875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 68.4375,
+          "y": 313.5,
+          "w": 111.03125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:71",
+      "text": "极品",
+      "box": {
+        "x": 569.3125,
+        "y": 300,
+        "w": 125.625,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 577.3125,
+          "y": 313.5,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:72",
+      "text": "≤ 68,000",
+      "box": {
+        "x": 694.9375,
+        "y": 300,
+        "w": 121.21875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 702.9375,
+          "y": 313.5,
+          "w": 50.703125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:73",
+      "text": "2",
+      "box": {
+        "x": 816.15625,
+        "y": 300,
+        "w": 73.421875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 824.15625,
+          "y": 313.5,
+          "w": 6.71875,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:74",
+      "text": "1",
+      "box": {
+        "x": 889.578125,
+        "y": 300,
+        "w": 73.421875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 897.578125,
+          "y": 313.5,
+          "w": 4.328125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:75",
+      "text": "运行中",
+      "box": {
+        "x": 963,
+        "y": 300,
+        "w": 100,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 971,
+          "y": 313.5,
+          "w": 39,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        143,
+        162,
+        74
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:77",
+      "text": "3",
+      "box": {
+        "x": 16,
+        "y": 340.5,
+        "w": 44.4375,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 24,
+          "y": 354,
+          "w": 6.875,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:78",
+      "text": "未命名任务·这是一个非常非常长的目标名称用来测试截断",
+      "box": {
+        "x": 60.4375,
+        "y": 340.5,
+        "w": 508.875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 68.4375,
+          "y": 354,
+          "w": 327.765625,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 600,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:79",
+      "text": "不限",
+      "box": {
+        "x": 569.3125,
+        "y": 340.5,
+        "w": 125.625,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 577.3125,
+          "y": 354,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:80",
+      "text": "不限",
+      "box": {
+        "x": 694.9375,
+        "y": 340.5,
+        "w": 121.21875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 702.9375,
+          "y": 354,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:81",
+      "text": "1",
+      "box": {
+        "x": 816.15625,
+        "y": 340.5,
+        "w": 73.421875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 824.15625,
+          "y": 354,
+          "w": 4.328125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:82",
+      "text": "0",
+      "box": {
+        "x": 889.578125,
+        "y": 340.5,
+        "w": 73.421875,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 897.578125,
+          "y": 354,
+          "w": 7.1875,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:83",
+      "text": "等待",
+      "box": {
+        "x": 963,
+        "y": 340.5,
+        "w": 100,
+        "h": 40.5
+      },
+      "lines": [
+        {
+          "x": 971,
+          "y": 354,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        18,
+        20,
+        13
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "aside:84",
+      "box": {
+        "x": 1080,
+        "y": 171.5,
+        "w": 360,
+        "h": 698
+      },
+      "fill": [
+        27,
+        30,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "b:86",
+      "text": "任务设置",
+      "box": {
+        "x": 1096,
+        "y": 187.5,
+        "w": 328,
+        "h": 22.5
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 190.5,
+          "w": 72,
+          "h": 15
+        }
+      ],
+      "fontSize": 15,
+      "fontWeight": 700,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        220,
+        216,
+        196
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:87",
+      "text": "AKM突击步枪·星之彩",
+      "box": {
+        "x": 1096,
+        "y": 213,
+        "w": 120.78125,
+        "h": 13
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 213,
+          "w": 120.78125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "label:88",
+      "text": "赛季目标",
+      "box": {
+        "x": 1096,
+        "y": 241.5,
+        "w": 328,
+        "h": 49.5
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 243.5,
+          "w": 51.046875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "select:89",
+      "box": {
+        "x": 1096,
+        "y": 262,
+        "w": 328,
+        "h": 29
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:90",
+      "text": "成色选择",
+      "box": {
+        "x": 1096,
+        "y": 303,
+        "w": 328,
+        "h": 49.5
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 305,
+          "w": 51.046875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "select:91",
+      "box": {
+        "x": 1096,
+        "y": 323.5,
+        "w": 328,
+        "h": 29
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:92",
+      "text": "品阶",
+      "box": {
+        "x": 1096,
+        "y": 364.5,
+        "w": 328,
+        "h": 51
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 366.5,
+          "w": 25.53125,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:94",
+      "text": "不限",
+      "box": {
+        "x": 1095,
+        "y": 385,
+        "w": 110.328125,
+        "h": 30.5
+      },
+      "lines": [
+        {
+          "x": 1139.15625,
+          "y": 394,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        109,
+        125,
+        58
+      ],
+      "align": "center",
+      "fill": [
+        109,
+        125,
+        58
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "button:95",
+      "text": "极品",
+      "box": {
+        "x": 1204.328125,
+        "y": 385,
+        "w": 110.34375,
+        "h": 30.5
+      },
+      "lines": [
+        {
+          "x": 1248.5,
+          "y": 394,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:96",
+      "text": "优品",
+      "box": {
+        "x": 1313.671875,
+        "y": 385,
+        "w": 110.328125,
+        "h": 30.5
+      },
+      "lines": [
+        {
+          "x": 1357.828125,
+          "y": 394,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "label:97",
+      "text": "价格区间",
+      "box": {
+        "x": 1096,
+        "y": 427.5,
+        "w": 328,
+        "h": 53
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 429.5,
+          "w": 51.046875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "input:99",
+      "box": {
+        "x": 1096,
+        "y": 448,
+        "w": 149.609375,
+        "h": 32.5
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "i:100",
+      "text": "至",
+      "box": {
+        "x": 1253.609375,
+        "y": 456,
+        "w": 12.765625,
+        "h": 16.5
+      },
+      "lines": [
+        {
+          "x": 1253.609375,
+          "y": 458,
+          "w": 12.765625,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "input:101",
+      "box": {
+        "x": 1274.375,
+        "y": 448,
+        "w": 149.625,
+        "h": 32.5
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:102",
+      "text": "本轮限量",
+      "box": {
+        "x": 1096,
+        "y": 492.5,
+        "w": 328,
+        "h": 53
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 494.5,
+          "w": 51.046875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "input:103",
+      "box": {
+        "x": 1096,
+        "y": 513,
+        "w": 328,
+        "h": 32.5
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:104",
+      "text": "抢购路线",
+      "box": {
+        "x": 1096,
+        "y": 557.5,
+        "w": 328,
+        "h": 51
+      },
+      "lines": [
+        {
+          "x": 1096,
+          "y": 559.5,
+          "w": 51.046875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:106",
+      "text": "公示期倒计时",
+      "box": {
+        "x": 1095,
+        "y": 578,
+        "w": 110.328125,
+        "h": 30.5
+      },
+      "lines": [
+        {
+          "x": 1117.15625,
+          "y": 587,
+          "w": 66,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        109,
+        125,
+        58
+      ],
+      "align": "center",
+      "fill": [
+        109,
+        125,
+        58
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "button:107",
+      "text": "在售列表",
+      "box": {
+        "x": 1204.328125,
+        "y": 578,
+        "w": 110.34375,
+        "h": 30.5
+      },
+      "lines": [
+        {
+          "x": 1237.5,
+          "y": 587,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:108",
+      "text": "商品页按钮",
+      "box": {
+        "x": 1313.671875,
+        "y": 578,
+        "w": 110.328125,
+        "h": 30.5
+      },
+      "lines": [
+        {
+          "x": 1341.328125,
+          "y": 587,
+          "w": 55,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:110",
+      "text": "删除任务",
+      "box": {
+        "x": 1096,
+        "y": 816,
+        "w": 82,
+        "h": 37.5
+      },
+      "lines": [
+        {
+          "x": 1111,
+          "y": 828,
+          "w": 52,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        232,
+        121,
+        95
+      ],
+      "background": [
+        27,
+        30,
+        20
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:111",
+      "text": "保存修改",
+      "box": {
+        "x": 1329.75,
+        "y": 816,
+        "w": 94.25,
+        "h": 37.5
+      },
+      "lines": [
+        {
+          "x": 1347.75,
+          "y": 828,
+          "w": 58.25,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "background": [
+        109,
+        125,
+        58
+      ],
+      "align": "center",
+      "fill": [
+        109,
+        125,
+        58
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "footer:112",
+      "box": {
+        "x": 0,
+        "y": 869.5,
+        "w": 1440,
+        "h": 30.5
+      },
+      "fill": [
+        14,
+        16,
+        9
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "span:113",
+      "text": "已连接",
+      "box": {
+        "x": 16,
+        "y": 877.5,
+        "w": 37.625,
+        "h": 16.5
+      },
+      "lines": [
+        {
+          "x": 16,
+          "y": 879.5,
+          "w": 37.625,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:114",
+      "text": "任务 1",
+      "box": {
+        "x": 75.625,
+        "y": 877.5,
+        "w": 34.78125,
+        "h": 16.5
+      },
+      "lines": [
+        {
+          "x": 75.625,
+          "y": 879.5,
+          "w": 34.78125,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:115",
+      "text": "队列 1",
+      "box": {
+        "x": 132.40625,
+        "y": 877.5,
+        "w": 34.78125,
+        "h": 16.5
+      },
+      "lines": [
+        {
+          "x": 132.40625,
+          "y": 879.5,
+          "w": 34.78125,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:116",
+      "text": "引擎待命",
+      "box": {
+        "x": 189.1875,
+        "y": 877.5,
+        "w": 50.171875,
+        "h": 16.5
+      },
+      "lines": [
+        {
+          "x": 189.1875,
+          "y": 879.5,
+          "w": 50.171875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:117",
+      "text": "v1.1.2",
+      "box": {
+        "x": 261.359375,
+        "y": 877.5,
+        "w": 32.734375,
+        "h": 16.5
+      },
+      "lines": [
+        {
+          "x": 261.359375,
+          "y": 879.5,
+          "w": 32.734375,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "Bahnschrift, \"DIN Alternate\", \"Microsoft YaHei\", sans-serif",
+      "color": [
+        141,
+        140,
+        118
+      ],
+      "background": [
+        14,
+        16,
+        9
+      ],
+      "align": "start"
+    }
+  ],
+  "media": []
+}

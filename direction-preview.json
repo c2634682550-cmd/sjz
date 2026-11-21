@@ -1,0 +1,257 @@
+{
+  "schema": "design-pipeline.direction-preview.v1",
+  "changeId": "sjz",
+  "applicability": {
+    "status": "required",
+    "reason": "open-surface"
+  },
+  "medium": "app",
+  "context": "Owner asked for a military look in the style of Call of Duty (tactical HUD feel); component library is Astryx, not hand-written components.",
+  "comparison": {
+    "brief": {
+      "path": "direction-previews/brief.md",
+      "sha256": "9add48d9106dc1a3e5b0083ed6794b784dd2bb0d3a82dcd9800965b4bb60627f"
+    },
+    "index": {
+      "path": "direction-previews/index.html",
+      "sha256": "91515e2079ad33cee8bc0c8e545ca5d6bd9d719cbe7fed03d8f5142b302ab5c2"
+    },
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "contentFixtureSha256": "c8f82fa3c9a1081680cbafb40d041b09eae2c5706cc320731572ef76ef453a74",
+    "stateCoverage": [
+      "default",
+      "error (game window not found)",
+      "running task row",
+      "selected row",
+      "long text truncation",
+      "empty price range"
+    ]
+  },
+  "cards": [
+    {
+      "id": "ward-menus",
+      "logic": "designer",
+      "source": {
+        "name": "Infinity Ward (Call of Duty menus and loadout UI)"
+      },
+      "borrowed": "Bone-white caps with wide tracking on olive-black, top tab bar with one tan underline, flat list left and a detail column right, chamfered (clipped-corner) action button; tan accent under 10% of the surface.",
+      "hero": "The task list itself, with the selected row carrying the only tan marker.",
+      "skeleton": "Top tabs, four status strips, task table left, settings column right.",
+      "boldness": "Chamfered tan start button with stencil-width letterspacing.",
+      "contentForm": "Four status checks become olive/red edged strips; the queue reads like a loadout list."
+    },
+    {
+      "id": "vignelli-manual",
+      "logic": "designer",
+      "source": {
+        "name": "Massimo Vignelli (NYC Transit Standards Manual)"
+      },
+      "borrowed": "One column, ruled tables, a double rule under the letterhead, one signal red used only for state and the stamp, typewriter body on khaki paper.",
+      "hero": "The letterhead 'OPERATION ORDER · 抢购令 No.001' and the rubber-stamp start button.",
+      "skeleton": "Letterhead, status line, four-cell check strip, ruled task table, settings as a form block below.",
+      "boldness": "The slightly rotated red stamp as the start control.",
+      "contentForm": "A buy order is a document: tasks are numbered lines, settings are the form fields below them."
+    },
+    {
+      "id": "cod-warzone-ui",
+      "logic": "reference",
+      "source": {
+        "name": "Call of Duty: Warzone / Modern Warfare in-game HUD",
+        "url": "https://www.callofduty.com/",
+        "seen": false,
+        "unseenReason": "callofduty.com navigation timed out at 30 s in the capture browser; the in-game HUD is not a web page, so no board could be captured."
+      },
+      "borrowed": "Readouts anchored to screen corners, thin hairlines with corner ticks, mono numerals, one hot accent colour on a near-black field.",
+      "hero": "Four-corner readout of state, hotkey, checks and current target.",
+      "skeleton": "Left rail, status HUD strip, framed task table, framed inspector.",
+      "boldness": "Corner brackets on every panel and an outlined orange start key.",
+      "contentForm": "Run state and the F7 hotkey sit at the corners where a player looks first."
+    },
+    {
+      "id": "tarkov-inventory",
+      "logic": "reference",
+      "source": {
+        "name": "Escape from Tarkov (official site and inventory UI)",
+        "url": "https://www.escapefromtarkov.com/",
+        "seen": true,
+        "board": {
+          "path": "direction-previews/refs/tarkov/screenshot.png",
+          "sha256": "f4c63f2e7b2b171b0a57b5e0720bce429c87ff4cb4e82f32fa167f55cf9d3aaa"
+        }
+      },
+      "borrowed": "Chamfered-corner steel buttons and panels (45-degree clipped corners), brushed grey surfaces, dark glass overlay panels, cell-grid inventory.",
+      "hero": "The grid of item cells with one selected cell lit.",
+      "skeleton": "Header, cell grid, selected-row strip.",
+      "boldness": "Clipped-corner steel panel silhouette.",
+      "contentForm": "Targets are inventory items: a cell per weapon, the selected one lit."
+    },
+    {
+      "id": "hardware-panel",
+      "logic": "roulette",
+      "source": {
+        "second": 54,
+        "section": "app",
+        "number": 1,
+        "style": "硬件面板 Hardware Panel（Teenage Engineering式，OP-1 / EP-133 的界面语言）",
+        "specimen": "assets/style-specimens/app/01-hardware-panel.html",
+        "fidelity": 85,
+        "skipped": [],
+        "pool": [
+          1,
+          5,
+          6
+        ]
+      },
+      "borrowed": "Labelled keys with silkscreen captions, physical key shadow, one orange active key on a warm grey face.",
+      "hero": "A 3x2 bank of keys carrying the four checks plus grade and route.",
+      "skeleton": "Header, key bank, caption line.",
+      "boldness": "Keys that look pressable with a hard bottom shadow.",
+      "contentForm": "Each check and setting is a key whose label and value fit in two lines."
+    },
+    {
+      "id": "hk-street-signs",
+      "logic": "roulette",
+      "source": {
+        "second": 54,
+        "section": "east",
+        "number": 6,
+        "style": "香港街招与招牌 Hong Kong Street Signs",
+        "specimen": "assets/style-specimens/east/06-hk-street-signs.html",
+        "fidelity": 80,
+        "skipped": [],
+        "pool": [
+          6,
+          8,
+          12
+        ]
+      },
+      "borrowed": "Stacked saturated signboards, hazard yellow/red/black, slight rotation, heavy CJK display weight.",
+      "hero": "Three stacked signs: product, error, current target.",
+      "skeleton": "Vertical stack of full-width signs.",
+      "boldness": "Error state as a red sign across the whole width.",
+      "contentForm": "Errors and the active task become signage, shouted rather than listed."
+    }
+  ],
+  "thumbs": {
+    "html": {
+      "path": "direction-previews/thumbs.html",
+      "sha256": "c0d8b4b1ea086a505085df7b11546357b8df852cd9e42ba687853b0f7c9e39e5"
+    },
+    "png": {
+      "path": "direction-previews/thumbs/screenshot.png",
+      "sha256": "f1bfc4bd6c5e436af8a3477c5c3967d173c4629eeb0cdd220c6e60b813402266"
+    }
+  },
+  "directions": [
+    {
+      "id": "dir-1",
+      "name": "Field Manual",
+      "thesis": "Olive-black military menu where tan appears only on the selected row and the start button.",
+      "signature": "Chamfered tan start button with wide-tracked caps.",
+      "axes": {
+        "luminance": "dark olive-black",
+        "typeFamily": "condensed DIN-style sans, wide-tracked caps",
+        "color": "olive + bone + one tan",
+        "layout": "top tabs, list left, detail right",
+        "density": "dense",
+        "era": "modern military realism",
+        "material": "flat matte with clipped corners"
+      },
+      "html": {
+        "path": "direction-previews/dir-1.html",
+        "sha256": "193a729f0fa5c6f6d201f4ca795d65c34a1cc05bb95e9f163aaa9f27b231be27"
+      },
+      "screenshot": {
+        "path": "direction-previews/dir-1/screenshot.png",
+        "sha256": "3b54ec392803bfb82a5d1f24509fb9ee21ad27057916b70932d602d13220948e"
+      },
+      "card": "ward-menus",
+      "overdone": false,
+      "reasons": {
+        "alone": "A dense, readable operator console with a clear primary action and clear error strips.",
+        "distinct": "Only dark olive version with top tabs and chamfered corners; dir-2 is light paper, dir-3 is near-black with a left rail.",
+        "ledger": "Recent deliveries are light, centred pingfang pages; this is dark, left-aligned, DIN-style.",
+        "restraint": "One accent; no props; flat fills."
+      }
+    },
+    {
+      "id": "dir-2",
+      "name": "Ops Order",
+      "thesis": "A khaki operation-order sheet: the buy list is a document with ruled lines and one red stamp.",
+      "signature": "Rotated red rubber-stamp start button on a double-ruled letterhead.",
+      "axes": {
+        "luminance": "light khaki paper",
+        "typeFamily": "typewriter monospace with song-style CJK",
+        "color": "khaki + ink + one signal red",
+        "layout": "single-column document flow",
+        "density": "medium",
+        "era": "1970s field documents",
+        "material": "paper with ink rules"
+      },
+      "html": {
+        "path": "direction-previews/dir-2.html",
+        "sha256": "375982700e53f7ac075f3353b91d5754672dc8e2d9890d71791a10d56e88447c"
+      },
+      "screenshot": {
+        "path": "direction-previews/dir-2/screenshot.png",
+        "sha256": "53bbe984bc179696ee987434cdd4124c85bb1f93a527a84192aece4d40b2849b"
+      },
+      "card": "vignelli-manual",
+      "overdone": false,
+      "reasons": {
+        "alone": "Reads as a clear order sheet; all state and controls fit on one page.",
+        "distinct": "Only light, paper, single-column version; others are dark and panelled.",
+        "ledger": "Light like recent deliveries but khaki/typewriter/ruled, not centred pingfang.",
+        "restraint": "Stamp is the only gesture; no texture images."
+      }
+    },
+    {
+      "id": "dir-3",
+      "name": "Tactical HUD",
+      "thesis": "Near-black HUD with hairline frames, corner ticks and a single hazard orange.",
+      "signature": "Corner-bracket frames and an outlined orange start key.",
+      "axes": {
+        "luminance": "near-black",
+        "typeFamily": "light DIN-style sans with mono readouts",
+        "color": "graphite + one hazard orange",
+        "layout": "left rail nav, check strip, table and inspector",
+        "density": "medium-dense",
+        "era": "near-future game HUD",
+        "material": "glass hairlines"
+      },
+      "html": {
+        "path": "direction-previews/dir-3.html",
+        "sha256": "1683fda0950f4c04182269e62d4052f592ef022165dfce0195532bbd386d21e3"
+      },
+      "screenshot": {
+        "path": "direction-previews/dir-3/screenshot.png",
+        "sha256": "67869a1cc9ecde3ef39568a22dadcf374634b016384316404e2a0c4b05b373ee"
+      },
+      "card": "cod-warzone-ui",
+      "overdone": false,
+      "reasons": {
+        "alone": "A calm, scannable dashboard with state at a glance.",
+        "distinct": "Only left-rail near-black HUD; dir-1 is olive top-tabbed, dir-2 is paper.",
+        "ledger": "Dark with orange accent; recent deliveries had no accent and were light.",
+        "restraint": "No glow or gradients; corner ticks are the one decoration."
+      }
+    }
+  ],
+  "decision": {
+    "status": "selected",
+    "selectedDirectionId": "dir-1",
+    "selectedDirectionIds": [
+      "dir-1",
+      "dir-3"
+    ],
+    "mix": {
+      "colour": "dir-1",
+      "navigation": "dir-3"
+    },
+    "rationale": "选 dir-1，配色加 dir-3 的导轨。但我觉得还是太AI了，不够解构主义，加上我们的数学工业风格，很极简。",
+    "by": "owner"
+  }
+}

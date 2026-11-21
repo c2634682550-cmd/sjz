@@ -199,7 +199,7 @@ SWITCHES = [
     },
     {
         "key": "fire.jitter", "group": "抢购设置", "label": "随机抖动",
-        "kind": "int", "path": "fire_jitter_ms", "default": 0, "hint": "毫秒",
+        "kind": "int", "path": "fire_jitter_ms", "default": 10, "hint": "毫秒",
         "desc": "在延迟上再加 0~N 毫秒随机量，避免每次节奏完全一样",
     },
     {

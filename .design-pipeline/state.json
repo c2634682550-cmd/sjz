@@ -1,0 +1,89 @@
+{
+  "schema": "design-pipeline.workflow-state.v1",
+  "deliverable": "ui",
+  "tier": "standard",
+  "mode": "brief",
+  "director": null,
+  "assistedBy": "Claude Code Sonnet 5.5",
+  "decisions": {
+    "intake": {
+      "answer": "product: 三角洲抢购控制台，一个人在桌面浏览器/pywebview 里配任务并启停抢购。audience: 本人及代理的人，仅桌面。content: 真实任务/目标库/记录数据，含空/加载/错误/长文本状态。assets: 只用自有素材，系统字体，logo 沿用现有。组件库: 用 Astryx 设计系统，不自己手写组件。",
+      "briefSha256": "sha256:a3fa4610653b20f07488992c4491c9c1869b34f5d3352d63a35cc82549ae6a3c",
+      "by": "owner"
+    },
+    "roles": [
+      {
+        "stage": "intake",
+        "by": "owner",
+        "answer": "product: 三角洲抢购控制台，一个人在桌面浏览器/pywebview 里配任务并启停抢购。audience: 本人及代理的人，仅桌面。content: 真实任务/目标库/记录数据，含空/加载/错误/长文本状态。assets: 只用自有素材，系统字体，logo 沿用现有。组件库: 用 Astryx 设计系统，不自己手写组件。",
+        "at": "2026-11-21T11:47:55.802Z"
+      },
+      {
+        "stage": "intake",
+        "by": "owner",
+        "verdict": "accept",
+        "answer": "Need: 三角洲抢购控制台，一个人在桌面上配任务、启停抢购；界面要干净好用，去掉 AI 味。\nAudience: 本人和代理的人，仅桌面（浏览器或 pywebview）。\nScene: 开着游戏旁边盯着用，信息密、要快速扫读，不是展示页（my guess）。\nTone: 军事风，参考 COD（使命召唤）的战术 HUD 质感，克制、不花哨（owner 指定军事/COD；克制是 my guess）。\nUnstated expectations: 保持现有功能与 id 不变；离线可用；用 Astryx 组件库而不是手写组件（my guess）。\nReal brands: Call of Duty (owner reference)\nI'll make several real directions for you to see.",
+        "at": "2026-11-21T11:48:38.829Z"
+      },
+      {
+        "stage": "concept",
+        "by": "owner",
+        "choice": "dir-1,dir-3",
+        "answer": "选 dir-1，配色加 dir-3 的导轨。但我觉得还是太AI了，不够解构主义，加上我们的数学工业风格，很极简。",
+        "at": "2026-11-21T12:02:54.530Z"
+      }
+    ],
+    "playback": "Need: 三角洲抢购控制台，一个人在桌面上配任务、启停抢购；界面要干净好用，去掉 AI 味。\nAudience: 本人和代理的人，仅桌面（浏览器或 pywebview）。\nScene: 开着游戏旁边盯着用，信息密、要快速扫读，不是展示页（my guess）。\nTone: 军事风，参考 COD（使命召唤）的战术 HUD 质感，克制、不花哨（owner 指定军事/COD；克制是 my guess）。\nUnstated expectations: 保持现有功能与 id 不变；离线可用；用 Astryx 组件库而不是手写组件（my guess）。\nReal brands: Call of Duty (owner reference)\nI'll make several real directions for you to see.",
+    "playbacks": [
+      {
+        "verdict": "accept",
+        "at": "2026-11-21T11:48:38.826Z",
+        "by": "owner"
+      }
+    ],
+    "concept": "dir-1,dir-3",
+    "conceptNotes": "选 dir-1，配色加 dir-3 的导轨。但我觉得还是太AI了，不够解构主义，加上我们的数学工业风格，很极简。",
+    "conceptMix": {
+      "colour": "dir-1",
+      "navigation": "dir-3"
+    }
+  },
+  "gates": {},
+  "rules": [
+    {
+      "text": "还是太AI了，不够解构主义，要加上我们的数学工业风格，很极简",
+      "from": "direction taste",
+      "scope": "object",
+      "object": {
+        "stage": "review"
+      },
+      "since": 2
+    }
+  ],
+  "createdAt": "2026-11-21T11:47:02.557Z",
+  "delegation": {
+    "intake": {
+      "to": "owner",
+      "set": "default"
+    },
+    "concept": {
+      "to": "owner",
+      "set": "default"
+    },
+    "deliver": {
+      "to": "agent",
+      "set": "default"
+    },
+    "review": {
+      "to": "owner",
+      "locked": true,
+      "set": "default"
+    },
+    "creative-intent": {
+      "to": "owner",
+      "locked": true,
+      "set": "default"
+    }
+  },
+  "updatedAt": "2026-11-21T12:02:54.536Z"
+}

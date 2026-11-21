@@ -216,7 +216,7 @@ DEFAULTS = {
     "follow_skip_done": True,
     # 开点节奏
     "fire_delay_ms": 0,           # 解锁后再等多久开点
-    "fire_jitter_ms": 0,          # 额外随机抖动上限
+    "fire_jitter_ms": 10,         # 额外随机抖动上限（默认开：节奏不重复）
     "fire_adaptive": True,        # 按上一轮实测耗时自动调延迟
     "fire_verify": True,          # 必须看到结算弹窗才算成交
     # 休市截前（05:00-08:00 专用）

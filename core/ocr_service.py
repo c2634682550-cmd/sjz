@@ -27,6 +27,7 @@ PaddleX 服务连跑二十几个小时后会明显退化：实测单次识别从
 前两种会**等引擎空闲**再动手 —— 正在抢购的一轮里重启没有意义，蓝绿虽然
 不断流，但会占显存和带宽。等不到空闲就按 idle_wait_s 超时后照做。
 """
+import re
 import os
 import socket
 import subprocess
@@ -296,6 +297,8 @@ class Supervisor:
         去掉异常类名和错误码。
         """
         s = " ".join(str(err or "").split())
+        # 用户机器上的完整路径只留文件名，不把虚拟环境目录摆给用户看
+        s = re.sub(r"[A-Za-z]:[\x5c/](?:[^\x5c/\s]+[\x5c/])*([^\x5c/\s；;，,。]+)", lambda m: m.group(1), s)
         for tok in ("FileNotFoundError", "OSError", "RuntimeError", "Exception",
                     "Traceback", "WinError"):
             s = s.replace(tok, "")

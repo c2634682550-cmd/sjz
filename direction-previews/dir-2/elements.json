@@ -1,0 +1,2916 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "background": [
+    255,
+    255,
+    255
+  ],
+  "items": [
+    {
+      "kind": "block",
+      "id": "div:1",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 900
+      },
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "header:2",
+      "box": {
+        "x": 28,
+        "y": 18,
+        "w": 1384,
+        "h": 64.140625
+      }
+    },
+    {
+      "kind": "text",
+      "id": "b:4",
+      "text": "三角洲 · 抢购控制台",
+      "box": {
+        "x": 28,
+        "y": 24,
+        "w": 296.46875,
+        "h": 22
+      },
+      "lines": [
+        {
+          "x": 28,
+          "y": 24,
+          "w": 296.46875,
+          "h": 22
+        }
+      ],
+      "fontSize": 22,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:6",
+      "text": "抢购",
+      "box": {
+        "x": 664.421875,
+        "y": 43,
+        "w": 28,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 664.421875,
+          "y": 48,
+          "w": 28,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:7",
+      "text": "目标库",
+      "box": {
+        "x": 710.421875,
+        "y": 43,
+        "w": 39,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 710.421875,
+          "y": 48,
+          "w": 39,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:8",
+      "text": "记录",
+      "box": {
+        "x": 767.421875,
+        "y": 43,
+        "w": 26,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 767.421875,
+          "y": 48,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:9",
+      "text": "分析",
+      "box": {
+        "x": 811.421875,
+        "y": 43,
+        "w": 26,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 811.421875,
+          "y": 48,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:10",
+      "text": "日记",
+      "box": {
+        "x": 855.421875,
+        "y": 43,
+        "w": 26,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 855.421875,
+          "y": 48,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:11",
+      "text": "设置",
+      "box": {
+        "x": 899.421875,
+        "y": 43,
+        "w": 26,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 899.421875,
+          "y": 48,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:12",
+      "text": "启动抢购",
+      "box": {
+        "x": 1264.684326171875,
+        "y": 24.454265594482422,
+        "w": 148.00634765625,
+        "h": 47.23208999633789
+      },
+      "lines": [
+        {
+          "x": 1288.158935546875,
+          "y": 40.26105499267578,
+          "w": 72.0194091796875,
+          "h": 15.491214752197266
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "kbd:13",
+      "text": "F7",
+      "box": {
+        "x": 1367.78955078125,
+        "y": 41.24720764160156,
+        "w": 21.421630859375,
+        "h": 12.726123809814453
+      },
+      "lines": [
+        {
+          "x": 1367.78955078125,
+          "y": 41.24720764160156,
+          "w": 21.421630859375,
+          "h": 12.726123809814453
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "monospace",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "div:14",
+      "box": {
+        "x": 28,
+        "y": 82.140625,
+        "w": 1384,
+        "h": 41.140625
+      }
+    },
+    {
+      "kind": "text",
+      "id": "b:15",
+      "text": "待命，等你开始",
+      "box": {
+        "x": 28,
+        "y": 92.140625,
+        "w": 98,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 28,
+          "y": 95.140625,
+          "w": 98,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:16",
+      "text": "共 1 条任务，1 条已启用",
+      "box": {
+        "x": 140,
+        "y": 92.140625,
+        "w": 152,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 140,
+          "y": 95.140625,
+          "w": 152,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "em:17",
+      "text": "待命",
+      "box": {
+        "x": 1360.796875,
+        "y": 90.140625,
+        "w": 51.203125,
+        "h": 24.140625
+      },
+      "lines": [
+        {
+          "x": 1370.796875,
+          "y": 95.140625,
+          "w": 31.203125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "section:18",
+      "box": {
+        "x": 28,
+        "y": 135.28125,
+        "w": 1384,
+        "h": 75.328125
+      }
+    },
+    {
+      "kind": "block",
+      "id": "article:19",
+      "box": {
+        "x": 29,
+        "y": 136.28125,
+        "w": 345.5,
+        "h": 73.328125
+      }
+    },
+    {
+      "kind": "text",
+      "id": "small:21",
+      "text": "游戏窗口",
+      "box": {
+        "x": 41,
+        "y": 144.28125,
+        "w": 209,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 41,
+          "y": 147.28125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:22",
+      "text": "没找到游戏窗口",
+      "box": {
+        "x": 41,
+        "y": 161.328125,
+        "w": 209,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 41,
+          "y": 164.328125,
+          "w": 98,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:23",
+      "text": "先在游戏里打开交易行，再回来点重新检查",
+      "box": {
+        "x": 41,
+        "y": 186.46875,
+        "w": 209,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 41,
+          "y": 186.46875,
+          "w": 209,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:24",
+      "text": "重新检查",
+      "box": {
+        "x": 299.5,
+        "y": 144.28125,
+        "w": 62,
+        "h": 21.046875
+      },
+      "lines": [
+        {
+          "x": 308.5,
+          "y": 149.28125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "article:25",
+      "box": {
+        "x": 374.5,
+        "y": 136.28125,
+        "w": 345.5,
+        "h": 73.328125
+      }
+    },
+    {
+      "kind": "text",
+      "id": "small:27",
+      "text": "画面识别",
+      "box": {
+        "x": 386.5,
+        "y": 144.28125,
+        "w": 84,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 386.5,
+          "y": 147.28125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:28",
+      "text": "还没认出页面",
+      "box": {
+        "x": 386.5,
+        "y": 161.328125,
+        "w": 84,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 386.5,
+          "y": 164.328125,
+          "w": 84,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:29",
+      "text": "还没有识别结果",
+      "box": {
+        "x": 386.5,
+        "y": 186.46875,
+        "w": 77,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 386.5,
+          "y": 186.46875,
+          "w": 77,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:30",
+      "text": "重新检查",
+      "box": {
+        "x": 645,
+        "y": 144.28125,
+        "w": 62,
+        "h": 21.046875
+      },
+      "lines": [
+        {
+          "x": 654,
+          "y": 149.28125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "article:31",
+      "box": {
+        "x": 720,
+        "y": 136.28125,
+        "w": 345.5,
+        "h": 73.328125
+      }
+    },
+    {
+      "kind": "text",
+      "id": "small:33",
+      "text": "时间校准",
+      "box": {
+        "x": 732,
+        "y": 144.28125,
+        "w": 159.5,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 732,
+          "y": 147.28125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:34",
+      "text": "已自动校准",
+      "box": {
+        "x": 732,
+        "y": 161.328125,
+        "w": 159.5,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 732,
+          "y": 164.328125,
+          "w": 70,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        61,
+        90,
+        42
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:35",
+      "text": "偏差 +28ms · 9 样本 · 3s 前",
+      "box": {
+        "x": 732,
+        "y": 186.46875,
+        "w": 159.5,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 732,
+          "y": 186.46875,
+          "w": 159.5,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "small:38",
+      "text": "购买延迟",
+      "box": {
+        "x": 1077.5,
+        "y": 144.28125,
+        "w": 143,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 1077.5,
+          "y": 147.28125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:39",
+      "text": "0 毫秒",
+      "box": {
+        "x": 1077.5,
+        "y": 161.328125,
+        "w": 143,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 1077.5,
+          "y": 164.328125,
+          "w": 44,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        61,
+        90,
+        42
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:40",
+      "text": "动态调整已开，点击更快更准",
+      "box": {
+        "x": 1077.5,
+        "y": 186.46875,
+        "w": 143,
+        "h": 11
+      },
+      "lines": [
+        {
+          "x": 1077.5,
+          "y": 186.46875,
+          "w": 143,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "b:44",
+      "text": "任务清单",
+      "box": {
+        "x": 28,
+        "y": 222.609375,
+        "w": 76,
+        "h": 23.25
+      },
+      "lines": [
+        {
+          "x": 28,
+          "y": 226.609375,
+          "w": 76,
+          "h": 15
+        }
+      ],
+      "fontSize": 15,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:45",
+      "text": "共 3 条任务",
+      "box": {
+        "x": 116,
+        "y": 225.609375,
+        "w": 73,
+        "h": 20.140625
+      },
+      "lines": [
+        {
+          "x": 116,
+          "y": 228.609375,
+          "w": 73,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:46",
+      "text": "+ 添加任务",
+      "box": {
+        "x": 1324,
+        "y": 222.609375,
+        "w": 88,
+        "h": 26.140625
+      },
+      "lines": [
+        {
+          "x": 1335,
+          "y": 228.609375,
+          "w": 66,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "table:47",
+      "box": {
+        "x": 28,
+        "y": 254.75,
+        "w": 1384,
+        "h": 134.46875
+      },
+      "fill": [
+        232,
+        225,
+        198
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:50",
+      "text": "#",
+      "box": {
+        "x": 28.5,
+        "y": 255.25,
+        "w": 50.625,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 37,
+          "y": 263.75,
+          "w": 7.921875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:51",
+      "text": "目标",
+      "box": {
+        "x": 79.125,
+        "y": 255.25,
+        "w": 688.6875,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 87.625,
+          "y": 263.75,
+          "w": 26.84375,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:52",
+      "text": "成色·磨损",
+      "box": {
+        "x": 767.8125,
+        "y": 255.25,
+        "w": 170.296875,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 776.3125,
+          "y": 263.75,
+          "w": 67.078125,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:53",
+      "text": "价格区间",
+      "box": {
+        "x": 938.109375,
+        "y": 255.25,
+        "w": 176.21875,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 946.609375,
+          "y": 263.75,
+          "w": 53.671875,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:54",
+      "text": "限量",
+      "box": {
+        "x": 1114.328125,
+        "y": 255.25,
+        "w": 88.796875,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 1122.828125,
+          "y": 263.75,
+          "w": 26.84375,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:55",
+      "text": "已抢",
+      "box": {
+        "x": 1203.125,
+        "y": 255.25,
+        "w": 88.796875,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 1211.625,
+          "y": 263.75,
+          "w": 26.84375,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "th:56",
+      "text": "状态",
+      "box": {
+        "x": 1291.921875,
+        "y": 255.25,
+        "w": 119.578125,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 1300.421875,
+          "y": 263.75,
+          "w": 26.84375,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "left",
+      "fill": [
+        217,
+        208,
+        174
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:59",
+      "text": "1",
+      "box": {
+        "x": 28.5,
+        "y": 283.296875,
+        "w": 50.625,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 37,
+          "y": 293.796875,
+          "w": 8,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:60",
+      "text": "AKM突击步枪·星之彩",
+      "box": {
+        "x": 79.125,
+        "y": 283.296875,
+        "w": 688.6875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 87.625,
+          "y": 293.796875,
+          "w": 136,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:61",
+      "text": "不限",
+      "box": {
+        "x": 767.8125,
+        "y": 283.296875,
+        "w": 170.296875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 776.3125,
+          "y": 293.796875,
+          "w": 28,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:62",
+      "text": "≤ 41,500",
+      "box": {
+        "x": 938.109375,
+        "y": 283.296875,
+        "w": 176.21875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 946.609375,
+          "y": 293.796875,
+          "w": 70,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:63",
+      "text": "1",
+      "box": {
+        "x": 1114.328125,
+        "y": 283.296875,
+        "w": 88.796875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1122.828125,
+          "y": 293.796875,
+          "w": 8,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:64",
+      "text": "0",
+      "box": {
+        "x": 1203.125,
+        "y": 283.296875,
+        "w": 88.796875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1211.625,
+          "y": 293.796875,
+          "w": 8,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:65",
+      "text": "等待",
+      "box": {
+        "x": 1291.921875,
+        "y": 283.296875,
+        "w": 119.578125,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1300.421875,
+          "y": 293.796875,
+          "w": 28,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        243,
+        237,
+        211
+      ],
+      "align": "start",
+      "fill": [
+        243,
+        237,
+        211
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "td:67",
+      "text": "2",
+      "box": {
+        "x": 28.5,
+        "y": 318.4375,
+        "w": 50.625,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 37,
+          "y": 328.9375,
+          "w": 7,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:68",
+      "text": "M4A1突击步枪·暗影",
+      "box": {
+        "x": 79.125,
+        "y": 318.4375,
+        "w": 688.6875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 87.625,
+          "y": 328.9375,
+          "w": 119,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:69",
+      "text": "极品",
+      "box": {
+        "x": 767.8125,
+        "y": 318.4375,
+        "w": 170.296875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 776.3125,
+          "y": 328.9375,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:70",
+      "text": "≤ 68,000",
+      "box": {
+        "x": 938.109375,
+        "y": 318.4375,
+        "w": 176.21875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 946.609375,
+          "y": 328.9375,
+          "w": 62,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:71",
+      "text": "2",
+      "box": {
+        "x": 1114.328125,
+        "y": 318.4375,
+        "w": 88.796875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1122.828125,
+          "y": 328.9375,
+          "w": 7,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:72",
+      "text": "1",
+      "box": {
+        "x": 1203.125,
+        "y": 318.4375,
+        "w": 88.796875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1211.625,
+          "y": 328.9375,
+          "w": 7,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:73",
+      "text": "运行中",
+      "box": {
+        "x": 1291.921875,
+        "y": 318.4375,
+        "w": 119.578125,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1300.421875,
+          "y": 328.9375,
+          "w": 42,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        61,
+        90,
+        42
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:75",
+      "text": "3",
+      "box": {
+        "x": 28.5,
+        "y": 353.578125,
+        "w": 50.625,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 37,
+          "y": 364.078125,
+          "w": 7,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:76",
+      "text": "未命名任务·这是一个非常非常长的目标名称用来测试截断",
+      "box": {
+        "x": 79.125,
+        "y": 353.578125,
+        "w": 688.6875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 87.625,
+          "y": 364.078125,
+          "w": 338,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:77",
+      "text": "不限",
+      "box": {
+        "x": 767.8125,
+        "y": 353.578125,
+        "w": 170.296875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 776.3125,
+          "y": 364.078125,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:78",
+      "text": "不限",
+      "box": {
+        "x": 938.109375,
+        "y": 353.578125,
+        "w": 176.21875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 946.609375,
+          "y": 364.078125,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:79",
+      "text": "1",
+      "box": {
+        "x": 1114.328125,
+        "y": 353.578125,
+        "w": 88.796875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1122.828125,
+          "y": 364.078125,
+          "w": 7,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:80",
+      "text": "0",
+      "box": {
+        "x": 1203.125,
+        "y": 353.578125,
+        "w": 88.796875,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1211.625,
+          "y": 364.078125,
+          "w": 7,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "td:81",
+      "text": "等待",
+      "box": {
+        "x": 1291.921875,
+        "y": 353.578125,
+        "w": 119.578125,
+        "h": 35.140625
+      },
+      "lines": [
+        {
+          "x": 1300.421875,
+          "y": 364.078125,
+          "w": 26,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "aside:82",
+      "box": {
+        "x": 28,
+        "y": 403.21875,
+        "w": 1384,
+        "h": 218.46875
+      },
+      "fill": [
+        232,
+        225,
+        198
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "div:83",
+      "box": {
+        "x": 46,
+        "y": 417.21875,
+        "w": 1348,
+        "h": 25.140625
+      }
+    },
+    {
+      "kind": "text",
+      "id": "b:84",
+      "text": "任务设置",
+      "box": {
+        "x": 46,
+        "y": 420.21875,
+        "w": 71.609375,
+        "h": 13
+      },
+      "lines": [
+        {
+          "x": 46,
+          "y": 420.21875,
+          "w": 71.609375,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 700,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        28,
+        26,
+        20
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:85",
+      "text": "AKM突击步枪·星之彩",
+      "box": {
+        "x": 129.609375,
+        "y": 420.21875,
+        "w": 125,
+        "h": 13
+      },
+      "lines": [
+        {
+          "x": 129.609375,
+          "y": 420.21875,
+          "w": 125,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "label:86",
+      "text": "赛季目标",
+      "box": {
+        "x": 46,
+        "y": 452.359375,
+        "w": 433.328125,
+        "h": 47.09375
+      },
+      "lines": [
+        {
+          "x": 46,
+          "y": 455.359375,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "select:87",
+      "box": {
+        "x": 46,
+        "y": 473.421875,
+        "w": 433.328125,
+        "h": 26.03125
+      },
+      "fill": [
+        246,
+        241,
+        219
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:88",
+      "text": "成色选择",
+      "box": {
+        "x": 503.328125,
+        "y": 452.359375,
+        "w": 433.328125,
+        "h": 47.09375
+      },
+      "lines": [
+        {
+          "x": 503.328125,
+          "y": 455.359375,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "select:89",
+      "box": {
+        "x": 503.328125,
+        "y": 473.421875,
+        "w": 433.328125,
+        "h": 26.03125
+      },
+      "fill": [
+        246,
+        241,
+        219
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:90",
+      "text": "品阶",
+      "box": {
+        "x": 960.65625,
+        "y": 452.359375,
+        "w": 433.34375,
+        "h": 47.09375
+      },
+      "lines": [
+        {
+          "x": 960.65625,
+          "y": 455.359375,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:92",
+      "text": "不限",
+      "box": {
+        "x": 959.65625,
+        "y": 472.40625,
+        "w": 145.4375,
+        "h": 27.046875
+      },
+      "lines": [
+        {
+          "x": 1021.375,
+          "y": 480.40625,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        217,
+        208,
+        174
+      ],
+      "background": [
+        28,
+        26,
+        20
+      ],
+      "align": "center",
+      "fill": [
+        28,
+        26,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "button:93",
+      "text": "极品",
+      "box": {
+        "x": 1104.09375,
+        "y": 472.40625,
+        "w": 145.453125,
+        "h": 27.046875
+      },
+      "lines": [
+        {
+          "x": 1165.8125,
+          "y": 480.40625,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:94",
+      "text": "优品",
+      "box": {
+        "x": 1248.546875,
+        "y": 472.40625,
+        "w": 145.453125,
+        "h": 27.046875
+      },
+      "lines": [
+        {
+          "x": 1310.265625,
+          "y": 480.40625,
+          "w": 22,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "label:95",
+      "text": "价格区间",
+      "box": {
+        "x": 46,
+        "y": 509.453125,
+        "w": 433.328125,
+        "h": 49.09375
+      },
+      "lines": [
+        {
+          "x": 46,
+          "y": 512.453125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "input:97",
+      "box": {
+        "x": 46,
+        "y": 529.5,
+        "w": 205.15625,
+        "h": 29.046875
+      },
+      "fill": [
+        246,
+        241,
+        219
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "i:98",
+      "text": "至",
+      "box": {
+        "x": 257.15625,
+        "y": 535.5,
+        "w": 11,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 257.15625,
+          "y": 538.5,
+          "w": 11,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "input:99",
+      "box": {
+        "x": 274.15625,
+        "y": 529.5,
+        "w": 205.171875,
+        "h": 29.046875
+      },
+      "fill": [
+        246,
+        241,
+        219
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:100",
+      "text": "本轮限量",
+      "box": {
+        "x": 503.328125,
+        "y": 509.453125,
+        "w": 433.328125,
+        "h": 49.09375
+      },
+      "lines": [
+        {
+          "x": 503.328125,
+          "y": 512.453125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "block",
+      "id": "input:101",
+      "box": {
+        "x": 503.328125,
+        "y": 529.5,
+        "w": 433.328125,
+        "h": 29.046875
+      },
+      "fill": [
+        246,
+        241,
+        219
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "label:102",
+      "text": "抢购路线",
+      "box": {
+        "x": 960.65625,
+        "y": 509.453125,
+        "w": 433.34375,
+        "h": 49.09375
+      },
+      "lines": [
+        {
+          "x": 960.65625,
+          "y": 512.453125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "button:104",
+      "text": "公示期倒计时",
+      "box": {
+        "x": 959.65625,
+        "y": 530.5,
+        "w": 145.4375,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 999.375,
+          "y": 539,
+          "w": 66,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        217,
+        208,
+        174
+      ],
+      "background": [
+        28,
+        26,
+        20
+      ],
+      "align": "center",
+      "fill": [
+        28,
+        26,
+        20
+      ]
+    },
+    {
+      "kind": "text",
+      "id": "button:105",
+      "text": "在售列表",
+      "box": {
+        "x": 1104.09375,
+        "y": 530.5,
+        "w": 145.453125,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 1154.8125,
+          "y": 539,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:106",
+      "text": "商品页按钮",
+      "box": {
+        "x": 1248.546875,
+        "y": 530.5,
+        "w": 145.453125,
+        "h": 28.046875
+      },
+      "lines": [
+        {
+          "x": 1293.765625,
+          "y": 539,
+          "w": 55,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "block",
+      "id": "div:107",
+      "box": {
+        "x": 46,
+        "y": 568.546875,
+        "w": 1348,
+        "h": 39.140625
+      }
+    },
+    {
+      "kind": "text",
+      "id": "button:108",
+      "text": "删除任务",
+      "box": {
+        "x": 46,
+        "y": 577.546875,
+        "w": 82,
+        "h": 30.140625
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 585.546875,
+          "w": 52,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        163,
+        48,
+        28
+      ],
+      "background": [
+        232,
+        225,
+        198
+      ],
+      "align": "center"
+    },
+    {
+      "kind": "text",
+      "id": "button:109",
+      "text": "保存修改",
+      "box": {
+        "x": 1291.59375,
+        "y": 577.546875,
+        "w": 102.40625,
+        "h": 30.140625
+      },
+      "lines": [
+        {
+          "x": 1311.59375,
+          "y": 585.546875,
+          "w": 62.40625,
+          "h": 13
+        }
+      ],
+      "fontSize": 13,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        217,
+        208,
+        174
+      ],
+      "background": [
+        28,
+        26,
+        20
+      ],
+      "align": "center",
+      "fill": [
+        28,
+        26,
+        20
+      ]
+    },
+    {
+      "kind": "block",
+      "id": "footer:110",
+      "box": {
+        "x": 28,
+        "y": 855.953125,
+        "w": 1384,
+        "h": 26.046875
+      }
+    },
+    {
+      "kind": "text",
+      "id": "span:111",
+      "text": "已连接",
+      "box": {
+        "x": 28,
+        "y": 864.953125,
+        "w": 33,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 28,
+          "y": 867.953125,
+          "w": 33,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:112",
+      "text": "任务 1",
+      "box": {
+        "x": 85,
+        "y": 864.953125,
+        "w": 33,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 85,
+          "y": 867.953125,
+          "w": 33,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:113",
+      "text": "队列 1",
+      "box": {
+        "x": 142,
+        "y": 864.953125,
+        "w": 33,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 142,
+          "y": 867.953125,
+          "w": 33,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:114",
+      "text": "引擎待命",
+      "box": {
+        "x": 199,
+        "y": 864.953125,
+        "w": 44,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 199,
+          "y": 867.953125,
+          "w": 44,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    },
+    {
+      "kind": "text",
+      "id": "span:115",
+      "text": "v1.1.2",
+      "box": {
+        "x": 267,
+        "y": 864.953125,
+        "w": 33,
+        "h": 17.046875
+      },
+      "lines": [
+        {
+          "x": 267,
+          "y": 867.953125,
+          "w": 33,
+          "h": 11
+        }
+      ],
+      "fontSize": 11,
+      "fontWeight": 400,
+      "fontFamily": "SimSun, NSimSun, \"Courier New\", monospace",
+      "color": [
+        74,
+        70,
+        54
+      ],
+      "background": [
+        217,
+        208,
+        174
+      ],
+      "align": "start"
+    }
+  ],
+  "media": []
+}
